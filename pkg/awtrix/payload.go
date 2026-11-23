@@ -143,3 +143,17 @@ type Command []any
 func RectFill(x, y, w, h int, color string) Command {
 	return Command{"rectFill", x, y, w, h, color}
 }
+
+// Pixel draws one pixel.
+func Pixel(x, y int, color string) Command {
+	return Command{"pixel", x, y, color}
+}
+
+// Pixels draws many pixels in one color; xy alternates x and y.
+func Pixels(color string, xy ...int) Command {
+	c := Command{"pixels", color}
+	for _, v := range xy {
+		c = append(c, v)
+	}
+	return c
+}

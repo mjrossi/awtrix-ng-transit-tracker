@@ -11,10 +11,11 @@
       ],
       "text": "No departures",
       "font": "small",
-      "color": "#7F7F7F",
+      "color": "#A0998E",
       "scroll": {
         "mode": "wrap"
-      }
+      },
+      "textCase": "asTyped"
     }
   ]
 }

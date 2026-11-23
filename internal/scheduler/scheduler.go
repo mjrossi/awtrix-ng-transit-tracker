@@ -147,7 +147,16 @@ func (r *Runner) Rows(ctx context.Context, now time.Time) (rows []transit.Row, o
 		ok = true
 		// Filter at render time so cached departures that have left, or are
 		// now within the walk time, drop out.
-		deps = append(deps, src.Filter.Apply(now, st.deps)...)
+		kept := src.Filter.Apply(now, st.deps)
+		if st.failures > 0 {
+			// The last refresh failed, so these predictions are as old as
+			// the last good fetch. Shown as schedule-only, they keep their
+			// best estimate but no longer claim to be live.
+			for i, d := range kept {
+				kept[i].Scheduled, kept[i].Predicted = d.Time(), nil
+			}
+		}
+		deps = append(deps, kept...)
 	}
 	return transit.Group(deps, 0, r.board.PerRow), ok
 }

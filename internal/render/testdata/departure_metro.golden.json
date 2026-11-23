@@ -11,11 +11,31 @@
       ],
       "text": "Reboleira",
       "font": "small",
-      "color": "#FFFFFF",
+      "color": "#EAE4D9",
       "align": "start",
       "scroll": {
         "mode": "wrap"
-      }
+      },
+      "textCase": "asTyped"
+    },
+    {
+      "id": "rule",
+      "box": [
+        0,
+        7,
+        52,
+        1
+      ],
+      "draw": [
+        [
+          "rectFill",
+          0,
+          0,
+          52,
+          1,
+          "#5B4535"
+        ]
+      ]
     },
     {
       "id": "badge",
@@ -41,34 +61,64 @@
       "box": [
         4,
         8,
-        48,
+        23,
         8
       ],
       "text": [
         {
           "text": "3",
-          "color": "#FFFFFF"
+          "color": "#EAE4D9"
         },
         {
           "text": "  "
         },
         {
           "text": "8",
-          "color": "#7F7F7F"
+          "color": "#A0998E"
         },
         {
           "text": "  "
         },
         {
           "text": "14",
-          "color": "#7F7F7F"
+          "color": "#A0998E"
         }
       ],
       "font": "small",
       "align": "start",
       "scroll": {
         "mode": "static"
-      }
+      },
+      "textCase": "asTyped"
+    },
+    {
+      "id": "marks",
+      "box": [
+        3,
+        8,
+        25,
+        8
+      ],
+      "draw": [
+        [
+          "pixel",
+          4,
+          0,
+          "#D9955A"
+        ],
+        [
+          "pixel",
+          6,
+          3,
+          "#5B4535"
+        ],
+        [
+          "pixel",
+          14,
+          3,
+          "#5B4535"
+        ]
+      ]
     }
   ]
 }

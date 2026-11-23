@@ -11,8 +11,8 @@ Sta Apolónia
 
 Each board shows one line and direction, like a platform sign: the
 destination on top, then the line color (or bus number) and minutes until
-the next departures. Live predictions are white; schedule-only times are
-dimmed. Add a board per direction and the clock rotates through them. A
+the next departures. Live predictions are bright with an amber dot;
+schedule-only times are dimmed. Add a board per direction and the clock rotates through them. A
 `rows` layout fits two lines or directions on one screen instead.
 
 > **Status:** early, and not yet tried on a real clock. Supported today:

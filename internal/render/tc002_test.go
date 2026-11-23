@@ -41,7 +41,28 @@ var (
 	azul  = transit.Line{ID: "azul", ShortName: "Azul", Color: "#0072CE", Mode: transit.ModeMetro}
 	verde = transit.Line{ID: "verde", ShortName: "Verde", Color: "#00A651", Mode: transit.ModeMetro}
 	bus   = transit.Line{ID: "735", ShortName: "735", Color: "#FFCC00", Mode: transit.ModeBus}
+	navy  = transit.Line{ID: "760", ShortName: "760", Color: "#1F3A93", Mode: transit.ModeBus}
 )
+
+func canceled(r transit.Row, i int) transit.Row {
+	r.Departures[i].Status = transit.StatusCanceled
+	r.Departures[i].Predicted = nil
+	return r
+}
+
+func texts(l *awtrix.Layout, id string) []string {
+	var out []string
+	for _, r := range l.Regions {
+		if r.ID == id && r.Text != nil {
+			for _, f := range r.Text.Fragments {
+				if strings.TrimSpace(f.Text) != "" {
+					out = append(out, f.Text)
+				}
+			}
+		}
+	}
+	return out
+}
 
 func TestTC002Golden(t *testing.T) {
 	tests := map[string]struct {
@@ -59,6 +80,13 @@ func TestTC002Golden(t *testing.T) {
 			// The two soonest rows are shown, Azul above Verde although Verde
 			// leaves first; Azul to Reboleira leaves last and is left out.
 			rows: []transit.Row{row(verde, "Telheiras", 1, 6), row(azul, "Santa Apolónia", 4, 9), row(azul, "Reboleira", 7)},
+			opts: render.Options{Layout: render.LayoutRows},
+		},
+		"departure_due": {
+			rows: []transit.Row{row(verde, "Cais do Sodré", 0, 5, 11)},
+		},
+		"rows_canceled": {
+			rows: []transit.Row{row(bus, "Cacilhas", 0, 12), canceled(row(navy, "Sé", 3, 18), 0)},
 			opts: render.Options{Layout: render.LayoutRows},
 		},
 		"rows_single": {
@@ -96,8 +124,12 @@ func TestTC002Golden(t *testing.T) {
 // and the per-layout limits. It also checks that times are never cut off.
 func TestTC002Geometry(t *testing.T) {
 	long := transit.Line{ID: "x", ShortName: "VeryLongLineName", Mode: transit.ModeBus}
-	many := row(long, "A destination that will never fit on the display", 1, 22, 45, 67, 88, 109)
-	rows := []transit.Row{many, row(azul, "B", 2), row(verde, "C", 3)}
+	many := row(long, "A destination that will never fit on the display", 0, 22, 45, 67, 88, 109)
+	for i := range many.Departures {
+		p := many.Departures[i].Scheduled
+		many.Departures[i].Predicted = &p
+	}
+	rows := []transit.Row{many, canceled(row(bus, "B", 1, 2, 3, 4), 0), row(verde, "C", 3)}
 	for _, layout := range []string{render.LayoutDeparture, render.LayoutRows} {
 		t.Run(layout, func(t *testing.T) {
 			l := render.TC002(rows, now, render.Options{Layout: layout, MaxRows: 5})
@@ -105,7 +137,11 @@ func TestTC002Geometry(t *testing.T) {
 				t.Errorf("%d regions, limit 16", len(l.Regions))
 			}
 			ids := map[string]bool{}
+			scrolling := 0
 			for _, r := range l.Regions {
+				if r.Text != nil && (r.Scroll == nil || r.Scroll.Mode != awtrix.ScrollStatic) {
+					scrolling++
+				}
 				if ids[r.ID] {
 					t.Errorf("duplicate id %q", r.ID)
 				}
@@ -138,6 +174,9 @@ func TestTC002Geometry(t *testing.T) {
 						t.Errorf("region %s: times are %d px wide in a %d px box", r.ID, w, r.Box[2])
 					}
 				}
+			}
+			if scrolling > 8 {
+				t.Errorf("%d scrolling texts, limit 8", scrolling)
 			}
 		})
 	}
@@ -183,11 +222,74 @@ func TestDepartureLayoutKeepsOneRow(t *testing.T) {
 	}
 }
 
-func TestLongLineNameGetsBar(t *testing.T) {
-	rail := transit.Line{ID: "CR-Worcester", ShortName: "Framingham/Worcester Line", Color: "#80276C", Mode: transit.ModeRail}
-	l := render.TC002([]transit.Row{row(rail, "Worcester", 9)}, now, render.Options{})
-	badge := l.Regions[1]
-	if badge.Text != nil || len(badge.Draw) == 0 {
-		t.Errorf("badge = %+v, want a color bar", badge)
+func TestBadges(t *testing.T) {
+	plain := transit.Line{ID: "x", ShortName: "15E", Mode: transit.ModeTram}
+	worcester := transit.Line{ID: "CR-Worcester", ShortName: "Framingham/Worcester Line", Color: "#80276C", Mode: transit.ModeRail}
+	gondola := transit.Line{ID: "g", ShortName: "Telecabine Lisboa", Color: "#00A651", Mode: transit.ModeCableway}
+	tests := []struct {
+		name string
+		line transit.Line
+		// want is each badge region's content: the drawing's command name
+		// or the text and its color.
+		want []string
+	}{
+		{"metro gets a bar", azul, []string{"rectFill"}},
+		{"bright fill, unlit number", bus, []string{"rectFill", "735 #000000"}},
+		{"dark fill, light number", navy, []string{"rectFill", "760 " + render.DefaultTextColor}},
+		{"no color, plain number", plain, []string{"15E " + render.DefaultTextColor}},
+		{"long name, mode glyph", worcester, []string{"pixels"}},
+		{"long name, no glyph for the mode", gondola, []string{"rectFill"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			l := render.TC002([]transit.Row{row(tt.line, "Somewhere", 9)}, now, render.Options{})
+			var got []string
+			for _, r := range l.Regions {
+				if !strings.HasPrefix(r.ID, "badge") {
+					continue
+				}
+				if r.Draw != nil {
+					got = append(got, r.Draw[0][0].(string))
+				} else {
+					got = append(got, r.Text.Plain+" "+r.Color)
+				}
+			}
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("badge (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// Due needs room the rows layout gives to the destination.
+func TestDueOnlyOnDepartureLayout(t *testing.T) {
+	rows := []transit.Row{row(bus, "Cacilhas", 0, 12)}
+	if got := texts(render.TC002(rows, now, render.Options{}), "min"); got[0] != "Due" {
+		t.Errorf("departure layout times = %v, want Due first", got)
+	}
+	if got := texts(render.TC002(rows, now, render.Options{Layout: render.LayoutRows}), "r0-min"); got[0] != "0" {
+		t.Errorf("rows layout times = %v, want 0 first", got)
+	}
+}
+
+// In the rows layout a second time is shown only if the destination still
+// fits beside it.
+func TestRowsLayoutPutsDestinationFirst(t *testing.T) {
+	tests := []struct {
+		name     string
+		headsign string
+		want     []string
+	}{
+		{"short name keeps both times", "Sé", []string{"4", "19"}},
+		{"name that fits with one time", "Cacilhas", []string{"4"}},
+		{"name too long either way", "Gomes Freire", []string{"4"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			l := render.TC002([]transit.Row{row(bus, tt.headsign, 4, 19)}, now, render.Options{Layout: render.LayoutRows})
+			if diff := cmp.Diff(tt.want, texts(l, "r0-min")); diff != "" {
+				t.Errorf("times (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
