@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/awtrix"
@@ -74,9 +75,6 @@ const (
 	gap       = 2
 	barWidth  = 2
 	maxBadgeW = 17
-	// minuteGap is the space between departure times, wider than a font
-	// space so "3 8 18" reads as three numbers.
-	minuteGap = 4
 )
 
 // TC002 renders rows for the 52 × 16 display. rows should be ordered
@@ -223,14 +221,14 @@ func badgeRegion(id string, y int, line transit.Line, opts Options) awtrix.Regio
 // in width pixels so times never scroll or get cut.
 func minuteFragments(deps []transit.Departure, now time.Time, opts Options, width int) []awtrix.Fragment {
 	var frags []awtrix.Fragment
-	used := 0
+	text := ""
 	for _, d := range deps {
 		s := strconv.Itoa(d.MinutesUntil(now))
-		w := TextWidth(s)
+		next := s
 		if len(frags) > 0 {
-			w += minuteGap
+			next = text + spacer + s
 		}
-		if used+w > width {
+		if TextWidth(next) > width {
 			break
 		}
 		if len(frags) > 0 {
@@ -241,24 +239,23 @@ func minuteFragments(deps []transit.Departure, now time.Time, opts Options, widt
 			c = opts.TextColor
 		}
 		frags = append(frags, awtrix.Fragment{Text: s, Color: c})
-		used += w
+		text = next
 	}
 	return frags
 }
 
-// spacer is minuteGap wide: two spaces of spaceWidth.
+// spacer separates departure times. Two font spaces rather than one, so
+// "3 8 18" reads as three numbers.
 const spacer = "  "
 
+// fragmentsWidth measures fragments as the firmware does, as one string,
+// so the gap after each number but the last counts.
 func fragmentsWidth(frags []awtrix.Fragment) int {
-	w := 0
+	var s strings.Builder
 	for _, f := range frags {
-		if f.Text == spacer {
-			w += minuteGap
-			continue
-		}
-		w += TextWidth(f.Text)
+		s.WriteString(f.Text)
 	}
-	return w
+	return TextWidth(s.String())
 }
 
 func (o Options) label(headsign string) string {

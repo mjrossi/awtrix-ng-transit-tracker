@@ -5,6 +5,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -127,11 +128,13 @@ func TestTC002Geometry(t *testing.T) {
 					t.Errorf("region %s has %d content kinds, want exactly 1", r.ID, n)
 				}
 				if r.Text != nil && r.Text.Fragments != nil {
-					w := 0
+					// The firmware measures fragments as one string, so
+					// the gap after each number counts.
+					var s strings.Builder
 					for _, f := range r.Text.Fragments {
-						w += render.TextWidth(f.Text)
+						s.WriteString(f.Text)
 					}
-					if w > r.Box[2] {
+					if w := render.TextWidth(s.String()); w > r.Box[2] {
 						t.Errorf("region %s: times are %d px wide in a %d px box", r.ID, w, r.Box[2])
 					}
 				}
