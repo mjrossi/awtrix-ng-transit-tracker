@@ -1,3 +1,44 @@
-/bin/
-/config.toml
+# ── OS ──────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+
+# ── Editors / IDEs ──────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+.fleet/
+.zed/
+
+# ── Env / secrets ───────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── mise: machine-local overrides ───────────────────
+mise.*.local.toml
 mise.local.toml
+
+# ── Local configuration (config.example.toml is committed) ──
+/config.toml
+
+# ── Go ──────────────────────────────────────────────
+/bin/
+*.test
+*.out
+*.prof
+
+# ── Brainstorming / Claude scratch ──────────────────
+.superpowers/
+.claude/
+
+# ── Scratch ─────────────────────────────────────────
+tmp/
+
+# ── Misc build / edit artifacts ─────────────────────
+*.log
+*.bak
+*.orig
+*.rej
