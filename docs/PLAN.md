@@ -141,10 +141,13 @@ Other rules:
 - Only as many times as fit are shown; times never scroll or get cut.
 - Live minutes get a one-pixel amber dot at their top right, so live and
   schedule-only differ by a mark as well as brightness. A dim dot sits
-  between times. A canceled trip kept with `keep_canceled` is struck
-  through.
-- The departure layout draws a hairline under the destination, and shows
-  a departure under a minute away as `Due`. The rows layout keeps `0`,
+  between times. A canceled trip kept with a stop's `keep_canceled` is
+  struck through, and never pushes the next trip a rider can catch out of
+  its row. The marks are placed for the `small` font; with another font
+  they are left out, and so are canceled trips.
+- The departure layout draws a hairline under the destination, broken
+  above each live dot so the two do not merge, and shows a departure
+  under a minute away as `Due`. The rows layout keeps `0`,
   because `Due` would take two or three characters from the destination.
 - In the rows layout a second time is shown only if the destination still
   fits beside it, so names scroll less.
@@ -234,8 +237,10 @@ docs/                     this plan and design notes
      cleanly;
    - the small font's capitals sit on rows 1 to 5 of an 8 px box, as the
      drawn marks assume: the live dot on row 0, the separator and strike
-     on row 3, the hairline on row 7. Check that the hairline and the live
-     dot just below it do not crowd each other, and that the dim colors
+     on row 3, the hairline on row 7. Check that the break in the hairline
+     above a live dot reads as intended, that times starting
+     with `1` line up with their dot and strike (the firmware places text
+     by its ink, not its cell), and that the dim colors
      (separator dots, hairline) are visible at night brightness;
    - lifetime: stopping the service removes the app after three polls;
    - recovery: after a clock reboot the app returns within one poll;

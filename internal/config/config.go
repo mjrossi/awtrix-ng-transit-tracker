@@ -89,11 +89,19 @@ type Stop struct {
 	// MinLead hides departures sooner than this, such as the walk to the
 	// stop.
 	MinLead Duration `toml:"min_lead"`
+	// KeepCanceled shows canceled trips, struck through, instead of
+	// dropping them.
+	KeepCanceled bool `toml:"keep_canceled"`
 }
 
 // Filter returns the transit filter for the stop.
 func (s Stop) Filter() transit.Filter {
-	return transit.Filter{Lines: s.Lines, Headsigns: s.Headsigns, MinLead: s.MinLead.D()}
+	return transit.Filter{
+		Lines:        s.Lines,
+		Headsigns:    s.Headsigns,
+		MinLead:      s.MinLead.D(),
+		KeepCanceled: s.KeepCanceled,
+	}
 }
 
 // Location is the resolved time zone.

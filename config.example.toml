@@ -110,6 +110,7 @@ stop = "baixa-chiado"
 lines = ["azul"]                 # line IDs or short names
 headsigns = ["Santa Apolónia"]   # substrings of the destination
 # min_lead = "4m"                # hide departures you cannot reach in time
+# keep_canceled = true           # show canceled trips struck through
 
 [[boards]]
 name = "verde"

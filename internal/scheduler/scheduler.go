@@ -152,8 +152,8 @@ func (r *Runner) Rows(ctx context.Context, now time.Time) (rows []transit.Row, o
 			// The last refresh failed, so these predictions are as old as
 			// the last good fetch. Shown as schedule-only, they keep their
 			// best estimate but no longer claim to be live.
-			for i, d := range kept {
-				kept[i].Scheduled, kept[i].Predicted = d.Time(), nil
+			for j, d := range kept {
+				kept[j].Scheduled, kept[j].Predicted = d.Time(), nil
 			}
 		}
 		deps = append(deps, kept...)

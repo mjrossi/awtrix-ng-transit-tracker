@@ -101,6 +101,11 @@ const (
 	ruleRow = rowHeight - 1
 )
 
+// marks reports whether the live dots, separators and strikes are drawn.
+// They are placed for the small font's 4 px cells and rows; other fonts
+// would put them on top of the glyphs.
+func (o Options) marks() bool { return o.Font == DefaultFont }
+
 // unlit is drawn as black, which on an LED matrix is a pixel left off. A
 // badge number in it is cut out of the badge's fill.
 const unlit = "#000000"
@@ -121,6 +126,14 @@ func TC002(rows []transit.Row, now time.Time, opts Options) *awtrix.Layout {
 		}}}
 	}
 	shown := Visible(rows, opts)
+	if !opts.marks() {
+		// Without its strike a canceled trip reads as one to catch.
+		for i, r := range shown {
+			shown[i].Departures = slices.DeleteFunc(slices.Clone(r.Departures), func(d transit.Departure) bool {
+				return d.Status == transit.StatusCanceled
+			})
+		}
+	}
 	if opts.Layout == LayoutRows {
 		return rowsLayout(shown, now, opts)
 	}
@@ -164,7 +177,7 @@ func departureLayout(r transit.Row, now time.Time, opts Options) *awtrix.Layout 
 		{
 			ID:   "rule",
 			Box:  awtrix.Box{0, ruleRow, awtrix.TC002Width, 1},
-			Draw: []awtrix.Command{awtrix.RectFill(0, 0, awtrix.TC002Width, 1, opts.RuleColor)},
+			Draw: times.rule(tx, opts),
 		},
 	}
 	regions = append(regions, badge...)
@@ -186,14 +199,18 @@ func rowsLayout(rows []transit.Row, now time.Time, opts Options) *awtrix.Layout 
 		// Times take what they need, up to half the display, but a second
 		// time is shown only if the name still fits beside it: a name
 		// that scrolls is harder to read than a later departure is to
-		// miss.
+		// miss. Canceled trips before the first one a rider can catch
+		// don't count, so they never push it out.
 		deps := r.Departures
+		keep := 1 + slices.IndexFunc(deps, func(d transit.Departure) bool {
+			return d.Status != transit.StatusCanceled
+		})
 		var times timeRow
 		var mx int
 		for {
 			times = fitTimes(deps, now, opts, awtrix.TC002Width/2, false)
 			mx = awtrix.TC002Width - max(times.width, charWidth)
-			if len(times.items) <= 1 || TextWidth(name) <= mx-gap-sx {
+			if len(times.items) <= max(keep, 1) || TextWidth(name) <= mx-gap-sx {
 				break
 			}
 			deps = deps[:len(times.items)-1]
@@ -229,7 +246,12 @@ func (o Options) nameRegion(id string, box awtrix.Box, headsign string) awtrix.R
 // standing in for a missing short one, gets a glyph of the line's mode
 // instead: four letters of "Framingham" say less than the line's color.
 func badgeRegions(id string, y int, line transit.Line, opts Options) ([]awtrix.Region, int) {
-	color := cmp.Or(line.Color, opts.TextColor)
+	color := line.Color
+	// A glyph or bar in a color too dark to light up would not show; a
+	// filled badge copes, because its number switches to cream.
+	if color == "" || luminance(color) < minMarkLuminance {
+		color = opts.TextColor
+	}
 	if line.Mode != transit.ModeMetro && line.ShortName != "" && TextWidth(line.ShortName) <= maxBadgeW {
 		w := TextWidth(line.ShortName)
 		name := awtrix.Region{
@@ -237,7 +259,7 @@ func badgeRegions(id string, y int, line transit.Line, opts Options) ([]awtrix.R
 			Box:      awtrix.Box{0, y, w, rowHeight},
 			Text:     awtrix.PlainText(line.ShortName),
 			Font:     opts.Font,
-			Color:    color,
+			Color:    opts.TextColor,
 			Align:    awtrix.AlignStart,
 			Scroll:   &awtrix.Scroll{Mode: awtrix.ScrollStatic},
 			TextCase: awtrix.TextCaseAsTyped,
@@ -255,7 +277,7 @@ func badgeRegions(id string, y int, line transit.Line, opts Options) ([]awtrix.R
 		}
 		return []awtrix.Region{fill, name}, w + 2
 	}
-	if g, ok := modeGlyphs[line.Mode]; line.Mode != transit.ModeMetro && ok {
+	if g, ok := modeGlyphs[line.Mode]; ok {
 		return []awtrix.Region{{
 			ID:   id,
 			Box:  awtrix.Box{0, y, glyphWidth, rowHeight},
@@ -272,6 +294,10 @@ func badgeRegions(id string, y int, line transit.Line, opts Options) ([]awtrix.R
 // badgeTextColor picks whichever of unlit and text contrasts more with
 // fill. It ignores agencies' route_text_color: some pair white with a
 // bright yellow, which on LEDs is two bright colors side by side.
+// minMarkLuminance is the relative luminance below which a line color is
+// treated as unlit.
+const minMarkLuminance = 0.01
+
 func badgeTextColor(fill, text string) string {
 	if contrast(fill, unlit) >= contrast(fill, text) {
 		return unlit
@@ -327,7 +353,7 @@ var modeGlyphs = map[transit.Mode]glyph{
 // timeRow is the departure times that fit in a row, laid out from x = 0.
 type timeRow struct {
 	items []timeItem
-	// width includes the live dot after the last time.
+	// width includes the live dot or strike overhang after the last time.
 	width int
 }
 
@@ -357,7 +383,8 @@ func fitTimes(deps []transit.Departure, now time.Time, opts Options, width int, 
 		canceled := d.Status == transit.StatusCanceled
 		live := d.Realtime() && !canceled
 		w := x + TextWidth(text)
-		if live {
+		if (live || canceled) && opts.marks() {
+			// Room for the live dot, or for the strike's overhang.
 			w++
 		}
 		if w > width {
@@ -371,6 +398,27 @@ func fitTimes(deps []transit.Departure, now time.Time, opts Options, width int, 
 		end, t.width = x+TextWidth(text), w
 	}
 	return t
+}
+
+// rule draws the hairline under the destination, broken around the live
+// dots of times at x so a dot on the row below does not merge into it.
+func (t timeRow) rule(x int, opts Options) []awtrix.Command {
+	var cmds []awtrix.Command
+	from := 0
+	for _, it := range t.items {
+		if !it.live || !opts.marks() {
+			continue
+		}
+		dot := x + it.x + TextWidth(it.text)
+		if dot-1 > from {
+			cmds = append(cmds, awtrix.RectFill(from, 0, dot-1-from, 1, opts.RuleColor))
+		}
+		from = dot + 2
+	}
+	if from < awtrix.TC002Width {
+		cmds = append(cmds, awtrix.RectFill(from, 0, awtrix.TC002Width-from, 1, opts.RuleColor))
+	}
+	return cmds
 }
 
 // regions returns the times as one text region at x, plus a drawing for
@@ -404,7 +452,7 @@ func (t timeRow) regions(textID, marksID string, x, y int, opts Options) []awtri
 		Scroll:   &awtrix.Scroll{Mode: awtrix.ScrollStatic},
 		TextCase: awtrix.TextCaseAsTyped,
 	}}
-	if len(marks) > 0 {
+	if len(marks) > 0 && opts.marks() {
 		regions = append(regions, awtrix.Region{
 			ID:   marksID,
 			Box:  awtrix.Box{x - 1, y, min(t.width+2, awtrix.TC002Width-x+1), rowHeight},

@@ -293,3 +293,52 @@ func TestRowsLayoutPutsDestinationFirst(t *testing.T) {
 		})
 	}
 }
+
+// A canceled trip never pushes the next one a rider can catch out of its
+// row, even when the destination then needs the room.
+func TestRowsLayoutKeepsFirstCatchableTrip(t *testing.T) {
+	tests := []struct {
+		name string
+		row  transit.Row
+		want []string
+	}{
+		{"canceled first", canceled(row(bus, "Cacilhas", 3, 12), 0), []string{"3", "12"}},
+		{"canceled later", canceled(row(bus, "Cacilhas", 3, 12), 1), []string{"3"}},
+		{"all canceled", canceled(canceled(row(bus, "Cacilhas", 3, 12), 0), 1), []string{"3"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			l := render.TC002([]transit.Row{tt.row}, now, render.Options{Layout: render.LayoutRows})
+			if diff := cmp.Diff(tt.want, texts(l, "r0-min")); diff != "" {
+				t.Errorf("times (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// The marks are placed for the small font, so other fonts get none, and
+// canceled trips, which would read as catchable without a strike, are left
+// out.
+func TestMarksOnlyWithSmallFont(t *testing.T) {
+	rows := []transit.Row{canceled(row(bus, "Sé", 3, 8, 18), 1)}
+	for _, layout := range []string{render.LayoutDeparture, render.LayoutRows} {
+		t.Run(layout, func(t *testing.T) {
+			l := render.TC002(rows, now, render.Options{Layout: layout, Font: "large"})
+			minID := "min"
+			if layout == render.LayoutRows {
+				minID = "r0-min"
+			}
+			if diff := cmp.Diff([]string{"3", "18"}, texts(l, minID)); diff != "" {
+				t.Errorf("times (-want +got):\n%s", diff)
+			}
+			for _, r := range l.Regions {
+				if strings.HasSuffix(r.ID, "marks") {
+					t.Errorf("region %q drawn with the large font", r.ID)
+				}
+			}
+		})
+	}
+	if canceled := rows[0].Departures[1].Status; canceled != transit.StatusCanceled {
+		t.Error("TC002 modified the caller's rows")
+	}
+}

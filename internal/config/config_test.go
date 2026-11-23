@@ -9,6 +9,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/mjrossi/awtrix-ng-transit-tracker/internal/config"
+	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/transit"
 	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/transit/providers"
 )
 
@@ -187,6 +188,19 @@ func TestLabels(t *testing.T) {
 	}
 	if got := cfg.Boards[0].Labels["Santa Apolónia"]; got != "Sta Apolónia" {
 		t.Errorf("label = %q", got)
+	}
+}
+
+func TestStopFilter(t *testing.T) {
+	src := strings.Replace(minimal, "%s", "clock.local", 1) +
+		"lines = [\"azul\"]\nheadsigns = [\"Santa\"]\nmin_lead = \"4m\"\nkeep_canceled = true\n"
+	cfg, err := config.Parse([]byte(src), noEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := transit.Filter{Lines: []string{"azul"}, Headsigns: []string{"Santa"}, MinLead: 4 * time.Minute, KeepCanceled: true}
+	if diff := cmp.Diff(want, cfg.Boards[0].Stops[0].Filter()); diff != "" {
+		t.Errorf("filter mismatch (-want +got):\n%s", diff)
 	}
 }
 
