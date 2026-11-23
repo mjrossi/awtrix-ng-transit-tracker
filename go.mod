@@ -1,4 +1,4 @@
-module github.com/mjrossi/awtrix-ng-transit-tracker
+module github.com/mjrossi/urbanist-timetable
 
 go 1.27.3
 

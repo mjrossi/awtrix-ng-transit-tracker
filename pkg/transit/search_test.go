@@ -3,7 +3,7 @@ package transit_test
 import (
 	"testing"
 
-	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/transit"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit"
 )
 
 func TestMatchesSearch(t *testing.T) {

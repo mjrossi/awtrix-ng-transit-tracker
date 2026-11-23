@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/transit"
-	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/transit/transittest"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit/transittest"
 )
 
 // recorder captures failures instead of failing the real test.

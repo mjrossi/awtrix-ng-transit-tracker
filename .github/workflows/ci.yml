@@ -33,11 +33,11 @@ jobs:
       - run: just lint
       - run: just test
       - name: Validate example config
-        run: go run ./cmd/transit-tracker --config config.example.toml config validate
+        run: go run ./cmd/urbanist-timetable --config config.example.toml config validate
 
   docker:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - name: Build image
-        run: docker build -t transit-tracker:ci .
+        run: docker build -t urbanist-timetable:ci .

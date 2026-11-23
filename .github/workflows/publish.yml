@@ -65,7 +65,7 @@ jobs:
             type=ref,event=branch
             type=sha,enable=${{ github.ref_type == 'branch' }}
           labels: |
-            org.opencontainers.image.title=awtrix-ng-transit-tracker
+            org.opencontainers.image.title=urbanist-timetable
             org.opencontainers.image.description=Public transit departures on an AWTRIX NG clock
             org.opencontainers.image.licenses=Apache-2.0
           annotations: |

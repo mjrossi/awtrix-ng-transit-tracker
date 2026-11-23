@@ -15,9 +15,9 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/transit"
-	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/transit/providers/metrolisboa"
-	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/transit/transittest"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit/providers/metrolisboa"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit/transittest"
 )
 
 // recorded is just after testdata was fetched; see testdata/README.md.

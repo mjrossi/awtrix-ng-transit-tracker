@@ -106,12 +106,12 @@ formatters:
     - goimports
   settings:
     gofumpt:
-      module-path: github.com/mjrossi/awtrix-ng-transit-tracker
+      module-path: github.com/mjrossi/urbanist-timetable
       # Renamed from `extra-rules` in golangci-lint 2.13; same behaviour.
       extra:
         group-params: true
     goimports:
       local-prefixes:
-        - github.com/mjrossi/awtrix-ng-transit-tracker
+        - github.com/mjrossi/urbanist-timetable
   exclusions:
     generated: lax

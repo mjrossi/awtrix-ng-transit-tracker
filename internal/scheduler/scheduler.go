@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mjrossi/awtrix-ng-transit-tracker/internal/render"
-	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/awtrix"
-	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/transit"
+	"github.com/mjrossi/urbanist-timetable/internal/render"
+	"github.com/mjrossi/urbanist-timetable/pkg/awtrix"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit"
 )
 
 // maxBackoff caps how long a failing source waits between attempts.

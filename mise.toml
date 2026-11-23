@@ -9,5 +9,5 @@ go = "1.27.3"
 "aqua:golangci/golangci-lint" = "2.15.0"
 
 [env]
-TRANSIT_LOG_FORMAT = "json"
-TRANSIT_LOG_LEVEL = "info"
+TIMETABLE_LOG_FORMAT = "json"
+TIMETABLE_LOG_LEVEL = "info"

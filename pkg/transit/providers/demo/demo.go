@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/transit"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit"
 )
 
 // Name is the provider's name in configuration.

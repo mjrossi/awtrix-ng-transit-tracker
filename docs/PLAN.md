@@ -1,8 +1,11 @@
 # Plan
 
-A small Go service that polls public transit departure data and pushes it to
-an AWTRIX NG pixel clock (Ulanzi TC002, 52 × 16). It runs in Docker, for
-example on a NAS, and is meant to be usable by anyone, in any city.
+Urbanist Timetable is a small Go service that polls public transit
+departure data and shows it on the displays around a home. The first
+display is an AWTRIX NG pixel clock (Ulanzi TC002, 52 × 16). It runs in
+Docker, for example on a NAS, and is meant to be usable by anyone, in any
+city. It belongs to the Urbanist family, alongside *The Urbanist Lexicon*
+and *Urbanist Atlas*.
 
 ## Goals
 
@@ -12,6 +15,8 @@ example on a NAS, and is meant to be usable by anyone, in any city.
   changing the core.
 - Support many agencies without maintaining code for each one.
 - Fail safe: stale data disappears from the clock rather than lying.
+- Keep departures independent of any one display, so the clock is the
+  first output rather than the only one.
 
 ## Non-goals (v1)
 
@@ -20,6 +25,27 @@ example on a NAS, and is meant to be usable by anyone, in any city.
   may come later; GTFS-RT decoding and large static GTFS zips do not fit on
   the clock.
 - A web UI. Configuration is one TOML file.
+
+## Direction: beyond the clock
+
+The clock is one place departures show up. Two more audiences are in
+view: people who run the service themselves and want departures on other
+displays (Home Assistant dashboards, e-ink panels, other LED matrices),
+and developers who would rather call a hosted API than run anything. The
+core already allows for both: `pkg/transit` is importable, and everything
+past a provider sees only `transit.Departure`. In order:
+
+1. **Self-hosted HTTP output.** A `serve` command that answers with each
+   board's departures as JSON. This gives up "listens on no ports", so it
+   is opt-in and the clock-only setup stays portless. The JSON shape is
+   a public contract that the hosted API builds on, so it gets its own
+   design.
+2. **MQTT and a Home Assistant add-on**, as described under [Later](#later).
+3. **A hosted public API.** The same service run for everyone, reusing
+   Urbanist Atlas's plans for API keys and rate limits. Needs its own
+   design first: agencies license their feeds differently (Lisbon's are
+   CC BY 4.0; others restrict redistribution), and an always-on public
+   service has running costs.
 
 ## Data sources: agencies are data, adapters are code
 
@@ -180,7 +206,7 @@ Mirrors urbanist-atlas's Go conventions:
   decoded with the standard library, so no protobuf module. Later: an
   MQTT client (to be chosen).
 - `log/slog`, JSON in production and text in development.
-- Library-first: `pkg/` is importable, `cmd/transit-tracker` is a thin CLI.
+- Library-first: `pkg/` is importable, `cmd/urbanist-timetable` is a thin CLI.
 - mise for tooling, just for commands, golangci-lint v2 as the single lint
   and format gate.
 - Multi-stage Dockerfile, static `CGO_ENABLED=0` binary, non-root Alpine.
@@ -188,7 +214,7 @@ Mirrors urbanist-atlas's Go conventions:
 ### Layout
 
 ```
-cmd/transit-tracker/      CLI: run, preview, config validate, stops search, systems
+cmd/urbanist-timetable/      CLI: run, preview, config validate, stops search, systems
 pkg/transit/              Departure model, Provider interface, filtering, grouping
 pkg/transit/transittest/  provider contract suite
 pkg/transit/providers/    demo, carrismetropolitana, metrolisboa, gtfsrt
@@ -225,23 +251,14 @@ docs/                     this plan and design notes
    checks. The Transitland adapter is skipped: its free plan (10,000
    queries a month) cannot support an always-on board, and the generic
    provider plus the catalog cover what it was for.
-6. **Test on a real TC002.** Everything so far has been checked against a
-   fake clock. Push the demo and Lisbon boards to a real clock and check:
-   - the firmware accepts every payload (no `422`), for both layouts and
-     the empty state;
-   - text widths match `render.TextWidth`: about 13 characters across,
-     "Cais do Sodré" fits and "Santa Apolónia" scrolls;
-   - badge bar, filled bus-number badge (the unlit number over its fill
-     relies on later regions drawing on top), mode glyphs, minute spacing
-     and dimmed schedule-only times look right; `overflow = "clip"` cuts
-     cleanly;
-   - the small font's capitals sit on rows 1 to 5 of an 8 px box, as the
-     drawn marks assume: the live dot on row 0, the separator and strike
-     on row 3, the hairline on row 7. Check that the break in the hairline
-     above a live dot reads as intended, that times starting
-     with `1` line up with their dot and strike (the firmware places text
-     by its ink, not its cell), and that the dim colors
-     (separator dots, hairline) are visible at night brightness;
+6. **Test on a real TC002.** Done: the service runs on the maintainer's
+   TC002, from Docker on a NAS. Confirmed there:
+   - the firmware accepts the payloads, and both layouts and the empty
+     state render as designed: text widths, scrolling, badges, mode
+     glyphs, live dots and dimmed schedule-only times look right;
+   - the container on the NAS reaches the clock.
+
+   Still to check on the clock:
    - lifetime: stopping the service removes the app after three polls;
    - recovery: after a clock reboot the app returns within one poll;
    - active hours remove the app and stop requests; the app is removed
@@ -249,20 +266,15 @@ docs/                     this plan and design notes
      `/api/v1/apps/pushed/{name}`, and deleting an app that is already
      gone answers `404`, which the client treats as success;
    - a malformed color is rejected (colors are normalized before
-     pushing, so this only confirms the safeguard is needed);
-   - in Docker on the NAS, the clock is reachable (`.local` names often
-     do not resolve inside containers; use the IP address if not).
-
-   Fix what differs in the renderer and golden files, and record the
-   results here.
+     pushing, so this only confirms the safeguard is needed).
 7. **Publish images.** Done: `.github/workflows/publish.yml`, plus a
    `main` tag published from every push to `main`. A GitHub Actions
    workflow on version tags (`v1.2.3`) that:
    - builds multi-arch images (`linux/amd64`, `linux/arm64`) with
-     buildx and pushes them to `ghcr.io/mjrossi/awtrix-ng-transit-tracker`
+     buildx and pushes them to `ghcr.io/mjrossi/urbanist-timetable`
      tagged `1.2.3`, `1.2`, `1` and `latest`;
    - sets OCI labels (source, license, version) and injects the version
-     so `transit-tracker --version` reports it;
+     so `urbanist-timetable --version` reports it;
    - runs `just ci` first.
 
    Then switch the README's Docker and Compose examples to the published

@@ -1,4 +1,4 @@
-# transit-tracker configuration. Copy to config.toml and edit.
+# urbanist-timetable configuration. Copy to config.toml and edit.
 #
 # ${NAME} in the [clock] and [providers.*] settings is replaced with the
 # environment variable NAME, so secrets can stay out of the file. A missing
@@ -17,10 +17,10 @@ url = "http://awtrixng-a1b2c3.local"
 # Each [providers.NAME] block configures one data source. Boards refer to
 # it by NAME. NAME is also the provider type unless the block sets `type`,
 # so one type can serve several agencies. Find stop IDs with:
-#   transit-tracker stops search <NAME> <words...>
+#   urbanist-timetable stops search <NAME> <words...>
 #
-# Ready-made systems: list them with `transit-tracker systems`, and
-# `transit-tracker systems show <id>` prints the block to paste here.
+# Ready-made systems: list them with `urbanist-timetable systems`, and
+# `urbanist-timetable systems show <id>` prints the block to paste here.
 # [providers.nyc]
 # system = "nyc-subway"
 #
@@ -100,7 +100,7 @@ per_row = 3
 # empty_text = "No departures"
 
 # Shorter display names. About 13 characters fit across the display;
-# `transit-tracker preview` marks names that will scroll.
+# `urbanist-timetable preview` marks names that will scroll.
 [boards.labels]
 "Santa Apolónia" = "Sta Apolónia"
 

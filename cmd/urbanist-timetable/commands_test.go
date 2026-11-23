@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mjrossi/awtrix-ng-transit-tracker/internal/config"
-	"github.com/mjrossi/awtrix-ng-transit-tracker/internal/render"
-	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/transit"
+	"github.com/mjrossi/urbanist-timetable/internal/config"
+	"github.com/mjrossi/urbanist-timetable/internal/render"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit"
 )
 
 func TestClockHostDropsCredentials(t *testing.T) {
@@ -23,10 +23,10 @@ func TestVersionFlag(t *testing.T) {
 	cmd := newRootCommand()
 	var out bytes.Buffer
 	cmd.Writer = &out
-	if err := cmd.Run(t.Context(), []string{"transit-tracker", "--version"}); err != nil {
+	if err := cmd.Run(t.Context(), []string{"urbanist-timetable", "--version"}); err != nil {
 		t.Fatal(err)
 	}
-	if want := "transit-tracker version " + version + "\n"; out.String() != want {
+	if want := "urbanist-timetable version " + version + "\n"; out.String() != want {
 		t.Errorf("--version printed %q, want %q", out.String(), want)
 	}
 }
@@ -37,7 +37,7 @@ func TestConfigValidateBuildsClock(t *testing.T) {
 	if err := os.WriteFile(path, []byte(src), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	err := newRootCommand().Run(t.Context(), []string{"transit-tracker", "--config", path, "config", "validate"})
+	err := newRootCommand().Run(t.Context(), []string{"urbanist-timetable", "--config", path, "config", "validate"})
 	if err == nil || !strings.Contains(err.Error(), "clock url") {
 		t.Errorf("err = %v, want a clock url error", err)
 	}

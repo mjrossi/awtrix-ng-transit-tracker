@@ -21,7 +21,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/transit"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit"
 )
 
 // Name is the provider's name in configuration.
@@ -262,7 +262,7 @@ func (p *Provider) get(ctx context.Context, path string, v any) error {
 		return err
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "awtrix-ng-transit-tracker")
+	req.Header.Set("User-Agent", "urbanist-timetable")
 	resp, err := p.http.Do(req)
 	if err != nil {
 		return fmt.Errorf("%s: %w", Name, err)

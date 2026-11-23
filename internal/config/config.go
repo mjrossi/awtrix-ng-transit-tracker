@@ -14,10 +14,10 @@ import (
 
 	"github.com/pelletier/go-toml/v2"
 
-	"github.com/mjrossi/awtrix-ng-transit-tracker/internal/render"
-	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/awtrix"
-	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/transit"
-	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/transit/catalog"
+	"github.com/mjrossi/urbanist-timetable/internal/render"
+	"github.com/mjrossi/urbanist-timetable/pkg/awtrix"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit/catalog"
 )
 
 // Defaults applied to boards that leave a field out.
@@ -330,11 +330,11 @@ func ResolveProvider(name string, raw map[string]any) (typ string, opts Provider
 		id, _ := sysID.(string)
 		sys, ok := catalog.Get(id)
 		if !ok {
-			return "", nil, fmt.Errorf("unknown system %q; run `transit-tracker systems` to list them", id)
+			return "", nil, fmt.Errorf("unknown system %q; run `urbanist-timetable systems` to list them", id)
 		}
 		merged := sys.Merge(user)
 		if missing := sys.Missing(merged); len(missing) > 0 {
-			return "", nil, fmt.Errorf("system %q needs %s; run `transit-tracker systems show %s`", id, strings.Join(missing, " and "), id)
+			return "", nil, fmt.Errorf("system %q needs %s; run `urbanist-timetable systems show %s`", id, strings.Join(missing, " and "), id)
 		}
 		return sys.Provider, merged, nil
 	case hasType:

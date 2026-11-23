@@ -5,12 +5,12 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/mjrossi/awtrix-ng-transit-tracker/internal/config"
-	"github.com/mjrossi/awtrix-ng-transit-tracker/internal/render"
-	"github.com/mjrossi/awtrix-ng-transit-tracker/internal/scheduler"
-	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/awtrix"
-	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/transit"
-	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/transit/providers"
+	"github.com/mjrossi/urbanist-timetable/internal/config"
+	"github.com/mjrossi/urbanist-timetable/internal/render"
+	"github.com/mjrossi/urbanist-timetable/internal/scheduler"
+	"github.com/mjrossi/urbanist-timetable/pkg/awtrix"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit/providers"
 )
 
 // buildProviders constructs each configured provider once, so boards that

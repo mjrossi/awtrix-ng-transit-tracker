@@ -17,9 +17,9 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/transit"
-	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/transit/providers/gtfsrt"
-	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/transit/transittest"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit/providers/gtfsrt"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit/transittest"
 )
 
 // Feed header timestamps of the recorded realtime files.

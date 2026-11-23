@@ -1,4 +1,4 @@
-# awtrix-ng-transit-tracker — project conventions
+# Urbanist Timetable — project conventions
 
 This file is the contract for how code in this repo is written. Read it
 before making non-trivial changes. The design and roadmap are in
@@ -6,9 +6,14 @@ before making non-trivial changes. The design and roadmap are in
 
 ## What this is
 
-A Go service that polls public transit departures and pushes them to an
-AWTRIX NG clock (Ulanzi TC002, 52 × 16). It runs as one Docker container
-with a mounted `config.toml`; it listens on no ports.
+A Go service that polls public transit departures and shows them on
+displays. The first, and so far only, display is an AWTRIX NG clock
+(Ulanzi TC002, 52 × 16). It runs as one Docker container with a mounted
+`config.toml`; it listens on no ports. Other outputs (HTTP JSON, MQTT, a
+hosted API) are planned in `docs/PLAN.md`, "Direction".
+
+Part of the Urbanist family with *The Urbanist Lexicon* (mjrossi.com) and
+*Urbanist Atlas*.
 
 ## Architecture rules
 
@@ -31,7 +36,7 @@ with a mounted `config.toml`; it listens on no ports.
 
 ## Layout
 
-- `cmd/transit-tracker/` — thin urfave/cli wrapper: `run`, `preview`,
+- `cmd/urbanist-timetable/` — thin urfave/cli wrapper: `run`, `preview`,
   `config validate`, `stops search`, `systems`. No business logic.
 - `pkg/transit/` — the importable core: model, `Provider`, `Filter`,
   `Group`, `Registry`.
@@ -69,13 +74,13 @@ Mirrors urbanist-atlas.
 - **Logging:** `log/slog` with an explicit `*slog.Logger`; JSON in
   production, text in development.
 - **Errors:** stdlib `errors` and `fmt.Errorf("...: %w", err)`.
-- **Config:** a TOML file for boards and providers; flags with `TRANSIT_*`
+- **Config:** a TOML file for boards and providers; flags with `TIMETABLE_*`
   env-var fallbacks for process settings. `${NAME}` in clock and provider
   settings reads secrets from the environment. No viper.
 - **Style:** golangci-lint v2 (`.golangci.yml`) is the single lint and
   format gate. US spelling (misspell enforces it).
 - **Tests:** table-driven, `go-cmp` for diffs, fakes over mocks.
-- **Module path:** `github.com/mjrossi/awtrix-ng-transit-tracker`.
+- **Module path:** `github.com/mjrossi/urbanist-timetable`.
 
 ## Comments
 

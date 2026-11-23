@@ -56,11 +56,11 @@ Run `just ci`.
 
 ## Releasing
 
-1. Set `version` in `cmd/transit-tracker/main.go` to the new version, for
+1. Set `version` in `cmd/urbanist-timetable/main.go` to the new version, for
    builds outside the image, and merge it to `main`.
 2. Tag and push: `git tag v1.2.3 && git push origin v1.2.3`. The `publish`
    workflow runs `just ci`, then pushes the multi-arch image.
 3. Publish the release notes: `gh release create v1.2.3 --generate-notes`.
 4. On an arm64 machine, check that
-   `docker run --rm ghcr.io/mjrossi/awtrix-ng-transit-tracker:1.2.3 --version`
+   `docker run --rm ghcr.io/mjrossi/urbanist-timetable:1.2.3 --version`
    prints `1.2.3`.

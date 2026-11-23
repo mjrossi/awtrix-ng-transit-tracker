@@ -1,8 +1,13 @@
-# awtrix-ng-transit-tracker
+# Urbanist Timetable
 
-Shows upcoming public transit departures on an
-[AWTRIX NG](https://github.com/Blueforcer/awtrix-ng) pixel clock (Ulanzi
-TC002).
+> Your next departure, wherever you look.
+
+Live public transit departures for the displays around your home,
+starting with [AWTRIX NG](https://github.com/Blueforcer/awtrix-ng) pixel
+clocks (Ulanzi TC002).
+
+A companion to [*The Urbanist Lexicon*](https://mjrossi.com/blog) and
+[*Urbanist Atlas*](https://urbanistatlas.com).
 
 ```
 Sta Apolónia
@@ -16,17 +21,24 @@ schedule-only times are dimmed. Add a board per direction and the clock
 rotates through them. A `rows` layout fits two lines or directions on one
 screen instead.
 
-> **Status:** early, and not yet tried on a real clock. Supported today:
+> **Status:** early, and running on a real TC002. Supported today:
 > any agency publishing GTFS-Realtime, with six
 > [ready-made systems](#systems) checked against their live feeds, plus
 > dedicated providers for Metro de Lisboa and Carris Metropolitana. Only
-> the 52 × 16 TC002 is supported. See [`docs/PLAN.md`](./docs/PLAN.md).
+> the 52 × 16 TC002 is supported; other displays are on the roadmap in
+> [`docs/PLAN.md`](./docs/PLAN.md).
+>
+> **Renamed:** this project was `awtrix-ng-transit-tracker` until v0.2.0.
+> The image is now `ghcr.io/mjrossi/urbanist-timetable`, the binary
+> `urbanist-timetable`, and the environment variables `TIMETABLE_*`
+> (formerly `TRANSIT_*`). Images published before the rename are at
+> `ghcr.io/mjrossi/awtrix-ng-transit-tracker`.
 
 ## Getting started
 
 You need an AWTRIX NG clock on your network and Docker on a machine that
 stays on, such as a NAS. Images for `linux/amd64` and `linux/arm64` are
-published to `ghcr.io/mjrossi/awtrix-ng-transit-tracker`:
+published to `ghcr.io/mjrossi/urbanist-timetable`:
 
 | Tag | Contents |
 |---|---|
@@ -34,7 +46,7 @@ published to `ghcr.io/mjrossi/awtrix-ng-transit-tracker`:
 | `main` | The latest commit on `main`, for fixes not yet released |
 
 ```bash
-docker pull ghcr.io/mjrossi/awtrix-ng-transit-tracker:latest
+docker pull ghcr.io/mjrossi/urbanist-timetable:latest
 ```
 
 ### 1. Create the config
@@ -53,7 +65,7 @@ The remaining commands run the CLI in the container. A shell alias keeps
 them short:
 
 ```bash
-alias transit-tracker='docker run --rm -v "$PWD/config.toml:/config/config.toml:ro" ghcr.io/mjrossi/awtrix-ng-transit-tracker:latest'
+alias urbanist-timetable='docker run --rm -v "$PWD/config.toml:/config/config.toml:ro" ghcr.io/mjrossi/urbanist-timetable:latest'
 ```
 
 Create `config.toml` before using the alias. If the file is missing,
@@ -62,8 +74,8 @@ Docker creates an empty directory with that name in its place.
 ### 2. Pick a data source
 
 ```bash
-transit-tracker systems                    # ready-made systems
-transit-tracker systems show nyc-subway    # prints a block to paste into config.toml
+urbanist-timetable systems                    # ready-made systems
+urbanist-timetable systems show nyc-subway    # prints a block to paste into config.toml
 ```
 
 If your agency is not listed, see [Providers](#providers): any agency
@@ -72,7 +84,7 @@ with GTFS-Realtime works through the `gtfsrt` provider.
 ### 3. Find your stop
 
 ```bash
-transit-tracker stops search nyc-subway times sq
+urbanist-timetable stops search nyc-subway times sq
 ```
 
 The first argument is a `[providers.NAME]` block in `config.toml`, a
@@ -102,9 +114,9 @@ Delete the demo boards and providers you do not use.
 ### 5. Check it
 
 ```bash
-transit-tracker config validate     # checks the file and builds its providers and clock client
-transit-tracker preview             # fetches once and prints what each board would show
-transit-tracker preview --push      # ...and pushes it to the clock once
+urbanist-timetable config validate     # checks the file and builds its providers and clock client
+urbanist-timetable preview             # fetches once and prints what each board would show
+urbanist-timetable preview --push      # ...and pushes it to the clock once
 ```
 
 `preview` marks names too wide for the display; give them shorter names
@@ -113,18 +125,18 @@ under `[boards.labels]`.
 ### 6. Run it
 
 ```bash
-docker run -d --name transit-tracker --restart unless-stopped \
+docker run -d --name urbanist-timetable --restart unless-stopped \
   -v "$PWD/config.toml:/config/config.toml:ro" \
-  ghcr.io/mjrossi/awtrix-ng-transit-tracker:latest
-docker logs -f transit-tracker
+  ghcr.io/mjrossi/urbanist-timetable:latest
+docker logs -f urbanist-timetable
 ```
 
 Or with Docker Compose:
 
 ```yaml
 services:
-  transit-tracker:
-    image: ghcr.io/mjrossi/awtrix-ng-transit-tracker:latest
+  urbanist-timetable:
+    image: ghcr.io/mjrossi/urbanist-timetable:latest
     restart: unless-stopped
     volumes:
       - ./config.toml:/config/config.toml:ro
@@ -135,8 +147,8 @@ services:
 The configuration is read at startup, so restart the container after
 editing it. To update, run `docker compose pull && docker compose up -d`.
 To build the image yourself instead, clone the repository and run
-`docker build -t awtrix-ng-transit-tracker .`. The container only makes outgoing requests, to transit APIs
-and to the clock, so it needs no published ports.
+`docker build -t urbanist-timetable .`. The container only makes
+outgoing requests, to transit APIs and to the clock, so it needs no published ports.
 
 ### Secrets
 
@@ -148,19 +160,19 @@ referenced but not set is a configuration error.
 ## Commands
 
 ```bash
-transit-tracker run                          # poll and push until stopped (the image's default)
-transit-tracker preview [--board NAME]       # fetch once, print rows and payload
-transit-tracker preview --push               # ...and push it to the clock once
-transit-tracker preview --json               # print only the payload
-transit-tracker config validate              # check config.toml
-transit-tracker stops search PROVIDER WORDS  # find stop IDs
-transit-tracker systems [show ID]            # ready-made systems
+urbanist-timetable run                          # poll and push until stopped (the image's default)
+urbanist-timetable preview [--board NAME]       # fetch once, print rows and payload
+urbanist-timetable preview --push               # ...and push it to the clock once
+urbanist-timetable preview --json               # print only the payload
+urbanist-timetable config validate              # check config.toml
+urbanist-timetable stops search PROVIDER WORDS  # find stop IDs
+urbanist-timetable systems [show ID]            # ready-made systems
 ```
 
-Global flags: `--config` (`TRANSIT_CONFIG`, default `config.toml`; in the
+Global flags: `--config` (`TIMETABLE_CONFIG`, default `config.toml`; in the
 image, `/config/config.toml`), `--log-format json|text`
-(`TRANSIT_LOG_FORMAT`, default `json`), `--log-level
-debug|info|warn|error` (`TRANSIT_LOG_LEVEL`), and `--version`, which prints
+(`TIMETABLE_LOG_FORMAT`, default `json`), `--log-level
+debug|info|warn|error` (`TIMETABLE_LOG_LEVEL`), and `--version`, which prints
 the release version.
 
 ## Configuration
@@ -243,7 +255,7 @@ just ci          # lint, test, validate the example config
 | Command | Does |
 |---|---|
 | `just run [config]` / `just preview [config]` | `run` or `preview` against `config.toml` with text logs |
-| `just build` | Builds `bin/transit-tracker` |
+| `just build` | Builds `bin/urbanist-timetable` |
 | `just test` / `just lint` / `just fmt` | Tests with the race detector; lint; format |
 | `just golden` | Rewrites the renderer's golden files after an intended layout change |
 | `just catalog-check` | Checks every catalog system against its live feeds |

@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mjrossi/awtrix-ng-transit-tracker/internal/config"
-	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/transit"
-	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/transit/catalog"
-	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/transit/providers"
+	"github.com/mjrossi/urbanist-timetable/internal/config"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit/catalog"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit/providers"
 )
 
 var live = flag.Bool("live", false, "check every system against its live feeds (just catalog-check)")

@@ -11,7 +11,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/awtrix"
+	"github.com/mjrossi/urbanist-timetable/pkg/awtrix"
 )
 
 type request struct {

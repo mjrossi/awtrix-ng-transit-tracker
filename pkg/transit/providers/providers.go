@@ -2,11 +2,11 @@
 package providers
 
 import (
-	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/transit"
-	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/transit/providers/carrismetropolitana"
-	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/transit/providers/demo"
-	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/transit/providers/gtfsrt"
-	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/transit/providers/metrolisboa"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit/providers/carrismetropolitana"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit/providers/demo"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit/providers/gtfsrt"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit/providers/metrolisboa"
 )
 
 // Registry returns a registry with every built-in provider.
