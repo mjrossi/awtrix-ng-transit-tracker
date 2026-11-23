@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/transit"
-	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/transit/providers/demo"
-	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/transit/transittest"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit/providers/demo"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit/transittest"
 )
 
 var now = time.Date(2026, 11, 22, 8, 0, 30, 0, time.UTC)

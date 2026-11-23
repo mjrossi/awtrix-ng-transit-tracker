@@ -11,18 +11,18 @@ RUN go mod download
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
 COPY pkg/ ./pkg/
-# Unset, the binary reports the version in cmd/transit-tracker/main.go.
+# Unset, the binary reports the version in cmd/urbanist-timetable/main.go.
 ARG VERSION
 RUN CGO_ENABLED=0 GOOS=linux go build \
     -trimpath -ldflags="-s -w${VERSION:+ -X main.version=$VERSION}" \
-    -o /out/transit-tracker ./cmd/transit-tracker
+    -o /out/urbanist-timetable ./cmd/urbanist-timetable
 
 FROM alpine:3.23
 RUN apk add --no-cache ca-certificates && \
     addgroup -S app && adduser -S app -G app
-COPY --from=builder /out/transit-tracker /usr/local/bin/transit-tracker
+COPY --from=builder /out/urbanist-timetable /usr/local/bin/urbanist-timetable
 USER app
-ENV TRANSIT_CONFIG=/config/config.toml
+ENV TIMETABLE_CONFIG=/config/config.toml
 VOLUME ["/config"]
-ENTRYPOINT ["transit-tracker"]
+ENTRYPOINT ["urbanist-timetable"]
 CMD ["run"]

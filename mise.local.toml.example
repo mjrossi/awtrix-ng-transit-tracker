@@ -9,7 +9,7 @@
 [env]
 # Metro de Lisboa API: consumer key and secret of an application subscribed
 # to EstadoServicoML at https://api.metrolisboa.pt/store/. These names are
-# the ones `transit-tracker systems show lisbon-metro` prints and
+# the ones `urbanist-timetable systems show lisbon-metro` prints and
 # `just catalog-check` reads.
 # LISBON_METRO_CLIENT_ID = ""
 # LISBON_METRO_CLIENT_SECRET = ""

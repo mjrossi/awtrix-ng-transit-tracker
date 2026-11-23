@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mjrossi/awtrix-ng-transit-tracker/internal/scheduler"
-	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/awtrix"
-	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/transit"
+	"github.com/mjrossi/urbanist-timetable/internal/scheduler"
+	"github.com/mjrossi/urbanist-timetable/pkg/awtrix"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit"
 )
 
 var start = time.Date(2026, 11, 22, 8, 0, 0, 0, time.UTC)

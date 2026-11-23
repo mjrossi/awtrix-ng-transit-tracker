@@ -17,13 +17,13 @@ import (
 
 	"github.com/urfave/cli/v3"
 
-	"github.com/mjrossi/awtrix-ng-transit-tracker/internal/config"
-	"github.com/mjrossi/awtrix-ng-transit-tracker/internal/render"
-	"github.com/mjrossi/awtrix-ng-transit-tracker/internal/scheduler"
-	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/awtrix"
-	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/transit"
-	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/transit/catalog"
-	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/transit/providers"
+	"github.com/mjrossi/urbanist-timetable/internal/config"
+	"github.com/mjrossi/urbanist-timetable/internal/render"
+	"github.com/mjrossi/urbanist-timetable/internal/scheduler"
+	"github.com/mjrossi/urbanist-timetable/pkg/awtrix"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit/catalog"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit/providers"
 )
 
 func runCommand() *cli.Command {
@@ -154,7 +154,7 @@ func systemsCommand() *cli.Command {
 				}
 				fmt.Printf("%-28s %-22s %-24s %s%s\n", s.ID, s.Name, s.City, strings.Join(s.Modes, ", "), needs)
 			}
-			fmt.Println("\nShow how to configure one: transit-tracker systems show <id>")
+			fmt.Println("\nShow how to configure one: urbanist-timetable systems show <id>")
 			return nil
 		},
 		Commands: []*cli.Command{{
@@ -165,7 +165,7 @@ func systemsCommand() *cli.Command {
 				id := c.Args().First()
 				s, ok := catalog.Get(id)
 				if !ok {
-					return fmt.Errorf("unknown system %q; run `transit-tracker systems`", id)
+					return fmt.Errorf("unknown system %q; run `urbanist-timetable systems`", id)
 				}
 				fmt.Printf("# %s, %s (%s)\n", s.Name, s.City, s.Country)
 				fmt.Printf("# Status: %s, last verified %s. Data: %s.\n", s.Status, s.Verified, s.DataLicense)
@@ -178,7 +178,7 @@ func systemsCommand() *cli.Command {
 					env := strings.ToUpper(strings.ReplaceAll(s.ID+"_"+k, "-", "_"))
 					fmt.Printf("%s = \"${%s}\"\n", k, env)
 				}
-				fmt.Printf("\n# Find stop IDs: transit-tracker stops search %s <words...>\n", s.ID)
+				fmt.Printf("\n# Find stop IDs: urbanist-timetable stops search %s <words...>\n", s.ID)
 				fmt.Printf("# Example stop: %s\n", s.SampleStop)
 				return nil
 			},
@@ -196,7 +196,7 @@ func stopsCommand() *cli.Command {
 			ArgsUsage: "<provider> <words...>",
 			Action: func(ctx context.Context, c *cli.Command) error {
 				if c.Args().Len() < 2 {
-					return errors.New("usage: transit-tracker stops search <provider> <words...>")
+					return errors.New("usage: urbanist-timetable stops search <provider> <words...>")
 				}
 				name := c.Args().First()
 				search := strings.Join(c.Args().Tail(), " ")

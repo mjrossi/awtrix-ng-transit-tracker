@@ -24,7 +24,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/transit"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit"
 )
 
 // Name is the provider type in configuration.
@@ -473,7 +473,7 @@ func (p *Provider) fetchTo(ctx context.Context, u string, w io.Writer, limit int
 	if err != nil {
 		return 0, fmt.Errorf("%s: GET %s: invalid request", Name, shown)
 	}
-	req.Header.Set("User-Agent", "awtrix-ng-transit-tracker")
+	req.Header.Set("User-Agent", "urbanist-timetable")
 	for k, v := range p.cfg.Headers {
 		req.Header.Set(k, v)
 	}

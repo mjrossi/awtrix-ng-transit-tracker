@@ -9,7 +9,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/transit"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit"
 )
 
 // Case is one query the provider under test can answer.

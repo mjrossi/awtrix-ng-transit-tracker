@@ -3,7 +3,7 @@
 
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
-image := "awtrix-ng-transit-tracker"
+image := "urbanist-timetable"
 
 [private]
 default:
@@ -12,17 +12,17 @@ default:
 # run against ./config.toml with text logs
 [group('dev')]
 run config="config.toml":
-    go run ./cmd/transit-tracker --config {{config}} --log-format=text run
+    go run ./cmd/urbanist-timetable --config {{config}} --log-format=text run
 
 # fetch once and print each board without pushing
 [group('dev')]
 preview config="config.toml":
-    go run ./cmd/transit-tracker --config {{config}} --log-format=text preview
+    go run ./cmd/urbanist-timetable --config {{config}} --log-format=text preview
 
-# build the binary to bin/transit-tracker
+# build the binary to bin/urbanist-timetable
 [group('dev')]
 build:
-    mkdir -p bin && go build -o bin/transit-tracker ./cmd/transit-tracker
+    mkdir -p bin && go build -o bin/urbanist-timetable ./cmd/urbanist-timetable
 
 # go test with the race detector, no cache (matches CI)
 [group('verify')]
@@ -52,7 +52,7 @@ catalog-check:
 # everything CI runs
 [group('verify')]
 ci: lint test
-    go run ./cmd/transit-tracker --config config.example.toml config validate
+    go run ./cmd/urbanist-timetable --config config.example.toml config validate
 
 # build the Docker image
 [group('docker')]

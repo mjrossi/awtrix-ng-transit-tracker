@@ -6,7 +6,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/transit"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit"
 )
 
 var now = time.Date(2026, 11, 22, 8, 0, 0, 0, time.UTC)

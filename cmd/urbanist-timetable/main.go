@@ -1,11 +1,11 @@
-// Command transit-tracker shows upcoming public transit departures on an
+// Command urbanist-timetable shows upcoming public transit departures on an
 // AWTRIX NG clock.
 //
-//	transit-tracker run
-//	transit-tracker preview --board metro
-//	transit-tracker config validate
-//	transit-tracker stops search carrismetropolitana cais sodre
-//	transit-tracker systems show nyc-subway
+//	urbanist-timetable run
+//	urbanist-timetable preview --board metro
+//	urbanist-timetable config validate
+//	urbanist-timetable stops search carrismetropolitana cais sodre
+//	urbanist-timetable systems show nyc-subway
 package main
 
 import (
@@ -27,7 +27,7 @@ import (
 
 // version is the release version reported by --version. The Dockerfile's
 // VERSION build argument overrides it.
-var version = "0.1.1"
+var version = "0.2.0"
 
 func main() {
 	// os.Exit skips defers, so run's cleanup happens inside run.
@@ -50,7 +50,7 @@ func run() int {
 
 func newRootCommand() *cli.Command {
 	return &cli.Command{
-		Name:    "transit-tracker",
+		Name:    "urbanist-timetable",
 		Usage:   "show public transit departures on an AWTRIX NG clock",
 		Version: version,
 		Flags: []cli.Flag{
@@ -59,19 +59,19 @@ func newRootCommand() *cli.Command {
 				Aliases: []string{"c"},
 				Usage:   "path to the TOML configuration file",
 				Value:   "config.toml",
-				Sources: cli.EnvVars("TRANSIT_CONFIG"),
+				Sources: cli.EnvVars("TIMETABLE_CONFIG"),
 			},
 			&cli.StringFlag{
 				Name:    "log-format",
 				Usage:   "json or text",
 				Value:   "json",
-				Sources: cli.EnvVars("TRANSIT_LOG_FORMAT"),
+				Sources: cli.EnvVars("TIMETABLE_LOG_FORMAT"),
 			},
 			&cli.StringFlag{
 				Name:    "log-level",
 				Usage:   "debug, info, warn or error",
 				Value:   "info",
-				Sources: cli.EnvVars("TRANSIT_LOG_LEVEL"),
+				Sources: cli.EnvVars("TIMETABLE_LOG_LEVEL"),
 			},
 		},
 		Commands: []*cli.Command{

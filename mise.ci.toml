@@ -1,3 +1,3 @@
 # CI overrides; the workflow sets MISE_ENV=ci.
 [env]
-TRANSIT_LOG_FORMAT = "text"
+TIMETABLE_LOG_FORMAT = "text"

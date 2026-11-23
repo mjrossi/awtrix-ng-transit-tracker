@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/awtrix"
-	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/transit"
+	"github.com/mjrossi/urbanist-timetable/pkg/awtrix"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit"
 )
 
 // Layouts.

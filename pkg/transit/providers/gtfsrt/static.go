@@ -8,7 +8,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/mjrossi/awtrix-ng-transit-tracker/pkg/transit"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit"
 )
 
 // static is the part of a GTFS schedule feed needed to describe realtime
