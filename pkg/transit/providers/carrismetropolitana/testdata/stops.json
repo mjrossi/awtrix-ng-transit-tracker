@@ -1,0 +1,68 @@
+[
+ {
+  "id": "010001",
+  "long_name": "Rua Carlos Manuel Rodrigues Francisco (Escola)",
+  "lat": 38.754244,
+  "lon": -8.959557,
+  "locality_id": "022857",
+  "municipality_id": "1502",
+  "line_ids": [
+   "4001",
+   "4002"
+  ]
+ },
+ {
+  "id": "060001",
+  "long_name": "Gare do Oriente 25-C",
+  "lat": 38.76821,
+  "lon": -9.100446,
+  "locality_id": "022406",
+  "municipality_id": "1106",
+  "line_ids": [
+   "4701",
+   "4741"
+  ]
+ },
+ {
+  "id": "060419",
+  "long_name": "Cais do Sodré (Terminal)",
+  "lat": 38.705839,
+  "lon": -9.143122,
+  "locality_id": "022406",
+  "municipality_id": "1106",
+  "line_ids": [
+   "3708"
+  ]
+ },
+ {
+  "id": "060451",
+  "long_name": "Cais do Sodré (Metro)",
+  "lat": 38.70624,
+  "lon": -9.145047,
+  "locality_id": "022406",
+  "municipality_id": "1106",
+  "line_ids": [
+   "3708"
+  ]
+ },
+ {
+  "id": "060452",
+  "long_name": "Cais do Sodré (Metro)",
+  "lat": 38.70635,
+  "lon": -9.145328,
+  "locality_id": "022406",
+  "municipality_id": "1106",
+  "line_ids": [
+   "3708"
+  ]
+ },
+ {
+  "id": "062000",
+  "long_name": "Cais do Sodré",
+  "lat": 38.70533,
+  "lon": -9.14394,
+  "locality_id": "022406",
+  "municipality_id": "1106",
+  "line_ids": []
+ }
+]

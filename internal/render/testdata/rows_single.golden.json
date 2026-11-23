@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "regions": [
+    {
+      "id": "r0-badge",
+      "box": [
+        0,
+        4,
+        11,
+        8
+      ],
+      "text": "735",
+      "font": "small",
+      "color": "#FFCC00",
+      "align": "start",
+      "scroll": {
+        "mode": "static"
+      }
+    },
+    {
+      "id": "r0-sign",
+      "box": [
+        13,
+        4,
+        33,
+        8
+      ],
+      "text": "Cacilhas",
+      "font": "small",
+      "color": "#FFFFFF",
+      "align": "start",
+      "scroll": {
+        "mode": "wrap"
+      }
+    },
+    {
+      "id": "r0-min",
+      "box": [
+        48,
+        4,
+        4,
+        8
+      ],
+      "text": [
+        {
+          "text": "0",
+          "color": "#FFFFFF"
+        }
+      ],
+      "font": "small",
+      "align": "end",
+      "scroll": {
+        "mode": "static"
+      }
+    }
+  ]
+}

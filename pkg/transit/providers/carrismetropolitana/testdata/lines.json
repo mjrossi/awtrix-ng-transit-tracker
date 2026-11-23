@@ -1,0 +1,23 @@
+[
+ {
+  "id": "3708",
+  "short_name": "3708",
+  "long_name": "Costa da Caparica (Terminal) - Lisboa (C. Sodré)",
+  "color": "#C61D23",
+  "text_color": "#FFFFFF"
+ },
+ {
+  "id": "4701",
+  "short_name": "4701",
+  "long_name": "Lisboa (Oriente) - Vale da Amoreira",
+  "color": "#FDB71A",
+  "text_color": "#FFFFFF"
+ },
+ {
+  "id": "4741",
+  "short_name": "4741",
+  "long_name": "Lisboa (Oriente) - Vale da Amoreira | Expresso",
+  "color": "#FDB71A",
+  "text_color": "#FFFFFF"
+ }
+]

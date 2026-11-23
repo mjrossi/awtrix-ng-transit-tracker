@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "regions": [
+    {
+      "id": "empty",
+      "box": [
+        0,
+        0,
+        52,
+        16
+      ],
+      "text": "No departures",
+      "font": "small",
+      "color": "#7F7F7F",
+      "scroll": {
+        "mode": "wrap"
+      }
+    }
+  ]
+}

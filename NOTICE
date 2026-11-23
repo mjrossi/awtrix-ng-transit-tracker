@@ -1,0 +1,39 @@
+awtrix-ng-transit-tracker
+Copyright 2026 Matthew J Rossi
+
+This product is licensed under the Apache License, Version 2.0 (see
+LICENSE).
+
+This repository includes recorded transit data used as test fixtures:
+
+- pkg/transit/providers/carrismetropolitana/testdata/
+  Data © Carris Metropolitana, licensed under the Creative Commons
+  Attribution 4.0 International License (CC BY 4.0):
+  https://creativecommons.org/licenses/by/4.0/
+  Source: https://api.carrismetropolitana.pt/v2
+  The lines and stops files are trimmed from the original responses.
+
+- pkg/transit/providers/metrolisboa/testdata/
+  Data © Metropolitano de Lisboa, E.P.E., licensed under the Creative
+  Commons Attribution 4.0 International License (CC BY 4.0):
+  https://creativecommons.org/licenses/by/4.0/
+  Source: https://api.metrolisboa.pt:8243/estadoServicoML/1.0.1
+
+- pkg/transit/providers/gtfsrt/testdata/mta/
+  Data obtained from the MTA (Metropolitan Transportation Authority) GTFS
+  and GTFS-Realtime data feeds and redistributed here under the MTA data
+  feed terms and conditions:
+  https://www.mta.info/developers/terms-and-conditions
+  The files are unmodified, or unmodified subsets of rows. This project is
+  not licensed by the MTA, and the data is recorded, not real time; no
+  claim is made that it is accurate, complete or timely.
+
+- pkg/transit/providers/gtfsrt/testdata/bart/
+  BART Data, reproduced and redistributed under the San Francisco Bay Area
+  Rapid Transit District (BART) Developer License Agreement:
+  https://www.bart.gov/schedules/developers/developer-license-agreement
+  BART retains title to the data, which is provided "as is". This project
+  is not affiliated with or endorsed by BART.
+
+Transit data fetched by the software at runtime remains subject to each
+provider's own license and terms.

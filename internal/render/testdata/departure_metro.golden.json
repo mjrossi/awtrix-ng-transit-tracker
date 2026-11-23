@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "regions": [
+    {
+      "id": "sign",
+      "box": [
+        0,
+        0,
+        52,
+        8
+      ],
+      "text": "Reboleira",
+      "font": "small",
+      "color": "#FFFFFF",
+      "align": "start",
+      "scroll": {
+        "mode": "wrap"
+      }
+    },
+    {
+      "id": "badge",
+      "box": [
+        0,
+        8,
+        2,
+        8
+      ],
+      "draw": [
+        [
+          "rectFill",
+          0,
+          1,
+          2,
+          6,
+          "#0072CE"
+        ]
+      ]
+    },
+    {
+      "id": "min",
+      "box": [
+        4,
+        8,
+        48,
+        8
+      ],
+      "text": [
+        {
+          "text": "3",
+          "color": "#FFFFFF"
+        },
+        {
+          "text": "  "
+        },
+        {
+          "text": "8",
+          "color": "#7F7F7F"
+        },
+        {
+          "text": "  "
+        },
+        {
+          "text": "14",
+          "color": "#7F7F7F"
+        }
+      ],
+      "font": "small",
+      "align": "start",
+      "scroll": {
+        "mode": "static"
+      }
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+name = "Carris Metropolitana"
+city = "Lisbon"
+country = "PT"
+modes = ["bus"]
+provider = "carrismetropolitana"
+status = "maintained"
+verified = "2026-11-23"
+sample_stop = "060001"
+info_url = "https://github.com/carrismetropolitana/api"
+data_license = "CC BY 4.0"
+notes = """
+Regional buses in 15 of the 18 municipalities of the Lisbon metropolitan
+area. Stop IDs are six digits; each side of a road usually has its own."""
+
+[options]

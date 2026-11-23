@@ -1,0 +1,13 @@
+# Pinned tool versions. Install mise (https://mise.jdx.dev), then run
+# `mise install` at the repo root.
+#
+# Overlays: mise.ci.toml (MISE_ENV=ci) and an uncommitted mise.local.toml.
+
+[tools]
+go = "1.27.3"
+"aqua:casey/just" = "1.51.0"
+"aqua:golangci/golangci-lint" = "2.15.0"
+
+[env]
+TRANSIT_LOG_FORMAT = "json"
+TRANSIT_LOG_LEVEL = "info"

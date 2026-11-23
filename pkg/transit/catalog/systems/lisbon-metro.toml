@@ -1,0 +1,17 @@
+name = "Metro de Lisboa"
+city = "Lisbon"
+country = "PT"
+modes = ["metro"]
+provider = "metrolisboa"
+status = "maintained"
+verified = "2026-11-23"
+sample_stop = "BC"
+info_url = "https://api.metrolisboa.pt/store/"
+data_license = "CC BY 4.0"
+required_options = ["client_id", "client_secret"]
+notes = """
+Needs a free OAuth client: register at the API Store, subscribe an
+application to EstadoServicoML, and generate production keys with the
+client-credentials grant. Station IDs are two letters, such as "BC"."""
+
+[options]

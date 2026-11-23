@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "regions": [
+    {
+      "id": "sign",
+      "box": [
+        0,
+        0,
+        52,
+        8
+      ],
+      "text": "Hosp. Sta Maria",
+      "font": "small",
+      "color": "#FFFFFF",
+      "align": "start",
+      "scroll": {
+        "mode": "static"
+      }
+    },
+    {
+      "id": "badge",
+      "box": [
+        0,
+        8,
+        11,
+        8
+      ],
+      "text": "735",
+      "font": "small",
+      "color": "#FFCC00",
+      "align": "start",
+      "scroll": {
+        "mode": "static"
+      }
+    },
+    {
+      "id": "min",
+      "box": [
+        13,
+        8,
+        39,
+        8
+      ],
+      "text": [
+        {
+          "text": "12",
+          "color": "#FFFFFF"
+        },
+        {
+          "text": "  "
+        },
+        {
+          "text": "27",
+          "color": "#7F7F7F"
+        }
+      ],
+      "font": "small",
+      "align": "start",
+      "scroll": {
+        "mode": "static"
+      }
+    }
+  ]
+}

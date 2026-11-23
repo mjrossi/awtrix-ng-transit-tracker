@@ -1,0 +1,9 @@
+module github.com/mjrossi/awtrix-ng-transit-tracker
+
+go 1.27.3
+
+require (
+	github.com/google/go-cmp v0.7.0
+	github.com/pelletier/go-toml/v2 v2.4.3
+	github.com/urfave/cli/v3 v3.14.0
+)

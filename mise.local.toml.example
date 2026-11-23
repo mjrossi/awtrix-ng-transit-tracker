@@ -1,0 +1,18 @@
+# Machine-specific settings and secrets. Copy to mise.local.toml, which is
+# gitignored, and fill in what you use. mise loads it automatically inside
+# this repo, so `just run`, `just preview` and tests see these variables.
+#
+# config.toml reads secrets as ${NAME}, for example:
+#   [providers.metrolisboa]
+#   client_id = "${LISBON_METRO_CLIENT_ID}"
+
+[env]
+# Metro de Lisboa API: consumer key and secret of an application subscribed
+# to EstadoServicoML at https://api.metrolisboa.pt/store/. These names are
+# the ones `transit-tracker systems show lisbon-metro` prints and
+# `just catalog-check` reads.
+# LISBON_METRO_CLIENT_ID = ""
+# LISBON_METRO_CLIENT_SECRET = ""
+
+# AWTRIX NG clock credentials, if authEnabled is on.
+# AWTRIX_PASSWORD = ""

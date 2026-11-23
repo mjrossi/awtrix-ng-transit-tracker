@@ -1,0 +1,129 @@
+{
+  "version": 1,
+  "regions": [
+    {
+      "id": "r0-badge",
+      "box": [
+        0,
+        0,
+        2,
+        8
+      ],
+      "draw": [
+        [
+          "rectFill",
+          0,
+          1,
+          2,
+          6,
+          "#0072CE"
+        ]
+      ]
+    },
+    {
+      "id": "r0-sign",
+      "box": [
+        4,
+        0,
+        36,
+        8
+      ],
+      "text": "Santa Apolónia",
+      "font": "small",
+      "color": "#FFFFFF",
+      "align": "start",
+      "scroll": {
+        "mode": "wrap"
+      }
+    },
+    {
+      "id": "r0-min",
+      "box": [
+        42,
+        0,
+        10,
+        8
+      ],
+      "text": [
+        {
+          "text": "4",
+          "color": "#FFFFFF"
+        },
+        {
+          "text": "  "
+        },
+        {
+          "text": "9",
+          "color": "#7F7F7F"
+        }
+      ],
+      "font": "small",
+      "align": "end",
+      "scroll": {
+        "mode": "static"
+      }
+    },
+    {
+      "id": "r1-badge",
+      "box": [
+        0,
+        8,
+        2,
+        8
+      ],
+      "draw": [
+        [
+          "rectFill",
+          0,
+          1,
+          2,
+          6,
+          "#00A651"
+        ]
+      ]
+    },
+    {
+      "id": "r1-sign",
+      "box": [
+        4,
+        8,
+        36,
+        8
+      ],
+      "text": "Telheiras",
+      "font": "small",
+      "color": "#FFFFFF",
+      "align": "start",
+      "scroll": {
+        "mode": "wrap"
+      }
+    },
+    {
+      "id": "r1-min",
+      "box": [
+        42,
+        8,
+        10,
+        8
+      ],
+      "text": [
+        {
+          "text": "1",
+          "color": "#FFFFFF"
+        },
+        {
+          "text": "  "
+        },
+        {
+          "text": "6",
+          "color": "#7F7F7F"
+        }
+      ],
+      "font": "small",
+      "align": "end",
+      "scroll": {
+        "mode": "static"
+      }
+    }
+  ]
+}
