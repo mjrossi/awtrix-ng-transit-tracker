@@ -288,6 +288,21 @@ providers). Each widens who the project works for.
   show when service starts ("First 5:42"). Needs a departure beyond the
   board's window, so the scheduler would have to look further ahead, and
   for `gtfsrt` the schedule-only support above.
+- **Section cards.** With boards from several agencies, "which board is
+  this?" becomes a question the clock should answer. A short card (2–3 s)
+  ahead of each agency's boards in the rotation would: the agency's icon
+  at up to 16 × 16, where a mark can be read, beside a short title such
+  as "Metro". A board's optional `section` names its card; a section has
+  a title and an optional `icon`, an AWTRIX icon ID or file the user
+  supplies, since the repository ships no agency logos. The card is
+  pushed while any of its boards is active, with the same `lifetimeMs`,
+  and removed with them. Open problem: rotation order. The firmware
+  shows pushed apps in the order they first arrived and remembers it,
+  and runners push concurrently, so a card can land anywhere. Either
+  document arranging the rotation once in the clock's web UI, or set the
+  order through the firmware's rotation API at startup, moving only this
+  service's apps relative to each other. Off by default: with one agency
+  or two boards, a card is a few seconds per round with no departures.
 - **Per-board time zone.** `active_hours` reads the one top-level
   `timezone`, so a clock showing boards from several cities needs their
   hours converted by hand, and they drift by an hour for the weeks a year
