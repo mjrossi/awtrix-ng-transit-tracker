@@ -21,7 +21,9 @@ type fakeProvider struct {
 	// partial, if set, comes back as a *transit.PartialError with the
 	// departures.
 	partial error
-	calls   int
+	// live gives every departure a prediction.
+	live  bool
+	calls int
 }
 
 func (p *fakeProvider) Departures(_ context.Context, q transit.Query) ([]transit.Departure, error) {
@@ -36,10 +38,15 @@ func (p *fakeProvider) Departures(_ context.Context, q transit.Query) ([]transit
 	line := transit.Line{ID: "azul", ShortName: "Azul", Mode: transit.ModeMetro}
 	var out []transit.Departure
 	for _, m := range []int{2, 6, 10} {
-		out = append(out, transit.Departure{
+		d := transit.Departure{
 			Line: line, Headsign: "Santa Apolónia", StopID: q.StopID,
 			Scheduled: start.Add(time.Duration(m) * time.Minute), Status: transit.StatusScheduled,
-		})
+		}
+		if p.live {
+			late := d.Scheduled.Add(time.Minute)
+			d.Predicted = &late
+		}
+		out = append(out, d)
 	}
 	return out, err
 }
@@ -154,6 +161,37 @@ func TestReusesLastGoodDataThenGivesUp(t *testing.T) {
 	h.runner.Tick(t.Context())
 	if len(h.pusher.pushes) != 2 {
 		t.Fatalf("pushes = %d, want still 2 once data is stale", len(h.pusher.pushes))
+	}
+}
+
+func TestLastGoodDataIsNotShownAsLive(t *testing.T) {
+	h := newHarness(nil)
+	h.prov.live = true
+	rows, _ := h.runner.Rows(t.Context(), h.now)
+	if d := rows[0].Departures[0]; !d.Realtime() {
+		t.Fatalf("fresh departure %+v, want realtime", d)
+	}
+
+	h.prov.err = errors.New("upstream down")
+	h.now = start.Add(time.Minute)
+	rows, ok := h.runner.Rows(t.Context(), h.now)
+	if !ok {
+		t.Fatal("cached data not used")
+	}
+	d := rows[0].Departures[0]
+	if d.Realtime() {
+		t.Errorf("cached departure %+v, want schedule-only", d)
+	}
+	// The prediction stays the best estimate of the time.
+	if want := start.Add(3 * time.Minute); !d.Time().Equal(want) {
+		t.Errorf("time = %s, want %s", d.Time(), want)
+	}
+
+	h.prov.err = nil
+	h.now = start.Add(3 * time.Minute)
+	rows, _ = h.runner.Rows(t.Context(), h.now)
+	if !rows[0].Departures[0].Realtime() {
+		t.Error("departure not realtime again after recovery")
 	}
 }
 

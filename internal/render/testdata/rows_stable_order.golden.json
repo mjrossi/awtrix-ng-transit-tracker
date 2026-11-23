@@ -25,43 +25,55 @@
       "box": [
         4,
         0,
-        35,
+        42,
         8
       ],
       "text": "Santa Apolónia",
       "font": "small",
-      "color": "#FFFFFF",
+      "color": "#EAE4D9",
       "align": "start",
       "scroll": {
         "mode": "wrap"
-      }
+      },
+      "textCase": "asTyped"
     },
     {
       "id": "r0-min",
       "box": [
-        41,
+        48,
         0,
-        11,
+        4,
         8
       ],
       "text": [
         {
           "text": "4",
-          "color": "#FFFFFF"
-        },
-        {
-          "text": "  "
-        },
-        {
-          "text": "9",
-          "color": "#7F7F7F"
+          "color": "#EAE4D9"
         }
       ],
       "font": "small",
-      "align": "end",
+      "align": "start",
       "scroll": {
         "mode": "static"
-      }
+      },
+      "textCase": "asTyped"
+    },
+    {
+      "id": "r0-marks",
+      "box": [
+        47,
+        0,
+        5,
+        8
+      ],
+      "draw": [
+        [
+          "pixel",
+          4,
+          0,
+          "#D9955A"
+        ]
+      ]
     },
     {
       "id": "r1-badge",
@@ -92,11 +104,12 @@
       ],
       "text": "Telheiras",
       "font": "small",
-      "color": "#FFFFFF",
+      "color": "#EAE4D9",
       "align": "start",
       "scroll": {
         "mode": "wrap"
-      }
+      },
+      "textCase": "asTyped"
     },
     {
       "id": "r1-min",
@@ -109,21 +122,45 @@
       "text": [
         {
           "text": "1",
-          "color": "#FFFFFF"
+          "color": "#EAE4D9"
         },
         {
           "text": "  "
         },
         {
           "text": "6",
-          "color": "#7F7F7F"
+          "color": "#A0998E"
         }
       ],
       "font": "small",
-      "align": "end",
+      "align": "start",
       "scroll": {
         "mode": "static"
-      }
+      },
+      "textCase": "asTyped"
+    },
+    {
+      "id": "r1-marks",
+      "box": [
+        40,
+        8,
+        12,
+        8
+      ],
+      "draw": [
+        [
+          "pixel",
+          4,
+          0,
+          "#D9955A"
+        ],
+        [
+          "pixel",
+          6,
+          3,
+          "#5B4535"
+        ]
+      ]
     }
   ]
 }

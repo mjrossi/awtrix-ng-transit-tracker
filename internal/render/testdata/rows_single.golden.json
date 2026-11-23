@@ -6,32 +6,53 @@
       "box": [
         0,
         4,
+        13,
+        8
+      ],
+      "draw": [
+        [
+          "rectFill",
+          0,
+          0,
+          13,
+          7,
+          "#FFCC00"
+        ]
+      ]
+    },
+    {
+      "id": "r0-badge-name",
+      "box": [
+        1,
+        4,
         11,
         8
       ],
       "text": "735",
       "font": "small",
-      "color": "#FFCC00",
+      "color": "#000000",
       "align": "start",
       "scroll": {
         "mode": "static"
-      }
+      },
+      "textCase": "asTyped"
     },
     {
       "id": "r0-sign",
       "box": [
-        13,
+        15,
         4,
-        33,
+        31,
         8
       ],
       "text": "Cacilhas",
       "font": "small",
-      "color": "#FFFFFF",
+      "color": "#EAE4D9",
       "align": "start",
       "scroll": {
         "mode": "wrap"
-      }
+      },
+      "textCase": "asTyped"
     },
     {
       "id": "r0-min",
@@ -44,14 +65,32 @@
       "text": [
         {
           "text": "0",
-          "color": "#FFFFFF"
+          "color": "#EAE4D9"
         }
       ],
       "font": "small",
-      "align": "end",
+      "align": "start",
       "scroll": {
         "mode": "static"
-      }
+      },
+      "textCase": "asTyped"
+    },
+    {
+      "id": "r0-marks",
+      "box": [
+        47,
+        4,
+        5,
+        8
+      ],
+      "draw": [
+        [
+          "pixel",
+          4,
+          0,
+          "#D9955A"
+        ]
+      ]
     }
   ]
 }

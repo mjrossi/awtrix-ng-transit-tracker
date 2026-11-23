@@ -107,7 +107,8 @@ The renderer uses AWTRIX NG's TC002-only `layout` key to address all
 
   ```
   Sta Apolónia
-  ▌ 3  8  14
+  ────────────
+  ▌ 3 · 8 · 14
   ```
 
 - **`rows`**: two rows, one per line and direction, for stops where seeing
@@ -115,8 +116,8 @@ The renderer uses AWTRIX NG's TC002-only `layout` key to address all
   by line and headsign so they do not swap places between pushes.
 
   ```
-  ▌Sta Apolónia   4  9
-  ▌Telheiras      1  6
+  ▌Sta Apolónia      4
+  ▌Telheiras     1 · 6
   ```
 
 Names that still do not fit:
@@ -127,12 +128,35 @@ Names that still do not fit:
 
 Other rules:
 
-- A colored bar for metro lines; the short name in the line color for
-  other modes (`735`).
+- Colors are the Night theme of the maintainer's Lexicon palette, since
+  unlit LEDs are the background: warm cream for names and live minutes, a
+  warm grey for schedule-only minutes, and amber for one job only, the
+  live marker. Agency line colors appear only in the badge.
+- Badges: a color bar for metro lines. Other lines get their short name
+  cut out of a block of the line color (unlit or cream, whichever
+  contrasts more; agencies' `route_text_color` is ignored because some
+  pair white with bright yellow). A line without a color shows its plain
+  name. A name too wide for a badge gets a 5 × 5 glyph of the line's mode
+  (bus, tram, rail, ferry), or the bar for other modes.
 - Only as many times as fit are shown; times never scroll or get cut.
-- Minutes with live predictions in white, schedule-only minutes dimmed.
+- Live minutes get a one-pixel amber dot at their top right, so live and
+  schedule-only differ by a mark as well as brightness. A dim dot sits
+  between times. A canceled trip kept with a stop's `keep_canceled` is
+  struck through, and never pushes the next trip a rider can catch out of
+  its row. The marks are placed for the `small` font; with another font
+  they are left out, and so are canceled trips.
+- The departure layout draws a hairline under the destination, broken
+  above each live dot so the two do not merge, and shows a departure
+  under a minute away as `Due`. The rows layout keeps `0`,
+  because `Due` would take two or three characters from the destination.
+- In the rows layout a second time is shown only if the destination still
+  fits beside it, so names scroll less.
+- Text is sent with `textCase: asTyped`, so the clock's uppercase setting
+  does not turn "Cais do Sodré" into capitals.
 - Minutes are computed from absolute times at render time, so the last
-  good data stays accurate while a provider is briefly down.
+  good data stays accurate while a provider is briefly down. While a
+  source's last refresh has failed, its departures are shown as
+  schedule-only: same times, no live marker.
 
 A 32 × 8 renderer for other AWTRIX NG clocks can follow.
 
@@ -207,8 +231,17 @@ docs/                     this plan and design notes
      the empty state;
    - text widths match `render.TextWidth`: about 13 characters across,
      "Cais do Sodré" fits and "Santa Apolónia" scrolls;
-   - badge bar, bus-number badge, minute spacing and dimmed
-     schedule-only times look right; `overflow = "clip"` cuts cleanly;
+   - badge bar, filled bus-number badge (the unlit number over its fill
+     relies on later regions drawing on top), mode glyphs, minute spacing
+     and dimmed schedule-only times look right; `overflow = "clip"` cuts
+     cleanly;
+   - the small font's capitals sit on rows 1 to 5 of an 8 px box, as the
+     drawn marks assume: the live dot on row 0, the separator and strike
+     on row 3, the hairline on row 7. Check that the break in the hairline
+     above a live dot reads as intended, that times starting
+     with `1` line up with their dot and strike (the firmware places text
+     by its ink, not its cell), and that the dim colors
+     (separator dots, hairline) are visible at night brightness;
    - lifetime: stopping the service removes the app after three polls;
    - recovery: after a clock reboot the app returns within one poll;
    - active hours remove the app and stop requests; the app is removed
@@ -256,6 +289,25 @@ providers). Each widens who the project works for.
   retained `availability` topic would allow an immediate re-push. MQTT
   also avoids the clock's address having to resolve inside Docker. Needs
   an MQTT client module approved.
+- **First departure in the empty state.** Instead of "No departures",
+  show when service starts ("First 5:42"). Needs a departure beyond the
+  board's window, so the scheduler would have to look further ahead, and
+  for `gtfsrt` the schedule-only support above.
+- **Section cards.** With boards from several agencies, "which board is
+  this?" becomes a question the clock should answer. A short card (2–3 s)
+  ahead of each agency's boards in the rotation would: the agency's icon
+  at up to 16 × 16, where a mark can be read, beside a short title such
+  as "Metro". A board's optional `section` names its card; a section has
+  a title and an optional `icon`, an AWTRIX icon ID or file the user
+  supplies, since the repository ships no agency logos. The card is
+  pushed while any of its boards is active, with the same `lifetimeMs`,
+  and removed with them. Open problem: rotation order. The firmware
+  shows pushed apps in the order they first arrived and remembers it,
+  and runners push concurrently, so a card can land anywhere. Either
+  document arranging the rotation once in the clock's web UI, or set the
+  order through the firmware's rotation API at startup, moving only this
+  service's apps relative to each other. Off by default: with one agency
+  or two boards, a card is a few seconds per round with no departures.
 - **Per-board time zone.** `active_hours` reads the one top-level
   `timezone`, so a clock showing boards from several cities needs their
   hours converted by hand, and they drift by an hour for the weeks a year

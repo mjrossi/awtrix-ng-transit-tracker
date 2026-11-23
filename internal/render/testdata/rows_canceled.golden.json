@@ -1,0 +1,202 @@
+{
+  "version": 1,
+  "regions": [
+    {
+      "id": "r0-badge",
+      "box": [
+        0,
+        0,
+        13,
+        8
+      ],
+      "draw": [
+        [
+          "rectFill",
+          0,
+          0,
+          13,
+          7,
+          "#FFCC00"
+        ]
+      ]
+    },
+    {
+      "id": "r0-badge-name",
+      "box": [
+        1,
+        0,
+        11,
+        8
+      ],
+      "text": "735",
+      "font": "small",
+      "color": "#000000",
+      "align": "start",
+      "scroll": {
+        "mode": "static"
+      },
+      "textCase": "asTyped"
+    },
+    {
+      "id": "r0-sign",
+      "box": [
+        15,
+        0,
+        31,
+        8
+      ],
+      "text": "Cacilhas",
+      "font": "small",
+      "color": "#EAE4D9",
+      "align": "start",
+      "scroll": {
+        "mode": "wrap"
+      },
+      "textCase": "asTyped"
+    },
+    {
+      "id": "r0-min",
+      "box": [
+        48,
+        0,
+        4,
+        8
+      ],
+      "text": [
+        {
+          "text": "0",
+          "color": "#EAE4D9"
+        }
+      ],
+      "font": "small",
+      "align": "start",
+      "scroll": {
+        "mode": "static"
+      },
+      "textCase": "asTyped"
+    },
+    {
+      "id": "r0-marks",
+      "box": [
+        47,
+        0,
+        5,
+        8
+      ],
+      "draw": [
+        [
+          "pixel",
+          4,
+          0,
+          "#D9955A"
+        ]
+      ]
+    },
+    {
+      "id": "r1-badge",
+      "box": [
+        0,
+        8,
+        13,
+        8
+      ],
+      "draw": [
+        [
+          "rectFill",
+          0,
+          0,
+          13,
+          7,
+          "#1F3A93"
+        ]
+      ]
+    },
+    {
+      "id": "r1-badge-name",
+      "box": [
+        1,
+        8,
+        11,
+        8
+      ],
+      "text": "760",
+      "font": "small",
+      "color": "#EAE4D9",
+      "align": "start",
+      "scroll": {
+        "mode": "static"
+      },
+      "textCase": "asTyped"
+    },
+    {
+      "id": "r1-sign",
+      "box": [
+        15,
+        8,
+        20,
+        8
+      ],
+      "text": "Sé",
+      "font": "small",
+      "color": "#EAE4D9",
+      "align": "start",
+      "scroll": {
+        "mode": "wrap"
+      },
+      "textCase": "asTyped"
+    },
+    {
+      "id": "r1-min",
+      "box": [
+        37,
+        8,
+        15,
+        8
+      ],
+      "text": [
+        {
+          "text": "3",
+          "color": "#A0998E"
+        },
+        {
+          "text": "  "
+        },
+        {
+          "text": "18",
+          "color": "#A0998E"
+        }
+      ],
+      "font": "small",
+      "align": "start",
+      "scroll": {
+        "mode": "static"
+      },
+      "textCase": "asTyped"
+    },
+    {
+      "id": "r1-marks",
+      "box": [
+        36,
+        8,
+        16,
+        8
+      ],
+      "draw": [
+        [
+          "rectFill",
+          0,
+          3,
+          5,
+          1,
+          "#EAE4D9"
+        ],
+        [
+          "pixel",
+          6,
+          3,
+          "#5B4535"
+        ]
+      ]
+    }
+  ]
+}

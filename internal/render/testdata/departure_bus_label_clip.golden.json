@@ -11,54 +11,126 @@
       ],
       "text": "Hosp. Sta Maria",
       "font": "small",
-      "color": "#FFFFFF",
+      "color": "#EAE4D9",
       "align": "start",
       "scroll": {
         "mode": "static"
-      }
+      },
+      "textCase": "asTyped"
+    },
+    {
+      "id": "rule",
+      "box": [
+        0,
+        7,
+        52,
+        1
+      ],
+      "draw": [
+        [
+          "rectFill",
+          0,
+          0,
+          21,
+          1,
+          "#5B4535"
+        ],
+        [
+          "rectFill",
+          24,
+          0,
+          28,
+          1,
+          "#5B4535"
+        ]
+      ]
     },
     {
       "id": "badge",
       "box": [
         0,
         8,
+        13,
+        8
+      ],
+      "draw": [
+        [
+          "rectFill",
+          0,
+          0,
+          13,
+          7,
+          "#FFCC00"
+        ]
+      ]
+    },
+    {
+      "id": "badge-name",
+      "box": [
+        1,
+        8,
         11,
         8
       ],
       "text": "735",
       "font": "small",
-      "color": "#FFCC00",
+      "color": "#000000",
       "align": "start",
       "scroll": {
         "mode": "static"
-      }
+      },
+      "textCase": "asTyped"
     },
     {
       "id": "min",
       "box": [
-        13,
+        15,
         8,
-        39,
+        19,
         8
       ],
       "text": [
         {
           "text": "12",
-          "color": "#FFFFFF"
+          "color": "#EAE4D9"
         },
         {
           "text": "  "
         },
         {
           "text": "27",
-          "color": "#7F7F7F"
+          "color": "#A0998E"
         }
       ],
       "font": "small",
       "align": "start",
       "scroll": {
         "mode": "static"
-      }
+      },
+      "textCase": "asTyped"
+    },
+    {
+      "id": "marks",
+      "box": [
+        14,
+        8,
+        21,
+        8
+      ],
+      "draw": [
+        [
+          "pixel",
+          8,
+          0,
+          "#D9955A"
+        ],
+        [
+          "pixel",
+          10,
+          3,
+          "#5B4535"
+        ]
+      ]
     }
   ]
 }
