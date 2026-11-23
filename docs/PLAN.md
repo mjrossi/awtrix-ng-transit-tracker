@@ -256,6 +256,14 @@ providers). Each widens who the project works for.
   retained `availability` topic would allow an immediate re-push. MQTT
   also avoids the clock's address having to resolve inside Docker. Needs
   an MQTT client module approved.
+- **Per-board time zone.** `active_hours` reads the one top-level
+  `timezone`, so a clock showing boards from several cities needs their
+  hours converted by hand, and they drift by an hour for the weeks a year
+  when only one city has changed clocks for daylight saving time. An
+  optional `timezone` on `[[boards]]`, falling back to the top-level one,
+  fixes both. It belongs on the board rather than the provider because
+  `active_hours` is a board setting and one board can combine stops from
+  several providers.
 - **32 × 8 renderer.** Both layouts use the TC002-only `layout` key, so
   32 × 8 AWTRIX NG clocks such as the Ulanzi TC001, probably the more
   common device, cannot show boards. Needs its own design: a scrolling
