@@ -109,11 +109,13 @@ func (c BoardClock) options() render.Options {
 }
 
 // Location is the board's resolved time zone.
-func (b Board) Location() *time.Location {
-	if b.location == nil {
+func (b Board) Location() *time.Location { return orLocal(b.location) }
+
+func orLocal(loc *time.Location) *time.Location {
+	if loc == nil {
 		return time.Local
 	}
-	return b.location
+	return loc
 }
 
 // Stop is one stop on a board and the filters applied to it.
@@ -141,12 +143,7 @@ func (s Stop) Filter() transit.Filter {
 }
 
 // Location is the resolved time zone.
-func (c *Config) Location() *time.Location {
-	if c.location == nil {
-		return time.Local
-	}
-	return c.location
-}
+func (c *Config) Location() *time.Location { return orLocal(c.location) }
 
 // Load reads, expands and validates the file at path.
 func Load(path string) (*Config, error) {
@@ -364,16 +361,6 @@ func (b *Board) validate(providers map[string]map[string]any) error {
 		}
 	}
 	return errors.Join(errs...)
-}
-
-// Provider returns the type and options of the [providers.NAME] block.
-// See ResolveProvider.
-func (c *Config) Provider(name string) (typ string, opts ProviderOptions, err error) {
-	raw, ok := c.Providers[name]
-	if !ok {
-		return "", nil, fmt.Errorf("no [providers.%s] section", name)
-	}
-	return ResolveProvider(name, raw)
 }
 
 // ResolveProvider works out a provider block's type and options:

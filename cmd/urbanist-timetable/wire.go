@@ -18,8 +18,8 @@ import (
 func buildProviders(cfg *config.Config) (map[string]transit.Provider, error) {
 	reg := providers.Registry()
 	out := make(map[string]transit.Provider, len(cfg.Providers))
-	for name := range cfg.Providers {
-		typ, opts, err := cfg.Provider(name)
+	for name, raw := range cfg.Providers {
+		typ, opts, err := config.ResolveProvider(name, raw)
 		if err != nil {
 			return nil, fmt.Errorf("providers.%s: %w", name, err)
 		}

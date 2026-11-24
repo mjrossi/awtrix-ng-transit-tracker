@@ -37,7 +37,7 @@ func TestExampleConfig(t *testing.T) {
 	}
 	reg := providers.Registry()
 	for name := range cfg.Providers {
-		typ, opts, err := cfg.Provider(name)
+		typ, opts, err := config.ResolveProvider(name, cfg.Providers[name])
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -303,14 +303,14 @@ func TestProviderType(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	typ, opts, err := cfg.Provider("nyc")
+	typ, opts, err := config.ResolveProvider("nyc", cfg.Providers["nyc"])
 	if err != nil || typ != "gtfsrt" {
 		t.Fatalf("Provider(nyc) = %q, %v", typ, err)
 	}
 	if _, has := opts["type"]; has {
 		t.Error("type key should not reach the provider's options")
 	}
-	if typ, _, _ := cfg.Provider("demo"); typ != "demo" {
+	if typ, _, _ := config.ResolveProvider("demo", cfg.Providers["demo"]); typ != "demo" {
 		t.Errorf("block without type: got %q, want its name", typ)
 	}
 	bad := strings.Replace(minimal, "%s", "clock.local", 1) + "[providers.x]\ntype = 3\n"
@@ -325,7 +325,7 @@ func TestProviderSystem(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	typ, opts, err := cfg.Provider("nyc")
+	typ, opts, err := config.ResolveProvider("nyc", cfg.Providers["nyc"])
 	if err != nil {
 		t.Fatal(err)
 	}

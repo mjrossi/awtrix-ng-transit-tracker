@@ -89,21 +89,12 @@ func previewCommand() *cli.Command {
 			}
 			instant := time.Now()
 			for i, r := range runners {
-				now := instant.In(cfg.Boards[i].Location())
-				snap, ok := r.Snapshot(ctx, now)
+				b := cfg.Boards[i]
+				snap, ok := r.Snapshot(ctx, instant.In(b.Location()))
 				if !ok {
-					return fmt.Errorf("board %s: every source failed", cfg.Boards[i].Name)
+					return fmt.Errorf("board %s: every source failed", b.Name)
 				}
-				app, err := out.App(snap)
-				if err != nil {
-					return err
-				}
-				if !c.Bool("json") {
-					printRows(os.Stdout, cfg.Boards[i], snap.Rows(now, true), now)
-				}
-				enc := json.NewEncoder(os.Stdout)
-				enc.SetIndent("", "  ")
-				if err := enc.Encode(app); err != nil {
+				if err := writePreview(os.Stdout, b, out, snap, c.Bool("json")); err != nil {
 					return err
 				}
 				if c.Bool("push") {
@@ -115,6 +106,21 @@ func previewCommand() *cli.Command {
 			return nil
 		},
 	}
+}
+
+// writePreview prints a board's rows, unless jsonOnly, then the payload the
+// clock would receive.
+func writePreview(w io.Writer, b config.Board, out *clockout.Output, snap scheduler.Snapshot, jsonOnly bool) error {
+	app, err := out.App(snap)
+	if err != nil {
+		return err
+	}
+	if !jsonOnly {
+		printRows(w, b, snap.Rows(snap.At, true), snap.At)
+	}
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(app)
 }
 
 func configCommand() *cli.Command {
