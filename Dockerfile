@@ -19,10 +19,11 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 
 FROM alpine:3.23
 RUN apk add --no-cache ca-certificates && \
-    addgroup -S app && adduser -S app -G app
+    addgroup -S app && adduser -S app -G app && \
+    mkdir /data && chown app:app /data
 COPY --from=builder /out/urbanist-timetable /usr/local/bin/urbanist-timetable
 USER app
-ENV TIMETABLE_CONFIG=/config/config.toml
-VOLUME ["/config"]
+ENV TIMETABLE_CONFIG=/config/config.toml TIMETABLE_STATE=/data/state.json
+VOLUME ["/config", "/data"]
 ENTRYPOINT ["urbanist-timetable"]
 CMD ["run"]

@@ -110,6 +110,18 @@ type sourceState struct {
 	partial string
 }
 
+// phase is a board's last logged state, so a lasting one is logged when it
+// starts rather than every tick.
+type phase int
+
+const (
+	phaseNone phase = iota
+	phaseShown
+	phaseNoData
+	phasePublishFailed
+	phaseInactive
+)
+
 // Runner drives one board. Create it with NewRunner.
 type Runner struct {
 	board Board
@@ -119,6 +131,7 @@ type Runner struct {
 
 	state []sourceState
 	shown bool
+	phase phase
 }
 
 // NewRunner returns a runner. now may be nil for the wall clock.
@@ -166,7 +179,10 @@ func (r *Runner) Tick(ctx context.Context) {
 			}
 			r.shown = false
 			r.log.InfoContext(ctx, "outside active hours; withdrawn")
+		} else if r.phase != phaseInactive {
+			r.log.InfoContext(ctx, "outside active hours")
 		}
+		r.phase = phaseInactive
 		return
 	}
 
@@ -175,13 +191,28 @@ func (r *Runner) Tick(ctx context.Context) {
 		// Every source failed with nothing fresh enough to reuse. Showing
 		// "No departures" would be a lie, so nothing is published; on the
 		// clock, the app's lifetime removes it.
+		if r.phase != phaseNoData && ctx.Err() == nil {
+			r.phase = phaseNoData
+			r.log.WarnContext(ctx, "no usable data; board not updated")
+		}
 		return
 	}
 	if err := r.out.Publish(ctx, snap); err != nil {
+		r.phase = phasePublishFailed
 		r.log.WarnContext(ctx, "publish", slog.Any("err", err))
 		return
 	}
 	r.shown = true
+	first := r.phase != phaseShown
+	r.phase = phaseShown
+	if !first && !r.log.Enabled(ctx, slog.LevelDebug) {
+		return
+	}
+	rows := slog.Int("rows", len(snap.Rows(now)))
+	if first {
+		r.log.InfoContext(ctx, "board shown", rows)
+	}
+	r.log.DebugContext(ctx, "published", rows)
 }
 
 // Snapshot refreshes due sources and returns the board's state. ok is false
@@ -211,6 +242,7 @@ func (r *Runner) Snapshot(ctx context.Context, now time.Time) (snap Snapshot, ok
 }
 
 func (r *Runner) refresh(ctx context.Context, src Source, st *sourceState, now time.Time) {
+	began := time.Now()
 	deps, err := src.Provider.Departures(ctx, transit.Query{
 		StopID: src.StopID,
 		Now:    now,
@@ -241,6 +273,10 @@ func (r *Runner) refresh(ctx context.Context, src Source, st *sourceState, now t
 	if st.failures > 0 {
 		r.log.InfoContext(ctx, "source recovered", slog.String("source", src.Name))
 	}
+	r.log.DebugContext(ctx, "fetched departures",
+		slog.String("source", src.Name),
+		slog.Int("departures", len(deps)),
+		slog.Duration("took", time.Since(began)))
 	st.deps, st.fetchedAt, st.failures, st.nextAttempt = deps, now, 0, time.Time{}
 }
 

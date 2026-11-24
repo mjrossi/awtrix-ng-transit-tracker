@@ -16,7 +16,7 @@ import (
 // Pusher sends apps to the clock. *awtrix.Client implements it.
 type Pusher interface {
 	PushApp(ctx context.Context, name string, app awtrix.App) error
-	DeleteApp(ctx context.Context, name string) error
+	ExpireApp(ctx context.Context, name string) error
 }
 
 // Board is how one board appears on the clock.
@@ -79,5 +79,5 @@ func (o *Output) Withdraw(ctx context.Context, board string) error {
 	if o.pusher == nil {
 		return errNoPusher
 	}
-	return o.pusher.DeleteApp(ctx, board)
+	return o.pusher.ExpireApp(ctx, board)
 }

@@ -80,6 +80,21 @@ func TestDefaults(t *testing.T) {
 	}
 }
 
+// The [boards.clock] keys reach render.Options, so a name_font set there
+// really changes the rendered payload.
+func TestBoardClockSettingsReachRenderOptions(t *testing.T) {
+	src := strings.Replace(minimal, "%s", "clock.local", 1) +
+		"[boards.clock]\nname_font = \"large\"\nempty_text = \"Sem partidas\"\n"
+	cfg, err := config.Parse([]byte(src), noEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := cfg.Boards[0].Clock.Render()
+	if r.NameFont != "large" || r.EmptyText != "Sem partidas" {
+		t.Errorf("render options = %+v, want name_font \"large\" and empty_text \"Sem partidas\"", r)
+	}
+}
+
 func TestEnvExpansion(t *testing.T) {
 	src := "# ${IN_A_COMMENT} is ignored\n" + strings.Replace(minimal, "%s", "${CLOCK}", 1) +
 		"[[providers.demo.lines]]\nid = \"${CLOCK}\"\n"

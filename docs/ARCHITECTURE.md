@@ -41,7 +41,7 @@ It listens on no ports.
 | `pkg/awtrix` | typed AWTRIX NG HTTP client and payload types | none |
 | `internal/render` | departure rows → TC002 `awtrix.Layout` | `transit`, `awtrix` |
 | `internal/scheduler` | polling, backoff, last-good cache, active hours, `Snapshot`, the `Output` interface | `transit` |
-| `internal/clockout` | the clock `Output`: snapshot → TC002 app → push or delete | `scheduler`, `render`, `awtrix` |
+| `internal/clockout` | the clock `Output`: snapshot → TC002 app → push or delete; cleanup of removed boards | `scheduler`, `render`, `awtrix` |
 | `internal/config` | TOML decoding, `${NAME}` expansion, validation, provider resolution | `transit`, `catalog`, `render`, `awtrix` |
 | `cmd/urbanist-timetable` | CLI commands and wiring (`wire.go`) | everything |
 
@@ -110,12 +110,38 @@ Rules, from [CLAUDE.md](../CLAUDE.md):
 |---|---|
 | A provider returns an error | That source backs off: `poll_interval × 2^failures`, at most ×64 and at most 10 min. The warning is logged on every failure. |
 | A source's last refresh failed, but its last good data is younger than `max_stale` (default 10 min) | The snapshot keeps the cached departures and marks the source `Failing`. The clock shows them schedule-only (no live marker), because their predictions are as old as the last good fetch. |
-| Every source is failing with nothing younger than `max_stale` | Nothing is published. The app's `lifetimeMs` (default 3 × `poll_interval`) removes it from the clock instead of showing "No departures". |
+| Every source is failing with nothing younger than `max_stale` | Nothing is published, which is logged when it starts. The app's `lifetimeMs` (default 3 × `poll_interval`) removes it from the clock instead of showing "No departures". |
 | A provider returns departures with a `*transit.PartialError` (such as one of several feeds failing) | The departures are used. The problem is logged when it starts, changes and clears, not on every poll. |
 | The service stops | Every push carries `lifetimeMs` with `lifetimeExpiry: remove`, so the app leaves the clock. |
-| Outside `active_hours` | No provider calls. The board is withdrawn once; on the clock the app is deleted, and a 404 counts as already gone. |
+| Outside `active_hours` | No provider calls. The board is withdrawn once; on the clock the app expires at once (see "Removed boards"). |
+| A board is removed from the configuration | At the next start, `clockout.Cleanup` compares the configured boards with the names in the state file and calls `awtrix.Client.ForgetApps`, retrying until the clock answers: after 1 min, doubling up to 1 h. See below. |
 | The clock reboots | Pushed apps live in its RAM; the next tick pushes again. |
 | Pushing to the clock fails | Logged; the next tick retries. |
+
+## Removed boards
+
+The clock keeps an app's name in its saved rotation after the app expires or
+is deleted, and lists it as "no data". Only rewriting the whole rotation
+(`PUT /api/v1/apps/order`) removes it, and the clock does not record who
+pushed an app. So the service keeps its own record, the state file
+(`--state`): the clock's address and the names of the boards it may have
+pushed there. A removed board stays in the file until the clock has
+forgotten it, so a restart resumes the cleanup. Names recorded for another
+address are dropped.
+
+Neither this cleanup nor hiding a board outside its active hours uses
+`DELETE /api/v1/apps/{name}`, which also erases the source of a script with
+that name. A pushed app is replaced by one that expires after 1 ms instead
+(`ExpireApp`), which cannot touch a script.
+
+`ForgetApps` leaves the place of a name that belongs to a script or built-in
+app. It asks `GET /api/v1/apps/script/{name}` as well as reading the app
+list, because a pushed app hides a script of the same name there. Before
+rewriting the rotation it checks that the list is plausible (slots without
+gaps, a built-in app); if any answer is doubtful it writes nothing and the
+cleanup is retried. It writes even an unchanged rotation, because after a
+507 the clock uses an order it has not saved. A change made in the web UI
+between reading and writing would be lost.
 
 ## Configuration shape
 

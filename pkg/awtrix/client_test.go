@@ -140,6 +140,43 @@ func TestNewClient(t *testing.T) {
 	}
 }
 
+func TestClientHostAndID(t *testing.T) {
+	tests := []struct{ url, host, id string }{
+		{"192.168.1.50", "192.168.1.50", "192.168.1.50"},
+		{"192.168.1.50:8080", "192.168.1.50:8080", "192.168.1.50:8080"},
+		{"http://AWTRIXNG-a1b2c3.local/", "awtrixng-a1b2c3.local", "awtrixng-a1b2c3.local"},
+		{"http://admin:hunter2@clock.lan:8080", "clock.lan:8080", "clock.lan:8080"},
+		{"http://proxy.lan/Clock1/", "proxy.lan", "proxy.lan/Clock1"},
+	}
+	for _, tt := range tests {
+		c, err := awtrix.NewClient(tt.url)
+		if err != nil {
+			t.Fatalf("NewClient(%q): %v", tt.url, err)
+		}
+		if c.Host() != tt.host || c.ID() != tt.id {
+			t.Errorf("NewClient(%q): host %q, id %q; want %q, %q", tt.url, c.Host(), c.ID(), tt.host, tt.id)
+		}
+	}
+}
+
+func TestExpireApp(t *testing.T) {
+	c, got := newServer(t, http.StatusOK, `{"ok":true}`)
+	if err := c.ExpireApp(t.Context(), "metro"); err != nil {
+		t.Fatal(err)
+	}
+	if len(*got) != 1 {
+		t.Fatalf("requests = %+v, want one", *got)
+	}
+	r := (*got)[0]
+	if r.Method != http.MethodPut || r.Path != "/api/v1/apps/pushed/metro" {
+		t.Errorf("got %s %s", r.Method, r.Path)
+	}
+	want := map[string]any{"lifetimeMs": 1.0, "lifetimeExpiry": "remove"}
+	if diff := cmp.Diff(want, r.Body); diff != "" {
+		t.Errorf("body (-want +got):\n%s", diff)
+	}
+}
+
 func TestTextJSON(t *testing.T) {
 	for _, in := range []string{`"hello"`, `[{"text":"3","color":"#FFFFFF"},{"text":" "}]`} {
 		var txt awtrix.Text

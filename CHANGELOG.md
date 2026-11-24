@@ -7,6 +7,26 @@ version may break configuration.
 
 ## [Unreleased]
 
+### Fixed
+
+- Hiding a board outside its active hours can no longer delete a script of
+  the same name from the clock.
+- Boards removed from the config now also leave the clock's app list,
+  instead of staying there as "no data". This needs a state file that
+  survives restarts (`--state` or `TIMETABLE_STATE`); the Docker image keeps
+  it in `/data`, so mount a volume there. Boards removed before this version
+  have to be deleted once in the clock's web UI.
+- Names with accents, such as "São Sebastião", use the `matrix-light6` font,
+  because the `small` font runs accents into their letters. This needs
+  AWTRIX NG 1.2.2 or later; on older firmware set `name_font = "small"`.
+
+### Added
+
+- `name_font` in `[boards.clock]` sets the font of destination names.
+- Logs say which boards and stops are configured at startup, and when a
+  board is first shown, loses all usable data, recovers, or is outside its
+  active hours. `--log-level debug` also logs every fetch and push.
+
 ## [0.3.0] - 2026-11-24
 
 ### Changed

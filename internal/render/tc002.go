@@ -47,7 +47,11 @@ type Options struct {
 	Overflow Overflow
 	// Font is an AWTRIX NG font name; see GET /api/v1/capabilities.
 	Font string
-	// EmptyText is shown when there are no departures.
+	// NameFont is the font for destination names and EmptyText. Empty
+	// picks one per name: Font, or AccentFont for a name the small font
+	// draws badly.
+	NameFont string
+	// EmptyText is shown when there are no departures, drawn in NameFont.
 	EmptyText string
 }
 
@@ -55,6 +59,10 @@ type Options struct {
 const (
 	DefaultFont      = "small"
 	DefaultEmptyText = "No departures"
+	// AccentFont replaces the small font for names with accents above
+	// Latin-1 letters. The small font fits those accents by shortening the
+	// letter, without a blank row between them, so "ã" reads as a blob.
+	AccentFont = "matrix-light6"
 )
 
 // Colors are the Night theme of the maintainer's Lexicon palette: on an LED
@@ -138,7 +146,7 @@ func TC002(rows []transit.Row, now time.Time, opts Options) *awtrix.Layout {
 			ID:       "empty",
 			Box:      awtrix.Box{0, 0, awtrix.TC002Width, awtrix.TC002Height},
 			Text:     awtrix.PlainText(opts.EmptyText),
-			Font:     opts.Font,
+			Font:     opts.nameFont(opts.EmptyText),
 			Color:    DimColor,
 			Scroll:   opts.scroll(),
 			TextCase: awtrix.TextCaseAsTyped,
@@ -236,7 +244,7 @@ func Views(rows []transit.Row, now time.Time, opts Options) []RowView {
 			_, bw := badgeRegions("", 0, shown[i].Line, opts)
 			_, box = opts.fitRow(shown[i], now, bw+gap)
 		}
-		v.Overflows = TextWidth(v.Name) > box
+		v.Overflows = FontWidth(opts.nameFont(v.Name), v.Name) > box
 	}
 	return out
 }
@@ -288,7 +296,8 @@ func rowsLayout(rows []transit.Row, now time.Time, opts Options) *awtrix.Layout 
 // to read than a later departure is to miss. Canceled trips before the first
 // one a rider can catch don't count, so they never push it out.
 func (o Options) fitRow(r transit.Row, now time.Time, x int) (timeRow, int) {
-	name := TextWidth(o.Label(r.Headsign))
+	label := o.Label(r.Headsign)
+	name := FontWidth(o.nameFont(label), label)
 	deps := r.Departures
 	keep := 1 + slices.IndexFunc(deps, func(d transit.Departure) bool {
 		return d.Status != transit.StatusCanceled
@@ -304,16 +313,33 @@ func (o Options) fitRow(r transit.Row, now time.Time, x int) (timeRow, int) {
 }
 
 func (o Options) nameRegion(id string, box awtrix.Box, headsign string) awtrix.Region {
+	name := o.Label(headsign)
 	return awtrix.Region{
 		ID:       id,
 		Box:      box,
-		Text:     awtrix.PlainText(o.Label(headsign)),
-		Font:     o.Font,
+		Text:     awtrix.PlainText(name),
+		Font:     o.nameFont(name),
 		Color:    TextColor,
 		Align:    awtrix.AlignStart,
 		Scroll:   o.scroll(),
 		TextCase: awtrix.TextCaseAsTyped,
 	}
+}
+
+func (o Options) nameFont(name string) string {
+	if o.NameFont != "" {
+		return o.NameFont
+	}
+	if o.Font == DefaultFont && strings.ContainsFunc(name, accentAbove) {
+		return AccentFont
+	}
+	return o.Font
+}
+
+// accentAbove reports whether c is a Latin-1 letter with a mark above it.
+// Marks on other letters get a row of their own in the small font.
+func accentAbove(c rune) bool {
+	return c >= 'À' && c <= 'ÿ' && !strings.ContainsRune("ÆÇÐ×ØÞßæçð÷øþ", c)
 }
 
 // badgeRegions returns the regions identifying a line and their width.
@@ -562,8 +588,7 @@ func (o Options) scroll() *awtrix.Scroll {
 }
 
 // Font metrics of AWTRIX NG's small and large fonts, from the firmware's
-// visual reference: every character advances 4 px, a space 2 px. The
-// Matrix fonts are proportional, so widths are approximate for them.
+// visual reference: every character advances 4 px, a space 2 px.
 const (
 	charWidth  = 4
 	spaceWidth = 2
@@ -585,3 +610,43 @@ func TextWidth(s string) int {
 	}
 	return w
 }
+
+// FontWidth returns the width of s in pixels as drawn in font, from its
+// first to its last lit column. Only AccentFont is measured per glyph; other
+// fonts are measured like the small one.
+func FontWidth(font, s string) int {
+	if font != AccentFont {
+		return TextWidth(s)
+	}
+	w, trim := 0, 0
+	for _, r := range strings.TrimSpace(s) {
+		w += cmp.Or(accentFontAdvance[r], charWidth)
+		trim = 1 - accentFontOverhang[r]
+	}
+	return w - trim
+}
+
+// accentFontAdvance has AccentFont's advances that are not charWidth, for
+// the letters and punctuation of European languages. They are the firmware's:
+// MatrixLight6.bdf of trip5/Matrix-Fonts with the glyphs AWTRIX NG adds.
+var accentFontAdvance = func() map[rune]int {
+	m := map[rune]int{}
+	for px, glyphs := range map[int]string{
+		2: " \u00a0!',.:;Iil|¡¦·¹ÎİıļΙιΙіі•",
+		3: "()1`©²´¸Ììíįĺŀſɭί–",
+		5: "&@GHNOQ~«»ÐÑØßďĐđĜĞĠĢħĲĳĴĵŁŃŅŇŉťƠơƯưɑɒɖɗɚɝɞɠɢɬɳɴɻʆʋʑʒʗʚʛʜʝʡʢΗΘΝΟΠάαπσНОПЦЪбийцъҐ—",
+		6: "#MWmw¼½ÆæĦŒœŴŵɕɫɮɯɰɱɲɶɷɸʉʊʍʓʘʠʬʭʮΆΈΎΔΛΜΦΨΩφψωώДЖИЙМФШЫЮджмфшыю",
+		7: "ʣʦʧʩʪʫʯΉΌЩщ",
+		8: "¾ʤʥΏ",
+		9: "ʨ",
+	} {
+		for _, r := range glyphs {
+			m[r] = px
+		}
+	}
+	return m
+}()
+
+// accentFontOverhang is how far a glyph's last lit column is from the usual
+// one, which leaves one unlit column before the next glyph.
+var accentFontOverhang = map[rune]int{'Í': -1, 'Į': -1, 'Ą': 1, 'ą': 1, 'Ę': 1}

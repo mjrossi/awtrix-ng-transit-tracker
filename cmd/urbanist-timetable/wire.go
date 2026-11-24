@@ -94,3 +94,26 @@ func newClockOutput(cfg *config.Config, pusher clockout.Pusher) *clockout.Output
 	}
 	return clockout.New(pusher, boards)
 }
+
+// Waits for a clock that is off or unreachable. Cleanup is not urgent, so
+// the cap is long.
+const (
+	cleanupRetry    = time.Minute
+	cleanupMaxRetry = time.Hour
+)
+
+func newCleanup(cfg *config.Config, path string, clock *awtrix.Client, log *slog.Logger) clockout.Cleanup {
+	boards := make([]string, len(cfg.Boards))
+	for i, b := range cfg.Boards {
+		boards[i] = b.Name
+	}
+	return clockout.Cleanup{
+		Path:      path,
+		Clock:     clock.ID(),
+		Boards:    boards,
+		Forgetter: clock,
+		Log:       log,
+		Retry:     cleanupRetry,
+		MaxRetry:  cleanupMaxRetry,
+	}
+}

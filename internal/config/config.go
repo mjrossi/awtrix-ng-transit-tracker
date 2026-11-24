@@ -82,9 +82,12 @@ type BoardClock struct {
 	Lifetime Duration `toml:"lifetime"`
 	// Duration is how long the app is shown per rotation; 0 uses the
 	// clock's setting.
-	Duration  Duration `toml:"duration"`
-	Font      string   `toml:"font"`
-	EmptyText string   `toml:"empty_text"`
+	Duration Duration `toml:"duration"`
+	Font     string   `toml:"font"`
+	// NameFont is the font for destination names; empty picks one that
+	// draws the name's accents well.
+	NameFont  string `toml:"name_font"`
+	EmptyText string `toml:"empty_text"`
 	// Overflow is "scroll" or "clip" for names wider than their box.
 	Overflow render.Overflow `toml:"overflow"`
 	// Labels maps headsigns to shorter display names.
@@ -104,6 +107,7 @@ func (c BoardClock) options() render.Options {
 		Labels:    c.Labels,
 		Overflow:  c.Overflow,
 		Font:      c.Font,
+		NameFont:  c.NameFont,
 		EmptyText: c.EmptyText,
 	}
 }

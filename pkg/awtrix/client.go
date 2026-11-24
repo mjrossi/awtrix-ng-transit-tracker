@@ -99,24 +99,42 @@ func (c *Client) PushApp(ctx context.Context, name string, app App) error {
 	if err != nil {
 		return fmt.Errorf("awtrix: encode app: %w", err)
 	}
-	return c.do(ctx, http.MethodPut, "/api/v1/apps/pushed/"+name, body)
+	return c.do(ctx, http.MethodPut, "/api/v1/apps/pushed/"+name, body, nil)
 }
 
-// DeleteApp removes the app called name. An app that is already gone,
-// such as after its lifetime expired or the clock restarted, counts as
-// removed.
+// ExpireApp removes the pushed app called name by replacing it with one that
+// expires at once. Unlike DeleteApp, it cannot touch a script of that name.
+// The name keeps its place in the rotation; see ForgetApps.
+func (c *Client) ExpireApp(ctx context.Context, name string) error {
+	return c.PushApp(ctx, name, App{LifetimeMs: 1, LifetimeExpiry: ExpiryRemove})
+}
+
+// Host returns the clock's host, without credentials, for logs.
+func (c *Client) Host() string { return strings.ToLower(c.base.Host) }
+
+// ID tells clocks apart: the host, and the path for clocks that share one
+// behind a proxy.
+func (c *Client) ID() string { return c.Host() + strings.TrimRight(c.base.Path, "/") }
+
+// DeleteApp removes whatever is called name, including a script's source and
+// data; use ExpireApp for a pushed app. An app that is already gone counts
+// as removed. The name of a pushed app keeps its place in the rotation.
 func (c *Client) DeleteApp(ctx context.Context, name string) error {
 	if !ValidAppName(name) {
 		return fmt.Errorf("awtrix: invalid app name %q", name)
 	}
-	err := c.do(ctx, http.MethodDelete, "/api/v1/apps/"+name, nil)
+	err := c.do(ctx, http.MethodDelete, "/api/v1/apps/"+name, nil, nil)
 	if apiErr, ok := errors.AsType[*APIError](err); ok && apiErr.Status == http.StatusNotFound {
 		return nil
 	}
 	return err
 }
 
-func (c *Client) do(ctx context.Context, method, path string, body []byte) error {
+// maxReply bounds a decoded answer; a full app list is a few kilobytes.
+const maxReply = 1 << 20
+
+// do sends a request and decodes the answer into out, unless it is nil.
+func (c *Client) do(ctx context.Context, method, path string, body []byte, out any) error {
 	u := c.base.JoinPath(path)
 	var r io.Reader
 	if body != nil {
@@ -137,6 +155,12 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte) error
 		return fmt.Errorf("awtrix: %s %s: %w", method, path, err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode < 300 && out != nil {
+		if err := json.NewDecoder(io.LimitReader(resp.Body, maxReply)).Decode(out); err != nil {
+			return fmt.Errorf("awtrix: %s %s: %w", method, path, err)
+		}
+		return nil
+	}
 	if resp.StatusCode < 300 {
 		_, _ = io.Copy(io.Discard, resp.Body)
 		return nil

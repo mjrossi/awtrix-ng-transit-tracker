@@ -201,6 +201,38 @@ func TestTextWidth(t *testing.T) {
 	}
 }
 
+// Widths were computed from the firmware's font data, by lit pixels.
+func TestFontWidth(t *testing.T) {
+	tests := []struct {
+		s    string
+		want int
+	}{
+		{"", 0},
+		{"Malmö", 21},
+		{"São Sebastião", 47},
+		{"Santa Apolónia", 49},
+		{"München Hbf", 44},
+		{"München Hbf W", 52},
+		{" Malmö ", 21},
+		{"Mombasa doMonte", 63},
+		// Beyond Latin-1, and glyphs that fill or leave their last column.
+		{"Œ", 5},
+		{"Ж", 5},
+		{"—", 4},
+		{"ą", 4},
+		{"Í", 2},
+	}
+	for _, tt := range tests {
+		if got := render.FontWidth(render.AccentFont, tt.s); got != tt.want {
+			t.Errorf("FontWidth(matrix-light6, %q) = %d, want %d", tt.s, got, tt.want)
+		}
+	}
+	// Other fonts keep the fixed 4 px per character.
+	if got := render.FontWidth("small", "Mombasa doMonte"); got != render.TextWidth("Mombasa doMonte") {
+		t.Errorf("FontWidth(small, ...) = %d, want %d", got, render.TextWidth("Mombasa doMonte"))
+	}
+}
+
 func TestViews(t *testing.T) {
 	type view struct {
 		Name             string
@@ -214,14 +246,20 @@ func TestViews(t *testing.T) {
 	}{
 		{
 			name: "departure overflows past the display width",
+			rows: []transit.Row{row(azul, "Mombasa doMonte", 2)},
+			want: []view{{"Mombasa doMonte", true, true}},
+		},
+		{
+			// 50 px in matrix-light6's real glyphs, so it fits the 52 px row.
+			name: "accented name is measured with its real glyphs",
 			rows: []transit.Row{row(azul, "Santa Apolónia", 2)},
-			want: []view{{"Santa Apolónia", true, true}},
+			want: []view{{"Santa Apolónia", true, false}},
 		},
 		{
 			name: "label makes it fit",
-			rows: []transit.Row{row(azul, "Santa Apolónia", 2)},
-			opts: render.Options{Labels: map[string]string{"Santa Apolónia": "Sta Apolónia"}},
-			want: []view{{"Sta Apolónia", true, false}},
+			rows: []transit.Row{row(azul, "Mombasa doMonte", 2)},
+			opts: render.Options{Labels: map[string]string{"Mombasa doMonte": "Mombasa"}},
+			want: []view{{"Mombasa", true, false}},
 		},
 		{
 			name: "departure hides all but one row",
@@ -229,11 +267,11 @@ func TestViews(t *testing.T) {
 			want: []view{{"Santa Apolónia", false, false}, {"Reboleira", true, false}},
 		},
 		{
-			// Fits the full width, but not the box beside the badge and times.
+			// Fits the full width in matrix-light6, but not the box beside the badge and times.
 			name: "rows overflows its narrower box",
-			rows: []transit.Row{row(azul, "Sta Apolónia", 2), row(azul, "Baixa", 3)},
+			rows: []transit.Row{row(azul, "Santa Apolónia", 2), row(azul, "Baixa", 3)},
 			opts: render.Options{Layout: render.LayoutRows},
-			want: []view{{"Sta Apolónia", true, true}, {"Baixa", true, false}},
+			want: []view{{"Santa Apolónia", true, true}, {"Baixa", true, false}},
 		},
 	}
 	for _, tt := range tests {
@@ -385,5 +423,56 @@ func TestMarksOnlyWithSmallFont(t *testing.T) {
 	}
 	if canceled := rows[0].Departures[1].Status; canceled != transit.StatusCanceled {
 		t.Error("TC002 modified the caller's rows")
+	}
+}
+
+func TestNameFont(t *testing.T) {
+	tests := []struct {
+		name, headsign string
+		opts           render.Options
+		font, valign   string
+	}{
+		{"plain", "Odivelas", render.Options{}, "small", ""},
+		{"accent above", "São Sebastião", render.Options{}, render.AccentFont, ""},
+		{"accented capital", "Águas Livres", render.Options{}, render.AccentFont, ""},
+		// A cedilla hangs below the letter, so small has room for it.
+		{"cedilla", "Praca do Comercio, Praça", render.Options{}, "small", ""},
+		// Extended-A accents get a row of their own in small.
+		{"extended-A", "Žižkov", render.Options{}, "small", ""},
+		{"label decides", "São", render.Options{Labels: map[string]string{"São": "Sao"}}, "small", ""},
+		{"name_font overrides", "Odivelas", render.Options{NameFont: "large"}, "large", ""},
+		{"own font is kept", "São Sebastião", render.Options{Font: "large"}, "large", ""},
+	}
+	for _, tt := range tests {
+		for _, layout := range []render.Layout{render.LayoutDeparture, render.LayoutRows} {
+			t.Run(tt.name+" "+string(layout), func(t *testing.T) {
+				opts := tt.opts
+				opts.Layout = layout
+				l := render.TC002([]transit.Row{row(azul, tt.headsign, 3, 8)}, now, opts)
+				for _, r := range l.Regions {
+					switch {
+					case strings.HasSuffix(r.ID, "sign"):
+						if r.Font != tt.font || r.VAlign != tt.valign {
+							t.Errorf("name font %q valign %q, want %q %q", r.Font, r.VAlign, tt.font, tt.valign)
+						}
+					case strings.HasSuffix(r.ID, "min"):
+						want := tt.opts.Font
+						if want == "" {
+							want = "small"
+						}
+						if r.Font != want {
+							t.Errorf("times font %q, want %q", r.Font, want)
+						}
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestEmptyTextUsesNameFont(t *testing.T) {
+	l := render.TC002(nil, now, render.Options{EmptyText: "Não há"})
+	if f := l.Regions[0].Font; f != render.AccentFont {
+		t.Errorf("font %q, want %q", f, render.AccentFont)
 	}
 }
