@@ -75,17 +75,20 @@ Rules, from [CLAUDE.md](../CLAUDE.md):
   |---|---|---|---|
   | `gtfsrt` | schedule zip | 24 h | keep last, retry in 15 min |
   | `gtfsrt` | each realtime feed | 15 s | failure cached for 15 s too |
-  | `metrolisboa` | stations, destinations | 24 h | keep last, retry in 15 min |
+  | `metrolisboa` | stations | 24 h | keep last, retry in 15 min; with none yet, retry next poll |
+  | `metrolisboa` | destinations | 24 h | keep last, retry in 15 min |
   | `metrolisboa` | each line's wait times | 15 s | not cached |
   | `metrolisboa` | OAuth token | until 1 min before expiry | refetched on 401 once |
   | `carrismetropolitana` | lines | 24 h | keep last, retry in 15 min |
   | `carrismetropolitana` | stop list (search only) | process lifetime | not cached |
 
-  `gtfsrt` is single-flight: one download per feed at a time, and other
-  callers wait for it. Once a schedule exists, its daily refresh runs in a
-  background goroutine detached from the poll's context, and callers keep
-  using the previous schedule. The Lisbon providers do not deduplicate
-  concurrent misses, so boards that start together may each fetch once.
+  Every row except the token and stop list uses `upstream.Cache`
+  (`pkg/transit/internal/upstream`), which is single-flight: one download
+  per resource at a time, and other callers wait for it. Once a `gtfsrt`
+  schedule exists, its daily refresh runs in a background goroutine
+  detached from the poll's context, and callers keep using the previous
+  schedule. Concurrent token fetches are harmless, so they are not
+  deduplicated.
 - The process stops on `SIGINT` or `SIGTERM`: the root context is canceled,
   runners return, and a canceled fetch counts as neither a success nor a
   failure.
