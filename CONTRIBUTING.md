@@ -55,15 +55,21 @@ The `demo` provider is the reference implementation.
 
 ## Before opening a pull request
 
-Run `just ci`.
+Run `just ci`, and add user-visible changes under `Unreleased` in
+[`CHANGELOG.md`](./CHANGELOG.md).
 
 ## Releasing
 
 1. Set `version` in `cmd/urbanist-timetable/main.go` to the new version, for
-   builds outside the image, and merge it to `main`.
+   builds outside the image. In `CHANGELOG.md`, rename `Unreleased` to the
+   version and date, and update the compare links. Merge both to `main`.
 2. Tag and push: `git tag v1.2.3 && git push origin v1.2.3`. The `publish`
    workflow runs `just ci`, then pushes the multi-arch image.
-3. Publish the release notes: `gh release create v1.2.3 --generate-notes`.
+3. Publish that version's changelog section as the release notes:
+   ```sh
+   awk '/^## \[1.2.3\]/{f=1;next} /^## \[/{f=0} f' CHANGELOG.md |
+     gh release create v1.2.3 --notes-file -
+   ```
 4. On an arm64 machine, check that
    `docker run --rm ghcr.io/mjrossi/urbanist-timetable:1.2.3 --version`
    prints `1.2.3`.

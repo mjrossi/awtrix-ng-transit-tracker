@@ -57,6 +57,8 @@ Part of the Urbanist family with *The Urbanist Lexicon* (mjrossi.com) and
 - `internal/scheduler/` — polling, active hours, backoff, last-good cache.
 - `docs/` — `ARCHITECTURE.md`, `rendering.md`, `PLAN.md` (roadmap only:
   no build log or history).
+- `CHANGELOG.md` — user-visible changes, Keep a Changelog format. Add an
+  entry under `Unreleased` in the same change.
 
 ## Tooling
 
