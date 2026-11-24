@@ -69,11 +69,11 @@ func TestDefaults(t *testing.T) {
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("defaults mismatch (-want +got):\n%s", diff)
 	}
-	if b.Clock.Layout != "departure" || b.Clock.Overflow != "scroll" {
-		t.Errorf("layout %q overflow %q, want departure and scroll", b.Clock.Layout, b.Clock.Overflow)
+	if r := b.Clock.Render(); r.Layout != "departure" || r.Overflow != "scroll" || r.MaxRows != 2 {
+		t.Errorf("render options %+v, want departure, scroll and 2 rows", r)
 	}
-	if b.Clock.MaxRows != 2 || b.PerRow != 3 {
-		t.Errorf("rows %d per row %d", b.Clock.MaxRows, b.PerRow)
+	if b.PerRow != 3 {
+		t.Errorf("per row %d, want 3", b.PerRow)
 	}
 	if cfg.Location() != time.Local {
 		t.Error("empty timezone should be local")

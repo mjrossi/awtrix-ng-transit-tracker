@@ -275,12 +275,12 @@ func filterBoards(boards []config.Board, name string) []config.Board {
 }
 
 func printRows(w io.Writer, b config.Board, rows []transit.Row, now time.Time) {
-	fmt.Fprintf(w, "# %s (%s layout) at %s\n", b.Name, b.Clock.Layout, now.Format("15:04:05 MST"))
+	opts := b.Clock.Render()
+	fmt.Fprintf(w, "# %s (%s layout) at %s\n", b.Name, opts.Layout, now.Format("15:04:05 MST"))
 	if len(rows) == 0 {
 		fmt.Fprintln(w, "#   (no departures)")
 	}
 	scrolls := false
-	opts := b.Clock.Render()
 	visible := render.Visible(rows, opts)
 	for _, r := range rows {
 		mins := make([]string, len(r.Departures))
@@ -295,7 +295,7 @@ func printRows(w io.Writer, b config.Board, rows []transit.Row, now time.Time) {
 		switch {
 		case !slices.ContainsFunc(visible, func(v transit.Row) bool { return v.Line.ID == r.Line.ID && v.Headsign == r.Headsign }):
 			mark = " (not shown)"
-		case b.Clock.Layout == render.LayoutDeparture && !render.Fits(name):
+		case opts.Layout == render.LayoutDeparture && !render.Fits(name):
 			mark, scrolls = " ~", true
 		}
 		fmt.Fprintf(w, "#   %-8s %-24s %s%s\n", r.Line.ShortName, name, strings.Join(mins, " "), mark)

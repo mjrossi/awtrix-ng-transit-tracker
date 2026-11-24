@@ -83,7 +83,8 @@ func (o Options) Validate() error {
 	return errors.Join(errs...)
 }
 
-func (o Options) withDefaults() Options {
+// WithDefaults fills empty fields with the renderer's defaults.
+func (o Options) WithDefaults() Options {
 	o.Layout = cmp.Or(o.Layout, LayoutDeparture)
 	o.Overflow = cmp.Or(o.Overflow, OverflowScroll)
 	o.Font = cmp.Or(o.Font, DefaultFont)
@@ -126,7 +127,7 @@ const unlit = "#000000"
 // TC002 renders rows for the 52 × 16 display. rows should be ordered
 // soonest first, as transit.Group returns them.
 func TC002(rows []transit.Row, now time.Time, opts Options) *awtrix.Layout {
-	opts = opts.withDefaults()
+	opts = opts.WithDefaults()
 	if len(rows) == 0 {
 		return &awtrix.Layout{Version: 1, Regions: []awtrix.Region{{
 			ID:       "empty",
@@ -162,7 +163,7 @@ func TC002(rows []transit.Row, now time.Time, opts Options) *awtrix.Layout {
 // directions keeps one destination instead of flipping to whichever
 // departs next.
 func Visible(rows []transit.Row, opts Options) []transit.Row {
-	opts = opts.withDefaults()
+	opts = opts.WithDefaults()
 	n := len(rows)
 	if opts.Layout == LayoutRows {
 		n = min(n, opts.MaxRows)

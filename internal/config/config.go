@@ -24,7 +24,6 @@ import (
 const (
 	DefaultPollInterval = 60 * time.Second
 	DefaultWindow       = 90 * time.Minute
-	DefaultMaxRows      = 2
 	DefaultPerRow       = 3
 	DefaultMaxStale     = 10 * time.Minute
 	// MinPollInterval protects upstream APIs from a typo like "5s".
@@ -92,8 +91,13 @@ type BoardClock struct {
 	Labels map[string]string `toml:"labels"`
 }
 
-// Render returns the renderer options for the board.
-func (c BoardClock) Render() render.Options {
+// Render returns the renderer options for the board, with the renderer's
+// defaults for anything left unset.
+func (c BoardClock) Render() render.Options { return c.options().WithDefaults() }
+
+// options is the board's renderer options as written, which validation
+// needs: defaults would replace an invalid max_rows before it is checked.
+func (c BoardClock) options() render.Options {
 	return render.Options{
 		Layout:    c.Layout,
 		MaxRows:   c.MaxRows,
@@ -313,15 +317,6 @@ func (b *Board) applyDefaults() {
 	if b.Window == 0 {
 		b.Window = Duration(DefaultWindow)
 	}
-	if b.Clock.Layout == "" {
-		b.Clock.Layout = render.LayoutDeparture
-	}
-	if b.Clock.Overflow == "" {
-		b.Clock.Overflow = render.OverflowScroll
-	}
-	if b.Clock.MaxRows == 0 {
-		b.Clock.MaxRows = DefaultMaxRows
-	}
 	if b.PerRow == 0 {
 		b.PerRow = DefaultPerRow
 	}
@@ -344,7 +339,7 @@ func (b *Board) validate(providers map[string]map[string]any) error {
 	if b.Clock.Lifetime < b.PollInterval {
 		errs = append(errs, errors.New("clock.lifetime must be at least poll_interval, or the app expires between pushes"))
 	}
-	if err := b.Clock.Render().Validate(); err != nil {
+	if err := b.Clock.options().Validate(); err != nil {
 		errs = append(errs, fmt.Errorf("clock: %w", err))
 	}
 	if b.PerRow < 0 {
