@@ -31,6 +31,7 @@ import (
 	_ "time/tzdata"
 
 	"github.com/mjrossi/urbanist-timetable/pkg/transit"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit/internal/upstream"
 )
 
 // Name is the provider's name in configuration.
@@ -45,8 +46,9 @@ const (
 const (
 	// metaTTL bounds how long the station and destination lists are cached.
 	metaTTL = 24 * time.Hour
-	// metaRetry is how soon the lists are fetched again after a failed
-	// refresh, so headsigns do not show bare destination codes for a day.
+	// metaRetry is how soon the station and destination lists are fetched
+	// again after a failure, so headsigns do not show bare destination
+	// codes for a day.
 	metaRetry = 15 * time.Minute
 	// lineTTL lets boards that share a line reuse one response per poll.
 	lineTTL = 15 * time.Second
@@ -84,11 +86,6 @@ type station struct {
 	lines []string
 }
 
-type lineCache struct {
-	entries []entry
-	at      time.Time
-}
-
 // Provider reads wait times. It is safe for concurrent use.
 type Provider struct {
 	base     *url.URL
@@ -99,15 +96,14 @@ type Provider struct {
 	lisbon   *time.Location
 	clock    func() time.Time
 
+	stations *upstream.Cache[map[string]station]
+	dests    *upstream.Cache[map[string]string]
+	// lineEntries holds one cache per line in lines.
+	lineEntries map[string]*upstream.Cache[[]entry]
+
 	mu       sync.Mutex
 	token    string
 	tokenExp time.Time
-	stations map[string]station
-	dests    map[string]string
-	// metaNext is when the station and destination lists are next
-	// refreshed.
-	metaNext   time.Time
-	lineByName map[string]lineCache
 }
 
 // Register adds the provider to r.
@@ -127,11 +123,11 @@ func New(cfg Config, client *http.Client) (*Provider, error) {
 	if cfg.TokenURL == "" {
 		cfg.TokenURL = DefaultTokenURL
 	}
-	base, ok := httpURL(cfg.BaseURL)
+	base, ok := upstream.HTTPURL(cfg.BaseURL)
 	if !ok {
 		return nil, fmt.Errorf("base_url %q must be an http(s) URL", cfg.BaseURL)
 	}
-	if _, ok := httpURL(cfg.TokenURL); !ok {
+	if _, ok := upstream.HTTPURL(cfg.TokenURL); !ok {
 		return nil, fmt.Errorf("token_url %q must be an http(s) URL", cfg.TokenURL)
 	}
 	lisbon, err := time.LoadLocation("Europe/Lisbon")
@@ -141,21 +137,33 @@ func New(cfg Config, client *http.Client) (*Provider, error) {
 	if client == nil {
 		client = &http.Client{Timeout: 20 * time.Second}
 	}
-	return &Provider{
-		base:       base,
-		tokenURL:   cfg.TokenURL,
-		id:         cfg.ClientID,
-		secret:     cfg.ClientSecret,
-		http:       client,
-		lisbon:     lisbon,
-		clock:      time.Now,
-		lineByName: map[string]lineCache{},
-	}, nil
-}
-
-func httpURL(raw string) (*url.URL, bool) {
-	u, err := url.Parse(raw)
-	return u, err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
+	p := &Provider{
+		base:        base,
+		tokenURL:    cfg.TokenURL,
+		id:          cfg.ClientID,
+		secret:      cfg.ClientSecret,
+		http:        client,
+		lisbon:      lisbon,
+		clock:       time.Now,
+		lineEntries: map[string]*upstream.Cache[[]entry]{},
+	}
+	// Station failures are not cached, so a provider with no list yet
+	// recovers on the next poll.
+	// Without a station list the provider can answer nothing, so a first
+	// load that fails is retried on the next poll rather than after
+	// metaRetry.
+	p.stations = upstream.NewCache(upstream.Policy{TTL: metaTTL, Retry: metaRetry, RetryOnlyWithData: true}, p.fetchStations)
+	p.dests = upstream.NewCache(upstream.Policy{TTL: metaTTL, Retry: metaRetry}, p.fetchDests)
+	for name := range lines {
+		p.lineEntries[name] = upstream.NewCache(upstream.Policy{TTL: lineTTL}, func(ctx context.Context) ([]entry, error) {
+			var entries []entry
+			if err := p.get(ctx, "tempoEspera/Linha/"+url.PathEscape(name), &entries); err != nil {
+				return nil, err
+			}
+			return entries, nil
+		})
+	}
+	return p, nil
 }
 
 // entry is one platform in a wait-time response. Each lists the next three
@@ -209,7 +217,7 @@ func (p *Provider) Departures(ctx context.Context, q transit.Query) ([]transit.D
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	stations, dests, err := p.meta(ctx, q.Now)
+	stations, err := p.stationList(ctx, q.Now)
 	if err != nil {
 		return nil, err
 	}
@@ -217,6 +225,10 @@ func (p *Provider) Departures(ctx context.Context, q transit.Query) ([]transit.D
 	if !ok {
 		return nil, fmt.Errorf("%w %q", ErrUnknownStop, q.StopID)
 	}
+
+	// A failed destination list keeps the previous one; without one,
+	// headsigns fall back to destination codes.
+	dests, _ := p.dests.Get(ctx, q.Now)
 
 	end := q.Now.Add(q.Window)
 	// Terminals report the same train on more than one platform entry, so
@@ -234,7 +246,7 @@ func (p *Provider) Departures(ctx context.Context, q transit.Query) ([]transit.D
 		if !ok {
 			continue
 		}
-		entries, err := p.lineEntries(ctx, lineName, q.Now)
+		entries, err := p.lineEntries[lineName].Get(ctx, q.Now)
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
@@ -312,75 +324,45 @@ func (p *Provider) trains(e entry, now, end time.Time) []train {
 	return out
 }
 
-func (p *Provider) lineEntries(ctx context.Context, line string, now time.Time) ([]entry, error) {
-	p.mu.Lock()
-	c, ok := p.lineByName[line]
-	p.mu.Unlock()
-	if ok && now.Sub(c.at) >= 0 && now.Sub(c.at) < lineTTL {
-		return c.entries, nil
-	}
-	var entries []entry
-	if err := p.get(ctx, "tempoEspera/Linha/"+url.PathEscape(line), &entries); err != nil {
+// stationList returns the station list, refreshing it daily. A failed
+// refresh keeps the previous list and is retried after metaRetry.
+func (p *Provider) stationList(ctx context.Context, now time.Time) (map[string]station, error) {
+	stations, err := p.stations.Get(ctx, now)
+	if stations == nil {
 		return nil, err
 	}
-	p.mu.Lock()
-	p.lineByName[line] = lineCache{entries: entries, at: now}
-	p.mu.Unlock()
-	return entries, nil
+	return stations, nil
 }
 
-// meta returns the station and destination lists, refreshing them daily.
-// A failed refresh keeps the previous lists and is retried after metaRetry.
-func (p *Provider) meta(ctx context.Context, now time.Time) (map[string]station, map[string]string, error) {
-	p.mu.Lock()
-	stations, dests, next := p.stations, p.dests, p.metaNext
-	p.mu.Unlock()
-	if stations != nil && now.Before(next) {
-		return stations, dests, nil
-	}
-
-	var wireStations []struct {
+func (p *Provider) fetchStations(ctx context.Context) (map[string]station, error) {
+	var wire []struct {
 		ID    string `json:"stop_id"`
 		Name  string `json:"stop_name"`
 		Linha string `json:"linha"`
 	}
-	if err := p.get(ctx, "infoEstacao/todos", &wireStations); err != nil {
-		if stations == nil {
-			return nil, nil, err
-		}
-		if ctx.Err() == nil {
-			p.mu.Lock()
-			p.metaNext = now.Add(metaRetry)
-			p.mu.Unlock()
-		}
-		return stations, dests, nil
+	if err := p.get(ctx, "infoEstacao/todos", &wire); err != nil {
+		return nil, err
 	}
-	stations = make(map[string]station, len(wireStations))
-	for _, s := range wireStations {
+	stations := make(map[string]station, len(wire))
+	for _, s := range wire {
 		stations[s.ID] = station{name: s.Name, lines: parseList(s.Linha)}
 	}
+	return stations, nil
+}
 
-	var wireDests []struct {
+func (p *Provider) fetchDests(ctx context.Context) (map[string]string, error) {
+	var wire []struct {
 		ID   string `json:"id_destino"`
 		Name string `json:"nome_destino"`
 	}
-	newDests := map[string]string{}
-	next = now.Add(metaTTL)
-	if err := p.get(ctx, "infoDestinos/todos", &wireDests); err == nil {
-		for _, d := range wireDests {
-			newDests[d.ID] = d.Name
-		}
-	} else {
-		if dests != nil {
-			newDests = dests
-		}
-		next = now.Add(metaRetry)
+	if err := p.get(ctx, "infoDestinos/todos", &wire); err != nil {
+		return nil, err
 	}
-
-	p.mu.Lock()
-	p.stations, p.dests, p.metaNext = stations, newDests, next
-	p.mu.Unlock()
-	return stations, newDests, nil
+	dests := make(map[string]string, len(wire))
+	for _, d := range wire {
+		dests[d.ID] = d.Name
+	}
+	return dests, nil
 }
 
 // parseList reads the API's "[Verde, Vermelha]" list strings.
@@ -398,7 +380,7 @@ func parseList(s string) []string {
 // SearchStops implements transit.StopSearcher, matching a station ID
 // exactly or every word of search against station names.
 func (p *Provider) SearchStops(ctx context.Context, search string) ([]transit.Stop, error) {
-	stations, _, err := p.meta(ctx, p.clock())
+	stations, err := p.stationList(ctx, p.clock())
 	if err != nil {
 		return nil, err
 	}
