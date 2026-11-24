@@ -78,3 +78,53 @@ func TestPrintRowsMarksHiddenRows(t *testing.T) {
 		}
 	}
 }
+
+func TestBoardForUsesBoardTimezone(t *testing.T) {
+	src := `timezone = "Europe/Lisbon"
+[clock]
+url = "http://clock.local"
+[providers.demo]
+[[providers.demo.lines]]
+id = "azul"
+headway = "6m"
+[[boards]]
+name = "lisbon"
+active_hours = "07:00-09:00"
+[[boards.stops]]
+provider = "demo"
+stop = "s1"
+[[boards]]
+name = "tokyo"
+timezone = "Asia/Tokyo"
+active_hours = "07:00-09:00"
+[[boards.stops]]
+provider = "demo"
+stop = "s1"
+`
+	cfg, err := config.Parse([]byte(src), func(string) (string, bool) { return "", false })
+	if err != nil {
+		t.Fatal(err)
+	}
+	provs := map[string]transit.Provider{"demo": nil}
+	// 08:00 in Lisbon is 17:00 in Tokyo, so only the Lisbon board is active.
+	instant := time.Date(2026, 11, 24, 8, 0, 0, 0, time.UTC)
+	tests := []struct {
+		board, zone string
+		active      bool
+	}{
+		{"lisbon", "Europe/Lisbon", true},
+		{"tokyo", "Asia/Tokyo", false},
+	}
+	for i, tt := range tests {
+		sb, err := boardFor(cfg.Boards[i], provs)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if sb.Name != tt.board || sb.Location.String() != tt.zone {
+			t.Errorf("board %s: location = %s, want %s", sb.Name, sb.Location, tt.zone)
+		}
+		if got := sb.Active(instant.In(sb.Location)); got != tt.active {
+			t.Errorf("board %s: active = %v, want %v", sb.Name, got, tt.active)
+		}
+	}
+}

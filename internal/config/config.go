@@ -218,8 +218,9 @@ func (c *Config) validate() error {
 		loc, err := time.LoadLocation(c.Timezone)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("timezone: %w", err))
+		} else {
+			c.location = loc
 		}
-		c.location = loc
 	}
 	if c.Clock.URL == "" {
 		errs = append(errs, errors.New("clock.url is required"))
@@ -241,8 +242,9 @@ func (c *Config) validate() error {
 			loc, err := time.LoadLocation(b.Timezone)
 			if err != nil {
 				errs = append(errs, fmt.Errorf("boards[%d] (%s): timezone: %w", i, b.Name, err))
+			} else {
+				b.location = loc
 			}
-			b.location = loc
 		}
 		if err := b.validate(c.Providers); err != nil {
 			errs = append(errs, fmt.Errorf("boards[%d] (%s): %w", i, b.Name, err))

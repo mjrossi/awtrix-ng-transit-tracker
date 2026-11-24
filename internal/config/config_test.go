@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	_ "time/tzdata" // zone tests must not depend on the host's zoneinfo
 
 	"github.com/google/go-cmp/cmp"
 
@@ -190,6 +191,7 @@ func TestBoardTimezone(t *testing.T) {
 		{name: "board inherits top", top: "Europe/Lisbon", want: "Europe/Lisbon"},
 		{name: "board only", board: "Asia/Tokyo", want: "Asia/Tokyo"},
 		{name: "neither", want: ""},
+		{name: "board Local overrides top", top: "Europe/Lisbon", board: "Local", want: ""},
 		{name: "invalid board zone", board: "Mars/Olympus", wantErr: "boards[0] (metro): timezone"},
 	}
 	for _, tt := range tests {

@@ -5,7 +5,7 @@
 # variable is an error.
 
 # IANA time zone for active_hours. Empty uses the TZ environment variable.
-# A board's own `timezone` overrides it.
+# A board's own `timezone` overrides it; "Local" there means the TZ zone.
 timezone = "Europe/Lisbon"
 
 [clock]
