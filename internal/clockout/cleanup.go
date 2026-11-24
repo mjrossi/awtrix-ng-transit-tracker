@@ -16,9 +16,8 @@ import (
 // Forgetter removes apps, and the places they keep, from the clock.
 // *awtrix.Client implements it.
 type Forgetter interface {
-	// ForgetApps removes the given names and returns those it actually
-	// removed; names the clock does not know, or that belong to a script
-	// or built-in app, are left alone.
+	// ForgetApps returns the names it removed. Others are not on the clock,
+	// or belong to a script or built-in app.
 	ForgetApps(ctx context.Context, names []string) ([]string, error)
 }
 
@@ -51,10 +50,7 @@ func (c Cleanup) Run(ctx context.Context) {
 	prev, err := readState(c.Path)
 	if err != nil {
 		if !errors.Is(err, errCorrupt) {
-			// A missing file is the first run, and a corrupt one is
-			// replaced below. Any other read error must stop the
-			// cleanup: saving would lose the names the unreadable file
-			// still records.
+			// Saving would lose the names the file still records.
 			c.Log.WarnContext(ctx, "read state; boards removed earlier are not cleaned up, and the state file is left alone", slog.Any("err", err))
 			return
 		}
@@ -82,7 +78,7 @@ func (c Cleanup) Run(ctx context.Context) {
 			if left := slices.DeleteFunc(slices.Clone(stale), func(n string) bool {
 				return slices.Contains(removed, n)
 			}); len(left) > 0 {
-				c.Log.InfoContext(ctx, "left old board names on the clock (unknown there, or a script or built-in app has the name)", slog.Any("boards", left))
+				c.Log.InfoContext(ctx, "old boards not in the clock's rotation, or their name belongs to a script or built-in app", slog.Any("boards", left))
 			}
 			break
 		}
@@ -125,9 +121,9 @@ func readState(path string) (cleanupState, error) {
 	return s, nil
 }
 
-// writeState replaces the file in one step and flushes it first, so a
-// crash or power loss leaves the old or the new state, never a rename
-// onto unwritten data.
+// writeState replaces the file in one step and flushes it first, so a crash
+// or power loss leaves the old or the new state. The old one is safe: its
+// cleanup is repeated.
 func writeState(path string, s cleanupState) error {
 	b, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
@@ -151,11 +147,6 @@ func writeState(path string, s cleanupState) error {
 	}
 	if err := os.Rename(f.Name(), path); err != nil {
 		return fmt.Errorf("state: %w", err)
-	}
-	// Flush the directory too, so the rename itself survives power loss.
-	if d, err := os.Open(filepath.Dir(path)); err == nil {
-		_ = d.Sync()
-		_ = d.Close()
 	}
 	return nil
 }

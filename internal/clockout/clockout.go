@@ -16,10 +16,7 @@ import (
 // Pusher sends apps to the clock. *awtrix.Client implements it.
 type Pusher interface {
 	PushApp(ctx context.Context, name string, app awtrix.App) error
-	// DeletePushedApp removes the pushed app called name, leaving alone
-	// any script that shares it: the clock's DELETE would remove a
-	// script's source too.
-	DeletePushedApp(ctx context.Context, name string) error
+	ExpireApp(ctx context.Context, name string) error
 }
 
 // Board is how one board appears on the clock.
@@ -82,5 +79,5 @@ func (o *Output) Withdraw(ctx context.Context, board string) error {
 	if o.pusher == nil {
 		return errNoPusher
 	}
-	return o.pusher.DeletePushedApp(ctx, board)
+	return o.pusher.ExpireApp(ctx, board)
 }

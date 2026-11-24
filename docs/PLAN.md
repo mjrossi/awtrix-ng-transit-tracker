@@ -144,13 +144,14 @@ providers). Each widens who the project works for.
 - The Ulanzi TC001's behavior with the `layout` key: confirm it is
   rejected before designing the 32 × 8 renderer.
 - Still to confirm on the maintainer's TC002:
+  - stopping the service removes the app after its lifetime (three polls);
   - after a clock reboot the app returns within one poll;
+  - outside active hours the app leaves at once, by a push that expires
+    after 1 ms;
+  - a removed board leaves the app list, and the rest of the rotation,
+    scripts included, stays as it was;
+  - names in `matrix-light6` next to boards in `small`, and that a name
+    with an accented capital ("Águas Livres") keeps the baseline of the
+    others;
   - a malformed color is rejected (colors are normalized before pushing,
     so this only confirms the safeguard is needed).
-- No longer open, answered in code (ARCHITECTURE.md, "Failure
-  semantics"): stopping the service removes the app after its lifetime
-  (three polls), because every push carries `lifetimeExpiry: remove`;
-  outside active hours the app is removed with
-  `DELETE /api/v1/apps/{name}` although it was pushed to
-  `/api/v1/apps/pushed/{name}`, and a `404` for an app already gone is
-  treated as success.

@@ -201,20 +201,26 @@ func TestTextWidth(t *testing.T) {
 	}
 }
 
-// FontWidth measures a matrix-light6 name with the font's real per-glyph
-// advances, so a name of wide letters is not underestimated.
+// Widths were computed from the firmware's font data, by lit pixels.
 func TestFontWidth(t *testing.T) {
 	tests := []struct {
 		s    string
 		want int
 	}{
 		{"", 0},
-		{"Reboleira", 32},
-		{"Cais do Sodré", 46},
-		{"Santa Apolónia", 50},
-		{"Águas Livres", 44},
-		{"Wenceslau", 36},
-		{"Mombasa doMonte", 64}, // 4 px per character would say 57
+		{"Malmö", 21},
+		{"São Sebastião", 47},
+		{"Santa Apolónia", 49},
+		{"München Hbf", 44},
+		{"München Hbf W", 52},
+		{" Malmö ", 21},
+		{"Mombasa doMonte", 63},
+		// Beyond Latin-1, and glyphs that fill or leave their last column.
+		{"Œ", 5},
+		{"Ж", 5},
+		{"—", 4},
+		{"ą", 4},
+		{"Í", 2},
 	}
 	for _, tt := range tests {
 		if got := render.FontWidth(render.AccentFont, tt.s); got != tt.want {

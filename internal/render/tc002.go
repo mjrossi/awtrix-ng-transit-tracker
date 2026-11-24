@@ -588,8 +588,7 @@ func (o Options) scroll() *awtrix.Scroll {
 }
 
 // Font metrics of AWTRIX NG's small and large fonts, from the firmware's
-// visual reference: every character advances 4 px, a space 2 px. The
-// Matrix fonts are proportional, so FontWidth measures them per glyph.
+// visual reference: every character advances 4 px, a space 2 px.
 const (
 	charWidth  = 4
 	spaceWidth = 2
@@ -612,36 +611,42 @@ func TextWidth(s string) int {
 	return w
 }
 
-// FontWidth returns the width of s in pixels as drawn in font. The small
-// and large fonts advance every character 4 px; AccentFont is measured
-// with its real per-glyph advances, so the estimate never falls short of
-// the drawn width for names full of wide letters. Other fonts are
-// measured like the small one.
+// FontWidth returns the width of s in pixels as drawn in font, from its
+// first to its last lit column. Only AccentFont is measured per glyph; other
+// fonts are measured like the small one.
 func FontWidth(font, s string) int {
 	if font != AccentFont {
 		return TextWidth(s)
 	}
-	w := 0
-	for _, r := range s {
-		w += cmp.Or(matrixLight6Advance[r], matrixLight6Default)
+	w, trim := 0, 0
+	for _, r := range strings.TrimSpace(s) {
+		w += cmp.Or(accentFontAdvance[r], charWidth)
+		trim = 1 - accentFontOverhang[r]
 	}
-	return w
+	return w - trim
 }
 
-// matrixLight6Advance is the advance in pixels of each Latin-1 glyph of
-// AWTRIX NG's matrix-light6 font that differs from the common 4 px, from
-// the font's upstream BDF (trip5/Matrix-Fonts, 6-series/MatrixLight6.bdf;
-// the firmware keeps the original advances). Glyphs outside Latin-1
-// advance 4 px.
-var matrixLight6Advance = map[rune]int{
-	' ': 2, '!': 2, '#': 6, '&': 5, '\'': 2, '(': 3, ')': 3, ',': 2, '.': 2,
-	'1': 3, ':': 2, ';': 2, '@': 5, 'G': 5, 'H': 5, 'I': 2, 'M': 6, 'N': 5,
-	'O': 5, 'Q': 5, 'W': 6, '`': 3, 'i': 2, 'l': 2, 'm': 6, 'w': 6, '|': 2,
-	'~': 5,
-	'¡': 2, '¦': 2, '©': 3, '«': 5, '²': 3, '´': 3, '·': 2, '¸': 3, '¹': 2,
-	'»': 5, '¼': 6, '½': 6, '¾': 8, 'Æ': 6, 'Ì': 3, 'Î': 2, 'Ð': 5, 'Ñ': 5,
-	'Ø': 5, 'ß': 5, 'æ': 6, 'ì': 3, 'í': 3,
-}
+// accentFontAdvance has AccentFont's advances that are not charWidth, for
+// the letters and punctuation of European languages. They are the firmware's:
+// MatrixLight6.bdf of trip5/Matrix-Fonts with the glyphs AWTRIX NG adds.
+var accentFontAdvance = func() map[rune]int {
+	m := map[rune]int{}
+	for px, glyphs := range map[int]string{
+		2: " \u00a0!',.:;Iil|¡¦·¹ÎİıļΙιΙіі•",
+		3: "()1`©²´¸Ììíįĺŀſɭί–",
+		5: "&@GHNOQ~«»ÐÑØßďĐđĜĞĠĢħĲĳĴĵŁŃŅŇŉťƠơƯưɑɒɖɗɚɝɞɠɢɬɳɴɻʆʋʑʒʗʚʛʜʝʡʢΗΘΝΟΠάαπσНОПЦЪбийцъҐ—",
+		6: "#MWmw¼½ÆæĦŒœŴŵɕɫɮɯɰɱɲɶɷɸʉʊʍʓʘʠʬʭʮΆΈΎΔΛΜΦΨΩφψωώДЖИЙМФШЫЮджмфшыю",
+		7: "ʣʦʧʩʪʫʯΉΌЩщ",
+		8: "¾ʤʥΏ",
+		9: "ʨ",
+	} {
+		for _, r := range glyphs {
+			m[r] = px
+		}
+	}
+	return m
+}()
 
-// matrixLight6Default is the advance of every other glyph.
-const matrixLight6Default = charWidth
+// accentFontOverhang is how far a glyph's last lit column is from the usual
+// one, which leaves one unlit column before the next glyph.
+var accentFontOverhang = map[rune]int{'Í': -1, 'Į': -1, 'Ą': 1, 'ą': 1, 'Ę': 1}

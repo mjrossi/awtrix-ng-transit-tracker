@@ -50,9 +50,9 @@ interpreted.
     (`config.ProviderOptions.Decode`), because values hold expanded
     secrets by then;
   - `gtfsrt` names URLs without credentials or query strings (`redact`);
-  - the clock URL may embed basic-auth credentials; logs and the state
-    file show only its host (`Client.Host`), and URL parse errors drop
-    the raw URL.
+  - the clock URL may embed basic-auth credentials; logs show only its host
+    (`Client.Host`), the state file its host and path (`Client.ID`), and
+    URL parse errors drop the raw URL.
 
   New providers follow the same rules (CONTRIBUTING.md, "Adding a provider").
 - The clock's basic auth is usually sent over plain HTTP, because AWTRIX NG

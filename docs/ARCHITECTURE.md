@@ -113,7 +113,7 @@ Rules, from [CLAUDE.md](../CLAUDE.md):
 | Every source is failing with nothing younger than `max_stale` | Nothing is published, which is logged when it starts. The app's `lifetimeMs` (default 3 × `poll_interval`) removes it from the clock instead of showing "No departures". |
 | A provider returns departures with a `*transit.PartialError` (such as one of several feeds failing) | The departures are used. The problem is logged when it starts, changes and clears, not on every poll. |
 | The service stops | Every push carries `lifetimeMs` with `lifetimeExpiry: remove`, so the app leaves the clock. |
-| Outside `active_hours` | No provider calls. The board is withdrawn once; on the clock the app is deleted (a script sharing the name is left alone), and a 404 counts as already gone. |
+| Outside `active_hours` | No provider calls. The board is withdrawn once; on the clock the app expires at once (see "Removed boards"). |
 | A board is removed from the configuration | At the next start, `clockout.Cleanup` compares the configured boards with the names in the state file and calls `awtrix.Client.ForgetApps`, retrying until the clock answers: after 1 min, doubling up to 1 h. See below. |
 | The clock reboots | Pushed apps live in its RAM; the next tick pushes again. |
 | Pushing to the clock fails | Logged; the next tick retries. |
@@ -124,23 +124,24 @@ The clock keeps an app's name in its saved rotation after the app expires or
 is deleted, and lists it as "no data". Only rewriting the whole rotation
 (`PUT /api/v1/apps/order`) removes it, and the clock does not record who
 pushed an app. So the service keeps its own record, the state file
-(`--state`): the clock's host and the names of the boards it may have
+(`--state`): the clock's address and the names of the boards it may have
 pushed there. A removed board stays in the file until the clock has
 forgotten it, so a restart resumes the cleanup. Names recorded for another
-host are dropped.
+address are dropped.
 
-`ForgetApps` deletes only pushed apps whose name no stored script has: when
-a pushed app and a script share a name, the clock lists only the pushed
-one, and `DELETE` on the name would remove the script's source too, so
-`GET /api/v1/apps/script/{name}` is checked first and the name is left
-alone when it answers 200. Names that only keep a place in the rotation
-(expired apps, scripts refused at boot) are never deleted, only dropped
-from the rewritten order. The same guard protects `Withdraw` outside
-active hours (`DeletePushedApp`). The rotation is read again just before
-it is rewritten, so a change made in the web UI in between would be lost.
-An empty app list or a missing `scriptingRunning` flag is treated as an
-error, not a success, so a slotted script is never dropped from the
-rotation.
+Neither this cleanup nor hiding a board outside its active hours uses
+`DELETE /api/v1/apps/{name}`, which also erases the source of a script with
+that name. A pushed app is replaced by one that expires after 1 ms instead
+(`ExpireApp`), which cannot touch a script.
+
+`ForgetApps` leaves the place of a name that belongs to a script or built-in
+app. It asks `GET /api/v1/apps/script/{name}` as well as reading the app
+list, because a pushed app hides a script of the same name there. Before
+rewriting the rotation it checks that the list is plausible (slots without
+gaps, a built-in app); if any answer is doubtful it writes nothing and the
+cleanup is retried. It writes even an unchanged rotation, because after a
+507 the clock uses an order it has not saved. A change made in the web UI
+between reading and writing would be lost.
 
 ## Configuration shape
 

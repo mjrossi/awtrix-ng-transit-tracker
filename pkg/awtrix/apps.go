@@ -22,121 +22,120 @@ type listedApp struct {
 	Present bool   `json:"present"`
 }
 
-// pushed reports whether the entry is a pushed app.
-func (a listedApp) pushed() bool { return a.Origin == originPushed }
-
 // placeholder reports whether the entry only keeps a place in the
-// rotation, left behind by an app that is gone or by a script refused at
-// boot. A placeholder must not be deleted: DELETE on its name would
-// remove a script's source too. It only needs the order rewrite.
+// rotation, such as one left by an expired app.
 func (a listedApp) placeholder() bool { return a.Origin == "" && !a.Present }
 
 // ForgetApps removes pushed apps and the places they keep in the clock's
-// rotation, which outlive both an app's lifetime and DeleteApp, and
-// returns the names it actually removed. Names the clock does not know,
-// or that belong to a script or built-in app, are left alone: when a
-// pushed app and a script share a name, the clock lists only the pushed
-// one, and DELETE on the name would remove the script's source too, so
-// the script API is asked first.
+// rotation, which outlive the apps, and returns the names it found and
+// removed. A name that also belongs to a script or built-in app loses its
+// pushed app but keeps its place, and is not returned. Any doubtful answer
+// from the clock is an error, before anything is written.
 func (c *Client) ForgetApps(ctx context.Context, names []string) ([]string, error) {
+	scripts := map[string]bool{}
+	for _, n := range names {
+		if !ValidAppName(n) {
+			continue
+		}
+		has, err := c.hasScript(ctx, n)
+		if err != nil {
+			return nil, err
+		}
+		scripts[n] = has
+	}
+	if len(scripts) == 0 {
+		return nil, nil
+	}
+	scripting, err := c.scriptingRunning(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Ownership and the new order come from the same list, read just before
+	// the write, to leave little time for a change in the web UI to be lost.
 	apps, err := c.listApps(ctx)
 	if err != nil {
 		return nil, err
 	}
-	var deletes, places []string
-	for _, n := range names {
-		isEntry := func(a listedApp) bool { return a.Name == n }
-		if !slices.ContainsFunc(apps, isEntry) {
-			continue
-		}
-		// A script, built-in or module listed under the same name: leave
-		// the whole name alone.
-		if slices.ContainsFunc(apps, func(a listedApp) bool {
-			return isEntry(a) && !a.pushed() && !a.placeholder()
-		}) {
-			continue
-		}
-		if slices.ContainsFunc(apps, func(a listedApp) bool { return isEntry(a) && a.pushed() }) {
-			has, err := c.hasScript(ctx, n)
-			if err != nil {
-				return nil, err
-			}
-			if has {
+	var forget, removed, expire []string
+	for n, owned := range scripts {
+		known := false
+		for _, a := range apps {
+			if a.Name != n {
 				continue
 			}
-			deletes = append(deletes, n)
-		} else {
-			// Only a placeholder: no DELETE, just the order rewrite.
-			places = append(places, n)
+			known = true
+			switch {
+			case a.Origin == originPushed:
+				expire = append(expire, n)
+			case !a.placeholder():
+				owned = true
+			}
+		}
+		if owned {
+			continue
+		}
+		forget = append(forget, n)
+		if known {
+			removed = append(removed, n)
 		}
 	}
-	for _, n := range deletes {
-		if err := c.DeleteApp(ctx, n); err != nil {
+	// The order is written even if it does not change: after a 507 the clock
+	// uses it without having saved it, until it is written again.
+	if len(forget) > 0 {
+		if err := c.putOrder(ctx, apps, forget, scripting); err != nil {
 			return nil, err
 		}
 	}
-	removed := slices.Concat(deletes, places)
-	if err := c.forgetPlaces(ctx, removed); err != nil {
-		return nil, err
+	slices.Sort(expire)
+	for _, n := range slices.Compact(expire) {
+		if err := c.ExpireApp(ctx, n); err != nil {
+			return nil, err
+		}
 	}
+	slices.Sort(removed)
 	return removed, nil
 }
 
-// hasScript reports whether the clock stores a script called name. DELETE
-// on that name removes the script's source as well, so callers check
-// first. A clock without scripting answers 503, which also means no
-// scripts exist.
+// hasScript reports whether the clock stores a script called name. Only the
+// firmware's own error codes count as no: a proxy or a busy clock can answer
+// with the same statuses.
 func (c *Client) hasScript(ctx context.Context, name string) (bool, error) {
 	err := c.do(ctx, http.MethodGet, "/api/v1/apps/script/"+name, nil, nil)
-	var apiErr *APIError
-	if errors.As(err, &apiErr) {
-		switch apiErr.Status {
-		case http.StatusNotFound, http.StatusServiceUnavailable:
-			return false, nil
-		}
+	if e, ok := errors.AsType[*APIError](err); ok &&
+		(e.Status == http.StatusNotFound && e.Code == "notFound" ||
+			e.Status == http.StatusServiceUnavailable && e.Code == "unavailable") {
+		return false, nil
 	}
-	if err != nil {
-		return false, err
-	}
-	return true, nil
+	return err == nil, err
 }
 
-// forgetPlaces drops names from the rotation. The clock only accepts the
-// whole arrangement, so it is read again just before it is written, to leave
-// little time for a change in the web UI to be lost.
-func (c *Client) forgetPlaces(ctx context.Context, names []string) error {
-	if len(names) == 0 {
-		return nil
-	}
+func (c *Client) scriptingRunning(ctx context.Context) (bool, error) {
 	var device struct {
 		ScriptingRunning *bool `json:"scriptingRunning"`
 	}
 	if err := c.do(ctx, http.MethodGet, "/api/v1/device", nil, &device); err != nil {
-		return err
+		return false, err
 	}
 	if device.ScriptingRunning == nil {
-		return errors.New("awtrix: GET /api/v1/device: no scriptingRunning")
+		return false, errors.New("awtrix: GET /api/v1/device: no scriptingRunning")
 	}
-	scripting := *device.ScriptingRunning
-	apps, err := c.listApps(ctx)
-	if err != nil {
-		return err
-	}
+	return *device.ScriptingRunning, nil
+}
+
+// putOrder writes the arrangement in apps without the names in forget. The
+// clock only accepts the whole arrangement.
+func (c *Client) putOrder(ctx context.Context, apps []listedApp, forget []string, scripting bool) error {
 	body := struct {
 		Order    []string `json:"order"`
 		Disabled []string `json:"disabled"`
 	}{Order: []string{}, Disabled: []string{}}
-	changed := false
 	for _, a := range apps {
-		// Script modules are not in the rotation. With scripting off, the
-		// clock lists every stored script as disabled; only a script
-		// without a slot is left out of the rewrite, so a slotted one
-		// keeps its place in the rotation.
-		if a.Enabled == nil || (a.Origin == "script" && !scripting && a.Slot == nil) {
+		if a.Enabled == nil || slices.Contains(forget, a.Name) {
 			continue
 		}
-		if slices.Contains(names, a.Name) {
-			changed = changed || a.Slot != nil || !*a.Enabled
+		// With scripting off, the clock lists every stored script again
+		// without a slot and as disabled, whatever its saved switch.
+		if a.Origin == "script" && !scripting && a.Slot == nil {
 			continue
 		}
 		if a.Slot != nil {
@@ -146,9 +145,6 @@ func (c *Client) forgetPlaces(ctx context.Context, names []string) error {
 			body.Disabled = append(body.Disabled, a.Name)
 		}
 	}
-	if !changed {
-		return nil
-	}
 	b, err := json.Marshal(body)
 	if err != nil {
 		return fmt.Errorf("awtrix: encode order: %w", err)
@@ -157,16 +153,39 @@ func (c *Client) forgetPlaces(ctx context.Context, names []string) error {
 }
 
 // listApps returns the clock's apps, those in the rotation first and in
-// order. An app shown twice per round is listed twice. An empty list is an
-// error: the clock always lists its built-in apps, so null or [] means the
-// answer was not a real app list, and acting on it could wipe the rotation.
+// order. An app shown twice per round is listed twice.
 func (c *Client) listApps(ctx context.Context) ([]listedApp, error) {
 	var apps []listedApp
 	if err := c.do(ctx, http.MethodGet, "/api/v1/apps", nil, &apps); err != nil {
 		return nil, err
 	}
-	if len(apps) == 0 {
-		return nil, errors.New("awtrix: GET /api/v1/apps: empty app list")
+	if err := checkApps(apps); err != nil {
+		return nil, fmt.Errorf("awtrix: GET /api/v1/apps: %w", err)
 	}
 	return apps, nil
+}
+
+// checkApps rejects a list that cannot be the clock's complete one, because
+// a rotation rebuilt from it would lose apps.
+func checkApps(apps []listedApp) error {
+	slots, rest, builtin := 0, false, false
+	for _, a := range apps {
+		switch {
+		case a.Name == "":
+			return errors.New("app without a name")
+		case a.Enabled == nil && a.Origin != "module":
+			return fmt.Errorf("app %q without enabled", a.Name)
+		case a.Slot == nil:
+			rest = true
+		case rest || *a.Slot != slots:
+			return fmt.Errorf("app %q in unexpected slot %d", a.Name, *a.Slot)
+		default:
+			slots++
+		}
+		builtin = builtin || a.Origin == "builtin"
+	}
+	if !builtin {
+		return errors.New("no built-in app listed")
+	}
+	return nil
 }

@@ -12,47 +12,71 @@ import (
 	"github.com/mjrossi/urbanist-timetable/pkg/awtrix"
 )
 
+const (
+	noScript    = `{"error":{"code":"notFound","message":"no such script"}}`
+	noScripting = `{"error":{"code":"unavailable","message":"no scripting"}}`
+	notSaved    = `{"error":{"code":"insufficientStorage","message":"applied, not saved yet"}}`
+)
+
+type reply struct {
+	status int
+	body   string
+}
+
 // fakeClock answers the calls ForgetApps makes and records the writes.
-// scripts are the names its script API knows; the rest answer 404.
 type fakeClock struct {
-	apps         string
-	device       string
-	scripting    bool
-	scripts      map[string]string
+	apps string
+	// device overrides the device answer.
+	device    string
+	scripting bool
+	// scripts answers script lookups by name; others get noScript.
+	scripts map[string]reply
+	// orderReplies are returned by successive order writes, then 200.
+	orderReplies []reply
 	writes       []string
-	scriptChecks []string
 	order        map[string][]string
+	pushed       map[string]any
 }
 
 func (c *fakeClock) client(t *testing.T) *awtrix.Client {
 	t.Helper()
+	const scriptPath = "/api/v1/apps/script/"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/device":
-			if c.device != "" {
+		if r.Method == http.MethodGet {
+			switch {
+			case r.URL.Path == "/api/v1/device" && c.device != "":
 				_, _ = w.Write([]byte(c.device))
-			} else {
+			case r.URL.Path == "/api/v1/device":
 				_ = json.NewEncoder(w).Encode(map[string]any{"version": "1.2.3", "scriptingRunning": c.scripting})
-			}
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/apps":
-			_, _ = w.Write([]byte(c.apps))
-		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/apps/script/"):
-			name := strings.TrimPrefix(r.URL.Path, "/api/v1/apps/script/")
-			c.scriptChecks = append(c.scriptChecks, name)
-			if src, ok := c.scripts[name]; ok {
-				_, _ = w.Write([]byte(src))
-			} else {
-				w.WriteHeader(http.StatusNotFound)
-				_, _ = w.Write([]byte(`{"error":{"code":"notFound","message":"no such script"}}`))
-			}
-		default:
-			c.writes = append(c.writes, r.Method+" "+r.URL.Path)
-			if r.URL.Path == "/api/v1/apps/order" {
-				if err := json.NewDecoder(r.Body).Decode(&c.order); err != nil {
-					t.Errorf("order body: %v", err)
+			case r.URL.Path == "/api/v1/apps":
+				_, _ = w.Write([]byte(c.apps))
+			case strings.HasPrefix(r.URL.Path, scriptPath):
+				rep, ok := c.scripts[strings.TrimPrefix(r.URL.Path, scriptPath)]
+				if !ok {
+					rep = reply{http.StatusNotFound, noScript}
 				}
+				w.WriteHeader(rep.status)
+				_, _ = w.Write([]byte(rep.body))
 			}
-			_, _ = w.Write([]byte(`{"ok":true}`))
+			return
+		}
+		c.writes = append(c.writes, r.Method+" "+r.URL.Path)
+		var err error
+		switch {
+		case r.URL.Path == "/api/v1/apps/order":
+			c.order = nil
+			err = json.NewDecoder(r.Body).Decode(&c.order)
+			if len(c.orderReplies) > 0 {
+				w.WriteHeader(c.orderReplies[0].status)
+				_, _ = w.Write([]byte(c.orderReplies[0].body))
+				c.orderReplies = c.orderReplies[1:]
+			}
+		case strings.HasPrefix(r.URL.Path, "/api/v1/apps/pushed/"):
+			c.pushed = nil
+			err = json.NewDecoder(r.Body).Decode(&c.pushed)
+		}
+		if err != nil {
+			t.Errorf("%s %s: %v", r.Method, r.URL.Path, err)
 		}
 	}))
 	t.Cleanup(srv.Close)
@@ -63,10 +87,8 @@ func (c *fakeClock) client(t *testing.T) *awtrix.Client {
 	return client
 }
 
-// The firmware's GET /api/v1/apps: pushed apps carry origin "pushed", and
-// when a pushed app and a script share a name only the pushed one is
-// listed. A name that only keeps a place, such as one left by an app that
-// expired or by a script refused at boot, has no origin and present false.
+// Follows the firmware's GET /api/v1/apps: "metro" is a pushed app that
+// hides a script of that name, and "refused" a script refused at boot.
 const apps = `[
  {"name":"Nimbus","enabled":true,"slot":0,"present":true,"origin":"script"},
  {"name":"saldanha","enabled":true,"slot":1,"present":true,"origin":"pushed"},
@@ -75,7 +97,6 @@ const apps = `[
  {"name":"paused","enabled":false,"slot":4,"present":true,"origin":"pushed"},
  {"name":"metro","enabled":true,"slot":5,"present":true,"origin":"pushed"},
  {"name":"refused","enabled":false,"slot":6,"present":false,"origin":null},
- {"name":"gamma","enabled":true,"slot":7,"present":true,"origin":"pushed"},
  {"name":"Time","enabled":false,"slot":null,"present":true,"origin":"builtin"},
  {"name":"Weather","enabled":false,"slot":null,"present":true,"origin":"script"},
  {"name":"off","enabled":false,"slot":null,"present":false,"origin":null},
@@ -83,125 +104,70 @@ const apps = `[
  {"name":"location","import":"location","origin":"module","error":null}
 ]`
 
-// scripts are the stored scripts the clock's script API knows: "metro" is
-// also a pushed app, and "refused" was refused at boot but is still listed
-// as an empty placeholder.
-var scripts = map[string]string{
-	"Nimbus":  "print('n')",
-	"Weather": "print('w')",
-	"metro":   "print('m')",
-	"refused": "syntax error",
+// The same clock with scripting off: arranged scripts lose their origin, and
+// every stored script is listed again at the end, as disabled.
+const appsScriptingOff = `[
+ {"name":"Nimbus","enabled":true,"slot":0,"present":false,"origin":null},
+ {"name":"saldanha","enabled":true,"slot":1,"present":true,"origin":"pushed"},
+ {"name":"b65","enabled":true,"slot":2,"present":false,"origin":null},
+ {"name":"Time","enabled":true,"slot":null,"present":true,"origin":"builtin"},
+ {"name":"Weather","enabled":false,"slot":null,"present":false,"origin":null},
+ {"name":"Nimbus","enabled":false,"slot":null,"present":true,"origin":"script"},
+ {"name":"Weather","enabled":false,"slot":null,"present":true,"origin":"script"},
+ {"name":"Solo","enabled":false,"slot":null,"present":true,"origin":"script"}
+]`
+
+var storedScripts = map[string]reply{
+	"Nimbus":  {http.StatusOK, "class Nimbus end"},
+	"Weather": {http.StatusOK, "class Weather end"},
+	"metro":   {http.StatusOK, "class Metro end"},
+	"refused": {http.StatusOK, "syntax error"},
 }
 
 func TestForgetApps(t *testing.T) {
+	const order = "PUT /api/v1/apps/order"
+	all := map[string][]string{
+		"order":    {"Nimbus", "saldanha", "Nimbus", "b65", "paused", "metro", "refused"},
+		"disabled": {"paused", "refused", "Time", "Weather", "off"},
+	}
+	without := func(name string) map[string][]string {
+		out := map[string][]string{}
+		for k, names := range all {
+			for _, n := range names {
+				if n != name {
+					out[k] = append(out[k], n)
+				}
+			}
+		}
+		return out
+	}
 	tests := []struct {
-		name         string
-		forget       []string
-		scripting    bool
-		writes       []string
-		scriptChecks []string
-		order        map[string][]string
-		removed      []string
+		name    string
+		forget  []string
+		writes  []string
+		order   map[string][]string
+		removed []string
 	}{
-		{
-			"pushed app is deleted and its slot rewritten",
-			[]string{"saldanha"},
-			true,
-			[]string{"DELETE /api/v1/apps/saldanha", "PUT /api/v1/apps/order"},
-			[]string{"saldanha"},
-			map[string][]string{
-				"order":    {"Nimbus", "Nimbus", "b65", "paused", "metro", "refused", "gamma"},
-				"disabled": {"paused", "refused", "Time", "Weather", "off"},
-			},
-			[]string{"saldanha"},
-		},
-		{
-			"placeholder only needs the order rewrite",
-			[]string{"b65"},
-			true,
-			[]string{"PUT /api/v1/apps/order"},
-			nil,
-			map[string][]string{
-				"order":    {"Nimbus", "saldanha", "Nimbus", "paused", "metro", "refused", "gamma"},
-				"disabled": {"paused", "refused", "Time", "Weather", "off"},
-			},
-			[]string{"b65"},
-		},
-		{
-			// A script refused at boot is listed as an empty placeholder;
-			// DELETE on its name would remove its source.
-			"placeholder that is a refused script is not deleted",
-			[]string{"refused"},
-			true,
-			[]string{"PUT /api/v1/apps/order"},
-			nil,
-			map[string][]string{
-				"order":    {"Nimbus", "saldanha", "Nimbus", "b65", "paused", "metro", "gamma"},
-				"disabled": {"paused", "Time", "Weather", "off"},
-			},
-			[]string{"refused"},
-		},
-		{
-			// The clock lists a pushed app and a script sharing a name only
-			// as the pushed one; DELETE would remove the script's source.
-			"pushed app sharing a script's name is left alone",
-			[]string{"metro"},
-			true,
-			nil,
-			[]string{"metro"},
-			nil,
-			nil,
-		},
-		{
-			"pushed app without a script is deleted",
-			[]string{"gamma"},
-			true,
-			[]string{"DELETE /api/v1/apps/gamma", "PUT /api/v1/apps/order"},
-			[]string{"gamma"},
-			map[string][]string{
-				"order":    {"Nimbus", "saldanha", "Nimbus", "b65", "paused", "metro", "refused"},
-				"disabled": {"paused", "refused", "Time", "Weather", "off"},
-			},
-			[]string{"gamma"},
-		},
-		{
-			"not arranged",
-			[]string{"loose"},
-			true,
-			[]string{"DELETE /api/v1/apps/loose"},
-			[]string{"loose"},
-			nil,
-			[]string{"loose"},
-		},
-		// DELETE on a script's, built-in's or module's name would delete
-		// its source or settings.
-		{"names the clock uses otherwise", []string{"Nimbus", "Weather", "Time", "location"}, true, nil, nil, nil, nil},
-		{"unknown to the clock", []string{"ghost"}, true, nil, nil, nil, nil},
-		{
-			"scripting off keeps a slotted script in the rotation",
-			[]string{"saldanha"},
-			false,
-			[]string{"DELETE /api/v1/apps/saldanha", "PUT /api/v1/apps/order"},
-			[]string{"saldanha"},
-			map[string][]string{
-				"order":    {"Nimbus", "Nimbus", "b65", "paused", "metro", "refused", "gamma"},
-				"disabled": {"paused", "refused", "Time", "off"},
-			},
-			[]string{"saldanha"},
-		},
+		{"pushed app", []string{"saldanha"}, []string{order, "PUT /api/v1/apps/pushed/saldanha"}, without("saldanha"), []string{"saldanha"}},
+		{"expired app keeping a slot", []string{"b65"}, []string{order}, without("b65"), []string{"b65"}},
+		{"expired app that was switched off", []string{"off"}, []string{order}, without("off"), []string{"off"}},
+		{"pushed app without a slot", []string{"loose"}, []string{order, "PUT /api/v1/apps/pushed/loose"}, all, []string{"loose"}},
+		{"pushed app hiding a script", []string{"metro"}, []string{"PUT /api/v1/apps/pushed/metro"}, nil, nil},
+		{"script refused at boot", []string{"refused"}, nil, nil, nil},
+		{"names the clock uses otherwise", []string{"Nimbus", "Weather", "Time", "location"}, nil, nil, nil},
+		{"invalid name", []string{"a/../b"}, nil, nil, nil},
+		// The arrangement is written even so: see TestForgetAppsRetriesUnsavedOrder.
+		{"unknown to the clock", []string{"ghost"}, []string{order}, all, nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &fakeClock{apps: apps, scripting: tt.scripting, scripts: scripts}
+			c := &fakeClock{apps: apps, scripting: true, scripts: storedScripts}
 			removed, err := c.client(t).ForgetApps(t.Context(), tt.forget)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if diff := cmp.Diff(tt.writes, c.writes); diff != "" {
 				t.Errorf("writes (-want +got):\n%s", diff)
-			}
-			if diff := cmp.Diff(tt.scriptChecks, c.scriptChecks); diff != "" {
-				t.Errorf("script checks (-want +got):\n%s", diff)
 			}
 			if diff := cmp.Diff(tt.order, c.order); diff != "" {
 				t.Errorf("order (-want +got):\n%s", diff)
@@ -213,35 +179,92 @@ func TestForgetApps(t *testing.T) {
 	}
 }
 
-// A null or empty app list is not a success: the clock always lists its
-// built-in apps, so acting on an empty answer could wipe the rotation.
-func TestForgetAppsRejectsEmptyList(t *testing.T) {
-	for _, list := range []string{"null", "[]"} {
-		c := &fakeClock{apps: list, scripting: true, scripts: scripts}
-		if _, err := c.client(t).ForgetApps(t.Context(), []string{"b65"}); err == nil {
-			t.Errorf("apps = %s: ForgetApps succeeded on an empty list", list)
-		}
-		if len(c.writes) != 0 {
-			t.Errorf("apps = %s: writes = %v, want none", list, c.writes)
+// Stored scripts keep their places and switches: the entries listed as
+// disabled only because scripting is off are not written back.
+func TestForgetAppsScriptingOff(t *testing.T) {
+	c := &fakeClock{apps: appsScriptingOff, scripts: storedScripts}
+	if _, err := c.client(t).ForgetApps(t.Context(), []string{"b65", "Nimbus", "Solo"}); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string][]string{"order": {"Nimbus", "saldanha"}, "disabled": {"Weather"}}
+	if diff := cmp.Diff(want, c.order); diff != "" {
+		t.Errorf("order (-want +got):\n%s", diff)
+	}
+}
+
+// The list itself also shows ownership, whatever the script lookup says.
+func TestForgetAppsTrustsListOverLookup(t *testing.T) {
+	for _, list := range []string{apps, appsScriptingOff} {
+		c := &fakeClock{apps: list, scripting: list == apps}
+		removed, err := c.client(t).ForgetApps(t.Context(), []string{"Nimbus", "Weather"})
+		if err != nil || len(removed) != 0 || len(c.writes) != 0 {
+			t.Errorf("removed %v, writes %v, err %v; want nothing", removed, c.writes, err)
 		}
 	}
 }
 
-// A device answer without scriptingRunning must not be read as false, or
-// slotted scripts would be dropped from the rotation.
-func TestForgetAppsRejectsMissingFlag(t *testing.T) {
-	c := &fakeClock{apps: apps, device: `{"version":"1.2.3"}`, scripts: scripts}
-	if _, err := c.client(t).ForgetApps(t.Context(), []string{"b65"}); err == nil {
-		t.Error("ForgetApps succeeded without scriptingRunning")
+func TestForgetAppsWithoutScriptingSupport(t *testing.T) {
+	c := &fakeClock{apps: apps, scripts: map[string]reply{"b65": {http.StatusServiceUnavailable, noScripting}}}
+	removed, err := c.client(t).ForgetApps(t.Context(), []string{"b65"})
+	if err != nil || !cmp.Equal(removed, []string{"b65"}) {
+		t.Errorf("removed %v, err %v", removed, err)
 	}
-	if len(c.writes) != 0 {
-		t.Errorf("writes = %v, want none", c.writes)
+}
+
+func TestForgetAppsWritesNothingWhenUnsure(t *testing.T) {
+	const builtin = `{"name":"Time","enabled":true,"slot":null,"present":true,"origin":"builtin"}`
+	lookup := func(status int, body string) fakeClock {
+		return fakeClock{apps: apps, scripting: true, scripts: map[string]reply{"b65": {status, body}}}
+	}
+	list := func(entries string) fakeClock { return fakeClock{apps: entries, scripting: true} }
+	tests := map[string]fakeClock{
+		"lookup: generic 503":       lookup(http.StatusServiceUnavailable, "busy"),
+		"lookup: generic 404":       lookup(http.StatusNotFound, "<html>"),
+		"lookup: other code":        lookup(http.StatusNotFound, `{"error":{"code":"noRoute"}}`),
+		"lookup: auth":              lookup(http.StatusUnauthorized, ""),
+		"device: no scripting flag": {apps: apps, device: `{"version":"1.2.3"}`},
+		"list: null":                list(`null`),
+		"list: empty":               list(`[]`),
+		"list: no built-in app":     list(`[{"name":"b65","enabled":true,"slot":0,"present":false,"origin":null}]`),
+		"list: missing slot":        list(`[{"name":"a","enabled":true,"slot":0,"present":true,"origin":"pushed"},{"name":"b65","enabled":true,"slot":2,"present":false,"origin":null},` + builtin + `]`),
+		"list: slot after the rest": list(`[` + builtin + `,{"name":"b65","enabled":true,"slot":0,"present":false,"origin":null}]`),
+		"list: no name":             list(`[{"enabled":true,"slot":0,"present":true,"origin":"pushed"},` + builtin + `]`),
+		"list: no enabled":          list(`[{"name":"a","slot":0,"present":true,"origin":"pushed"},` + builtin + `]`),
+	}
+	for name, c := range tests {
+		t.Run(name, func(t *testing.T) {
+			if _, err := c.client(t).ForgetApps(t.Context(), []string{"b65"}); err == nil {
+				t.Error("want an error")
+			}
+			if len(c.writes) != 0 {
+				t.Errorf("writes = %v, want none", c.writes)
+			}
+		})
+	}
+}
+
+// A 507 means the order is in use but not saved, so the retry must write it
+// again although the name is already gone from the list.
+func TestForgetAppsRetriesUnsavedOrder(t *testing.T) {
+	c := &fakeClock{apps: apps, scripting: true, orderReplies: []reply{{http.StatusInsufficientStorage, notSaved}}}
+	client := c.client(t)
+	if _, err := client.ForgetApps(t.Context(), []string{"b65"}); err == nil {
+		t.Fatal("want an error for an unsaved order")
+	}
+	c.apps = `[{"name":"Time","enabled":true,"slot":0,"present":true,"origin":"builtin"}]`
+	if _, err := client.ForgetApps(t.Context(), []string{"b65"}); err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff([]string{"PUT /api/v1/apps/order", "PUT /api/v1/apps/order"}, c.writes); diff != "" {
+		t.Errorf("writes (-want +got):\n%s", diff)
 	}
 }
 
 // The firmware requires both lists, so empty ones are sent as [].
 func TestForgetAppsSendsEmptyLists(t *testing.T) {
-	c := &fakeClock{apps: `[{"name":"b65","enabled":true,"slot":0,"present":false,"origin":null}]`, scripting: true}
+	c := &fakeClock{scripting: true, apps: `[
+	 {"name":"b65","enabled":true,"slot":0,"present":false,"origin":null},
+	 {"name":"Time","enabled":true,"slot":null,"present":true,"origin":"builtin"}]`}
 	if _, err := c.client(t).ForgetApps(t.Context(), []string{"b65"}); err != nil {
 		t.Fatal(err)
 	}

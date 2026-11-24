@@ -102,19 +102,23 @@ func (c *Client) PushApp(ctx context.Context, name string, app App) error {
 	return c.do(ctx, http.MethodPut, "/api/v1/apps/pushed/"+name, body, nil)
 }
 
-// Host returns the clock's host from the normalized base URL, without
-// credentials. Logs and state files use it to tell clocks apart, so a
-// bare host such as "192.168.1.50" keeps its identity.
-func (c *Client) Host() string { return c.base.Host }
+// ExpireApp removes the pushed app called name by replacing it with one that
+// expires at once. Unlike DeleteApp, it cannot touch a script of that name.
+// The name keeps its place in the rotation; see ForgetApps.
+func (c *Client) ExpireApp(ctx context.Context, name string) error {
+	return c.PushApp(ctx, name, App{LifetimeMs: 1, LifetimeExpiry: ExpiryRemove})
+}
 
-// DeleteApp removes the app called name. An app that is already gone,
-// such as after its lifetime expired or the clock restarted, counts as
-// removed. The name keeps its place in the clock's rotation, so the app
-// returns to it when pushed again; ForgetApps removes that too.
-//
-// This is the raw API call: DELETE on a name that a script also has
-// removes the script's source too, so use DeletePushedApp wherever an app
-// this service pushed is removed.
+// Host returns the clock's host, without credentials, for logs.
+func (c *Client) Host() string { return strings.ToLower(c.base.Host) }
+
+// ID tells clocks apart: the host, and the path for clocks that share one
+// behind a proxy.
+func (c *Client) ID() string { return c.Host() + strings.TrimRight(c.base.Path, "/") }
+
+// DeleteApp removes whatever is called name, including a script's source and
+// data; use ExpireApp for a pushed app. An app that is already gone counts
+// as removed. The name of a pushed app keeps its place in the rotation.
 func (c *Client) DeleteApp(ctx context.Context, name string) error {
 	if !ValidAppName(name) {
 		return fmt.Errorf("awtrix: invalid app name %q", name)
@@ -124,24 +128,6 @@ func (c *Client) DeleteApp(ctx context.Context, name string) error {
 		return nil
 	}
 	return err
-}
-
-// DeletePushedApp removes the pushed app called name. A script that shares
-// the name is left alone — the clock's DELETE removes a script's source
-// too — so the script API is asked first. An app that is already gone
-// counts as removed.
-func (c *Client) DeletePushedApp(ctx context.Context, name string) error {
-	if !ValidAppName(name) {
-		return fmt.Errorf("awtrix: invalid app name %q", name)
-	}
-	has, err := c.hasScript(ctx, name)
-	if err != nil {
-		return err
-	}
-	if has {
-		return nil
-	}
-	return c.DeleteApp(ctx, name)
 }
 
 // maxReply bounds a decoded answer; a full app list is a few kilobytes.

@@ -32,10 +32,6 @@ type Snapshot struct {
 	// PerRow caps departures per row in Rows; zero means no cap.
 	PerRow  int
 	Sources []SourceResult
-	// rows and rowsAt cache Rows' result, so a tick that logs and
-	// publishes the same snapshot computes the rows once.
-	rows   []transit.Row
-	rowsAt time.Time
 }
 
 // SourceResult is one stop's data and health in a snapshot.
@@ -62,12 +58,8 @@ type SourceResult struct {
 // Rows filters every usable source at now and groups the result into rows.
 // Departures from a failing source lose their prediction: it is as old as
 // the last good fetch, so it is no longer live, though it stays the best
-// estimate of the time. The result for a given now is cached, so call it
-// once per snapshot and now.
-func (s *Snapshot) Rows(now time.Time) []transit.Row {
-	if s.rows != nil && s.rowsAt.Equal(now) {
-		return s.rows
-	}
+// estimate of the time.
+func (s Snapshot) Rows(now time.Time) []transit.Row {
 	var deps []transit.Departure
 	for _, src := range s.Sources {
 		if !src.Usable {
@@ -83,8 +75,7 @@ func (s *Snapshot) Rows(now time.Time) []transit.Row {
 		}
 		deps = append(deps, kept...)
 	}
-	s.rows, s.rowsAt = transit.Group(deps, 0, s.PerRow), now
-	return s.rows
+	return transit.Group(deps, 0, s.PerRow)
 }
 
 // Source is one stop on a board.
@@ -206,21 +197,22 @@ func (r *Runner) Tick(ctx context.Context) {
 		}
 		return
 	}
-	// Compute the rows before publishing, so the publish's copy of the
-	// snapshot reuses them instead of computing them again.
-	rows := snap.Rows(now)
 	if err := r.out.Publish(ctx, snap); err != nil {
 		r.phase = phasePublishFailed
 		r.log.WarnContext(ctx, "publish", slog.Any("err", err))
 		return
 	}
 	r.shown = true
-	rowsAttr := slog.Int("rows", len(rows))
-	if r.phase != phaseShown {
-		r.phase = phaseShown
-		r.log.InfoContext(ctx, "board shown", rowsAttr)
+	first := r.phase != phaseShown
+	r.phase = phaseShown
+	if !first && !r.log.Enabled(ctx, slog.LevelDebug) {
+		return
 	}
-	r.log.DebugContext(ctx, "published", rowsAttr)
+	rows := slog.Int("rows", len(snap.Rows(now)))
+	if first {
+		r.log.InfoContext(ctx, "board shown", rows)
+	}
+	r.log.DebugContext(ctx, "published", rows)
 }
 
 // Snapshot refreshes due sources and returns the board's state. ok is false

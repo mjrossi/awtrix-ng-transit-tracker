@@ -20,7 +20,7 @@ var now = time.Date(2026, 11, 22, 8, 0, 0, 0, time.UTC)
 
 type fakePusher struct {
 	pushed  map[string]awtrix.App
-	deleted []string
+	expired []string
 }
 
 func (p *fakePusher) PushApp(_ context.Context, name string, app awtrix.App) error {
@@ -28,8 +28,8 @@ func (p *fakePusher) PushApp(_ context.Context, name string, app awtrix.App) err
 	return nil
 }
 
-func (p *fakePusher) DeletePushedApp(_ context.Context, name string) error {
-	p.deleted = append(p.deleted, name)
+func (p *fakePusher) ExpireApp(_ context.Context, name string) error {
+	p.expired = append(p.expired, name)
 	return nil
 }
 
@@ -86,12 +86,12 @@ func TestPublishPushesRenderedApp(t *testing.T) {
 	}
 }
 
-func TestWithdrawDeletesApp(t *testing.T) {
+func TestWithdrawExpiresApp(t *testing.T) {
 	p := &fakePusher{}
 	if err := clockout.New(p, nil).Withdraw(t.Context(), "metro"); err != nil {
 		t.Fatal(err)
 	}
-	if diff := cmp.Diff([]string{"metro"}, p.deleted); diff != "" {
+	if diff := cmp.Diff([]string{"metro"}, p.expired); diff != "" {
 		t.Errorf("deleted (-want +got):\n%s", diff)
 	}
 }

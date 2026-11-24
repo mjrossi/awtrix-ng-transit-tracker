@@ -140,90 +140,40 @@ func TestNewClient(t *testing.T) {
 	}
 }
 
-// Host is the clock's identity for logs and state files, so a bare host
-// keeps it and credentials never reach it.
-func TestClientHost(t *testing.T) {
-	tests := []struct{ url, want string }{
-		{"192.168.1.50", "192.168.1.50"},
-		{"awtrixng-a1b2c3.local", "awtrixng-a1b2c3.local"},
-		{"http://awtrixng-a1b2c3.local", "awtrixng-a1b2c3.local"},
-		{"http://admin:hunter2@clock.lan:8080", "clock.lan:8080"},
+func TestClientHostAndID(t *testing.T) {
+	tests := []struct{ url, host, id string }{
+		{"192.168.1.50", "192.168.1.50", "192.168.1.50"},
+		{"192.168.1.50:8080", "192.168.1.50:8080", "192.168.1.50:8080"},
+		{"http://AWTRIXNG-a1b2c3.local/", "awtrixng-a1b2c3.local", "awtrixng-a1b2c3.local"},
+		{"http://admin:hunter2@clock.lan:8080", "clock.lan:8080", "clock.lan:8080"},
+		{"http://proxy.lan/Clock1/", "proxy.lan", "proxy.lan/Clock1"},
 	}
 	for _, tt := range tests {
 		c, err := awtrix.NewClient(tt.url)
 		if err != nil {
 			t.Fatalf("NewClient(%q): %v", tt.url, err)
 		}
-		if got := c.Host(); got != tt.want {
-			t.Errorf("NewClient(%q).Host() = %q, want %q", tt.url, got, tt.want)
+		if c.Host() != tt.host || c.ID() != tt.id {
+			t.Errorf("NewClient(%q): host %q, id %q; want %q, %q", tt.url, c.Host(), c.ID(), tt.host, tt.id)
 		}
 	}
 }
 
-// DeletePushedApp checks the script API first: a script sharing the name
-// must not be deleted with the app.
-func TestDeletePushedApp(t *testing.T) {
-	script := false
-	var got []request
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		req := request{Method: r.Method, Path: r.URL.Path}
-		got = append(got, req)
-		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/apps/script/metro":
-			if script {
-				w.WriteHeader(http.StatusOK)
-				_, _ = w.Write([]byte("print('hi')"))
-			} else {
-				w.WriteHeader(http.StatusNotFound)
-				_, _ = w.Write([]byte(`{"error":{"code":"notFound","message":"no such script"}}`))
-			}
-		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/apps/metro":
-			w.WriteHeader(http.StatusNoContent)
-		default:
-			w.WriteHeader(http.StatusServiceUnavailable)
-		}
-	}))
-	t.Cleanup(srv.Close)
-	c, err := awtrix.NewClient(srv.URL)
-	if err != nil {
+func TestExpireApp(t *testing.T) {
+	c, got := newServer(t, http.StatusOK, `{"ok":true}`)
+	if err := c.ExpireApp(t.Context(), "metro"); err != nil {
 		t.Fatal(err)
 	}
-	// No script: the DELETE goes through.
-	if err := c.DeletePushedApp(t.Context(), "metro"); err != nil {
-		t.Fatal(err)
+	if len(*got) != 1 {
+		t.Fatalf("requests = %+v, want one", *got)
 	}
-	if len(got) != 2 || got[1].Method != http.MethodDelete {
-		t.Fatalf("requests = %+v, want a script check then a DELETE", got)
+	r := (*got)[0]
+	if r.Method != http.MethodPut || r.Path != "/api/v1/apps/pushed/metro" {
+		t.Errorf("got %s %s", r.Method, r.Path)
 	}
-	// A script has the name: no DELETE is sent.
-	script = true
-	got = nil
-	if err := c.DeletePushedApp(t.Context(), "metro"); err != nil {
-		t.Fatal(err)
-	}
-	if len(got) != 1 || got[0].Method != http.MethodGet {
-		t.Fatalf("requests = %+v, want only the script check", got)
-	}
-	// A clock without scripting answers 503, which also means no scripts.
-	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet {
-			w.WriteHeader(http.StatusServiceUnavailable)
-			return
-		}
-		got = append(got, request{Method: r.Method, Path: r.URL.Path})
-		w.WriteHeader(http.StatusNoContent)
-	}))
-	t.Cleanup(srv2.Close)
-	c2, err := awtrix.NewClient(srv2.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got = nil
-	if err := c2.DeletePushedApp(t.Context(), "metro"); err != nil {
-		t.Fatal(err)
-	}
-	if len(got) != 1 || got[0].Method != http.MethodDelete {
-		t.Fatalf("requests = %+v, want the DELETE after a 503", got)
+	want := map[string]any{"lifetimeMs": 1.0, "lifetimeExpiry": "remove"}
+	if diff := cmp.Diff(want, r.Body); diff != "" {
+		t.Errorf("body (-want +got):\n%s", diff)
 	}
 }
 

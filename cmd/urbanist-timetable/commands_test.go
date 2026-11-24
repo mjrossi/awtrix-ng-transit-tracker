@@ -10,8 +10,22 @@ import (
 
 	"github.com/mjrossi/urbanist-timetable/internal/config"
 	"github.com/mjrossi/urbanist-timetable/internal/render"
+	"github.com/mjrossi/urbanist-timetable/pkg/awtrix"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit"
 )
+
+// A bare host must identify its clock too.
+func TestCleanupIdentifiesTheClock(t *testing.T) {
+	for _, u := range []string{"192.168.1.50", "http://192.168.1.50/"} {
+		clock, err := awtrix.NewClient(u)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := newCleanup(&config.Config{}, "", clock, nil).Clock; got != "192.168.1.50" {
+			t.Errorf("%q: clock = %q", u, got)
+		}
+	}
+}
 
 func TestVersionFlag(t *testing.T) {
 	cmd := newRootCommand()

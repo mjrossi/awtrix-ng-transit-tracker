@@ -39,10 +39,10 @@ Names with a mark above a Latin-1 letter ("São Sebastião") use the
 `matrix-light6` font: `small` fits those accents by shortening the letter,
 with no blank row between them, so they read as blobs. Other names, the
 times and the badges stay in `small`. `name_font` overrides the choice for
-both destination names and `empty_text`, and a board with its own `font`
-keeps it. A name in `matrix-light6` is measured with the font's real
-per-glyph advances (mostly 4 px, 2 px for "i" and spaces, 6 px for "M" and
-"w"), so a name full of wide letters is not judged narrower than it draws.
+destination names and `empty_text`, and a board with its own `font` keeps
+it. `matrix-light6` is proportional, so its names are measured glyph by
+glyph (`FontWidth`), for European letters and punctuation; other characters
+count as 4 px.
 
 Other rules:
 

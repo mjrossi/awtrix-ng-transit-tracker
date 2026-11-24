@@ -9,24 +9,8 @@ version may break configuration.
 
 ### Fixed
 
-- Cleanup can no longer erase a user's script: when a pushed app and a
-  script share a board's name, the clock lists only the pushed app, and
-  `DELETE` on the name would remove the script's source too. Pushed apps
-  are now checked against `GET /api/v1/apps/script/{name}` first, names
-  that only keep a place in the rotation are no longer deleted, and
-  withdrawing a board outside its active hours is guarded the same way.
-- A state file that cannot be read (only a missing or corrupt one is
-  replaced) is no longer overwritten, which would have lost the recorded
-  board names, and it is now flushed to disk before the rename, so power
-  loss leaves the old or the new file.
-- An empty app list or a missing `scriptingRunning` flag from the clock is
-  now an error instead of a silent success, so a script with a slot is no
-  longer dropped from the rotation.
-- Accented capitals are no longer top-aligned: centered, they keep the
-  same baseline as every other name in the 8 px row.
-- Names in `matrix-light6` are measured with the font's real per-glyph
-  advances, so names full of wide letters ("M", "W") are no longer judged
-  a few pixels narrower than they draw.
+- Hiding a board outside its active hours can no longer delete a script of
+  the same name from the clock.
 - Boards removed from the config now also leave the clock's app list,
   instead of staying there as "no data". This needs a state file that
   survives restarts (`--state` or `TIMETABLE_STATE`); the Docker image keeps

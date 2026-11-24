@@ -116,12 +116,11 @@ func TestCleanupBadState(t *testing.T) {
 	}
 }
 
-// A read error other than missing or corrupt (here: the path is a
-// directory) must not be followed by a save, which would lose the names
-// the unreadable file still records.
+// The path is a symlink loop, which fails to read but which a save would
+// replace, even as root.
 func TestCleanupUnreadableStateIsLeftAlone(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state.json")
-	if err := os.Mkdir(path, 0o755); err != nil {
+	if err := os.Symlink(path, path); err != nil {
 		t.Fatal(err)
 	}
 	var logs strings.Builder
@@ -132,10 +131,10 @@ func TestCleanupUnreadableStateIsLeftAlone(t *testing.T) {
 	if len(f.calls) != 0 {
 		t.Errorf("forgot %v from an unreadable state file", f.calls)
 	}
-	if !strings.Contains(logs.String(), "level=WARN") {
+	if !strings.Contains(logs.String(), "the state file is left alone") {
 		t.Errorf("logs = %q, want a warning", logs.String())
 	}
-	if fi, err := os.Stat(path); err != nil || !fi.IsDir() {
+	if fi, err := os.Lstat(path); err != nil || fi.Mode()&os.ModeSymlink == 0 {
 		t.Errorf("state path was replaced: fi = %v, err = %v", fi, err)
 	}
 }

@@ -109,7 +109,7 @@ func newCleanup(cfg *config.Config, path string, clock *awtrix.Client, log *slog
 	}
 	return clockout.Cleanup{
 		Path:      path,
-		Clock:     clock.Host(),
+		Clock:     clock.ID(),
 		Boards:    boards,
 		Forgetter: clock,
 		Log:       log,
