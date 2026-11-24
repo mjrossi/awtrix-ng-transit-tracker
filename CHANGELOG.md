@@ -7,13 +7,28 @@ version may break configuration.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-24
+
 ### Changed
 
 - **Breaking:** a board's clock settings (`layout`, `max_rows`,
   `overflow`, `lifetime`, `duration`, `font`, `empty_text`) move to a
   `[boards.clock]` table, and `[boards.labels]` becomes
   `[boards.clock.labels]`. Configs that still use the old keys fail to load,
-  and the error names each key.
+  and the error names each key. To migrate, move the keys under a new
+  table:
+
+  ```toml
+  [[boards]]
+  name = "metro"
+  poll_interval = "45s"
+
+  [boards.clock]
+  layout = "rows"
+
+  [boards.clock.labels]
+  "Santa Apolónia" = "Sta Apolónia"
+  ```
 - Boards that use the same provider share one download for each resource,
   so polling several boards together no longer sends duplicate API
   requests.
@@ -62,7 +77,8 @@ First release: live departures on an AWTRIX NG clock (Ulanzi TC002).
   Metropolitana, Lisbon Metro, NYC Subway and SF BART.
 - Commands: `run`, `preview`, `config validate`, `systems`, `stops search`.
 
-[Unreleased]: https://github.com/mjrossi/urbanist-timetable/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/mjrossi/urbanist-timetable/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/mjrossi/urbanist-timetable/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/mjrossi/urbanist-timetable/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/mjrossi/urbanist-timetable/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/mjrossi/urbanist-timetable/releases/tag/v0.1.0
