@@ -72,7 +72,7 @@ func TestPublishPushesRenderedApp(t *testing.T) {
 		DurationMs:     10000,
 		LifetimeMs:     180000,
 		LifetimeExpiry: awtrix.ExpiryRemove,
-		Layout:         render.TC002(snap.Rows(now, true), now, opts),
+		Layout:         render.TC002(snap.Rows(now), now, opts),
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("pushed app (-want +got):\n%s", diff)

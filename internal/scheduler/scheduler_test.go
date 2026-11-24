@@ -113,7 +113,7 @@ func newHarness(active func(time.Time) bool) *harness {
 // minutes returns the minutes until each departure in a snapshot's first
 // row, as the clock would show them.
 func minutes(snap scheduler.Snapshot) []int {
-	rows := snap.Rows(snap.At, true)
+	rows := snap.Rows(snap.At)
 	if len(rows) == 0 {
 		return nil
 	}
@@ -162,11 +162,11 @@ func TestReusesLastGoodDataThenGivesUp(t *testing.T) {
 	}
 }
 
-func TestFailingSourceIsDimmedOnlyOnRequest(t *testing.T) {
+func TestFailingSourceIsDimmed(t *testing.T) {
 	h := newHarness(nil)
 	h.prov.live = true
 	snap, _ := h.runner.Snapshot(t.Context(), h.now)
-	if d := snap.Rows(h.now, true)[0].Departures[0]; !d.Realtime() {
+	if d := snap.Rows(h.now)[0].Departures[0]; !d.Realtime() {
 		t.Fatalf("fresh departure %+v, want realtime", d)
 	}
 
@@ -181,7 +181,7 @@ func TestFailingSourceIsDimmedOnlyOnRequest(t *testing.T) {
 		t.Errorf("source = failing %v usable %v fetched %s, want failing, usable, fetched at start",
 			src.Failing, src.Usable, src.FetchedAt)
 	}
-	dimmed := snap.Rows(h.now, true)[0].Departures[0]
+	dimmed := snap.Rows(h.now)[0].Departures[0]
 	if dimmed.Realtime() {
 		t.Errorf("dimmed departure %+v, want schedule-only", dimmed)
 	}
@@ -189,14 +189,11 @@ func TestFailingSourceIsDimmedOnlyOnRequest(t *testing.T) {
 	if want := start.Add(3 * time.Minute); !dimmed.Time().Equal(want) {
 		t.Errorf("time = %s, want %s", dimmed.Time(), want)
 	}
-	if kept := snap.Rows(h.now, false)[0].Departures[0]; !kept.Realtime() {
-		t.Errorf("undimmed departure %+v, want its prediction kept", kept)
-	}
 
 	h.prov.err = nil
 	h.now = start.Add(3 * time.Minute)
 	snap, _ = h.runner.Snapshot(t.Context(), h.now)
-	if snap.Sources[0].Failing || !snap.Rows(h.now, true)[0].Departures[0].Realtime() {
+	if snap.Sources[0].Failing || !snap.Rows(h.now)[0].Departures[0].Realtime() {
 		t.Error("source not live again after recovery")
 	}
 }

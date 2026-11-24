@@ -116,7 +116,7 @@ func writePreview(w io.Writer, b config.Board, out *clockout.Output, snap schedu
 		return err
 	}
 	if !jsonOnly {
-		printRows(w, b, snap.Rows(snap.At, true), snap.At)
+		printRows(w, b, snap.Rows(snap.At), snap.At)
 	}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")

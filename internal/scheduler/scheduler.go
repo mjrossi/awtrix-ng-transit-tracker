@@ -56,10 +56,10 @@ type SourceResult struct {
 }
 
 // Rows filters every usable source at now and groups the result into rows.
-// With dimFailing, departures from a failing source lose their prediction:
-// it is as old as the last good fetch, so a display should not show it as
-// live, though it stays the best estimate of the time.
-func (s Snapshot) Rows(now time.Time, dimFailing bool) []transit.Row {
+// Departures from a failing source lose their prediction: it is as old as
+// the last good fetch, so it is no longer live, though it stays the best
+// estimate of the time.
+func (s Snapshot) Rows(now time.Time) []transit.Row {
 	var deps []transit.Departure
 	for _, src := range s.Sources {
 		if !src.Usable {
@@ -68,7 +68,7 @@ func (s Snapshot) Rows(now time.Time, dimFailing bool) []transit.Row {
 		// Filter at display time so cached departures that have left, or
 		// are now within the walk time, drop out.
 		kept := src.Filter.Apply(now, src.Departures)
-		if src.Failing && dimFailing {
+		if src.Failing {
 			for j, d := range kept {
 				kept[j].Scheduled, kept[j].Predicted = d.Time(), nil
 			}

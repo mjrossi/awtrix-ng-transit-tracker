@@ -23,9 +23,8 @@ The scheduler knows nothing about displays. It produces a `Snapshot` per
 board and hands it to a `scheduler.Output`. A snapshot keeps each stop's
 cached departures unfiltered, together with its health (`FetchedAt`,
 `Failing`, `Partial`, `Usable`), so an output can decide how to show stale
-data. `Snapshot.Rows(now, dimFailing)` filters and groups them; the clock
-passes `dimFailing = true` so a failing source's predictions are shown
-schedule-only.
+data. `Snapshot.Rows(now)` filters and groups them, and drops the
+predictions of a failing source, which are as old as its last good fetch.
 
 The service makes outgoing requests only: to transit APIs and to the clock.
 It listens on no ports.
@@ -50,8 +49,8 @@ Rules, from [CLAUDE.md](../CLAUDE.md):
 
 - Nothing past a provider imports a provider package. The scheduler,
   outputs, renderer and clock client see only `transit.Departure`.
-- The scheduler imports no output: display policy, such as dimming stale
-  predictions, belongs to the output.
+- The scheduler imports no output: display policy, such as how stale data
+  looks, belongs to the output.
 - `pkg/` is importable by other projects; `internal/` is not.
 - Filtering happens in the core, not in providers.
 

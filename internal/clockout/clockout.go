@@ -53,7 +53,7 @@ func (o *Output) App(snap scheduler.Snapshot) (awtrix.App, error) {
 		DurationMs:     int(b.Duration / time.Millisecond),
 		LifetimeMs:     int(b.Lifetime / time.Millisecond),
 		LifetimeExpiry: awtrix.ExpiryRemove,
-		Layout:         render.TC002(snap.Rows(snap.At, true), snap.At, b.Render),
+		Layout:         render.TC002(snap.Rows(snap.At), snap.At, b.Render),
 	}, nil
 }
 
