@@ -5,12 +5,12 @@ import (
 	"errors"
 	"log/slog"
 	"slices"
-	"strings"
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+
 	"github.com/mjrossi/urbanist-timetable/internal/scheduler"
-	"github.com/mjrossi/urbanist-timetable/pkg/awtrix"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit"
 )
 
@@ -51,29 +51,29 @@ func (p *fakeProvider) Departures(_ context.Context, q transit.Query) ([]transit
 	return out, err
 }
 
-type fakePusher struct {
-	pushes  []awtrix.App
+type fakeOutput struct {
+	pushes  []scheduler.Snapshot
 	deletes int
 	err     error
 }
 
-func (p *fakePusher) PushApp(_ context.Context, _ string, app awtrix.App) error {
-	if p.err != nil {
-		return p.err
+func (o *fakeOutput) Publish(_ context.Context, snap scheduler.Snapshot) error {
+	if o.err != nil {
+		return o.err
 	}
-	p.pushes = append(p.pushes, app)
+	o.pushes = append(o.pushes, snap)
 	return nil
 }
 
-func (p *fakePusher) DeleteApp(context.Context, string) error {
-	p.deletes++
+func (o *fakeOutput) Withdraw(context.Context, string) error {
+	o.deletes++
 	return nil
 }
 
 type harness struct {
 	now    time.Time
 	prov   *fakeProvider
-	pusher *fakePusher
+	out    *fakeOutput
 	runner *scheduler.Runner
 	logs   *logRecorder
 }
@@ -95,49 +95,47 @@ func (l *logRecorder) WithAttrs([]slog.Attr) slog.Handler { return l }
 func (l *logRecorder) WithGroup(string) slog.Handler { return l }
 
 func newHarness(active func(time.Time) bool) *harness {
-	h := &harness{now: start, prov: &fakeProvider{}, pusher: &fakePusher{}, logs: &logRecorder{}}
+	h := &harness{now: start, prov: &fakeProvider{}, out: &fakeOutput{}, logs: &logRecorder{}}
 	b := scheduler.Board{
 		Name:         "metro",
 		Sources:      []scheduler.Source{{Name: "fake:s1", Provider: h.prov, StopID: "s1"}},
 		PollInterval: time.Minute,
 		Window:       time.Hour,
-		Lifetime:     3 * time.Minute,
 		MaxStale:     5 * time.Minute,
 		PerRow:       3,
 		Active:       active,
 		Location:     time.UTC,
 	}
-	h.runner = scheduler.NewRunner(b, h.pusher, slog.New(h.logs), func() time.Time { return h.now })
+	h.runner = scheduler.NewRunner(b, h.out, slog.New(h.logs), func() time.Time { return h.now })
 	return h
 }
 
-// minutes returns the minute numbers shown by a departure-layout push.
-func minutes(app awtrix.App) []string {
-	var out []string
-	for _, r := range app.Layout.Regions {
-		if r.ID == "min" {
-			for _, f := range r.Text.Fragments {
-				if strings.TrimSpace(f.Text) != "" {
-					out = append(out, f.Text)
-				}
-			}
-		}
+// minutes returns the minutes until each departure in a snapshot's first
+// row, as the clock would show them.
+func minutes(snap scheduler.Snapshot) []int {
+	rows := snap.Rows(snap.At)
+	if len(rows) == 0 {
+		return nil
+	}
+	var out []int
+	for _, d := range rows[0].Departures {
+		out = append(out, d.MinutesUntil(snap.At))
 	}
 	return out
 }
 
-func TestPushesWithLifetime(t *testing.T) {
+func TestPublishesSnapshot(t *testing.T) {
 	h := newHarness(nil)
 	h.runner.Tick(t.Context())
-	if len(h.pusher.pushes) != 1 {
-		t.Fatalf("pushes = %d, want 1", len(h.pusher.pushes))
+	if len(h.out.pushes) != 1 {
+		t.Fatalf("pushes = %d, want 1", len(h.out.pushes))
 	}
-	app := h.pusher.pushes[0]
-	if app.LifetimeMs != 180000 || app.LifetimeExpiry != awtrix.ExpiryRemove {
-		t.Errorf("lifetime %d %q", app.LifetimeMs, app.LifetimeExpiry)
+	snap := h.out.pushes[0]
+	if snap.Board != "metro" || !snap.At.Equal(start) {
+		t.Errorf("snapshot board %q at %s", snap.Board, snap.At)
 	}
-	if got := minutes(app); len(got) != 3 || got[0] != "2" {
-		t.Errorf("minutes = %v, want [2 6 10]", got)
+	if diff := cmp.Diff([]int{2, 6, 10}, minutes(snap)); diff != "" {
+		t.Errorf("minutes (-want +got):\n%s", diff)
 	}
 }
 
@@ -148,50 +146,55 @@ func TestReusesLastGoodDataThenGivesUp(t *testing.T) {
 	h.prov.err = errors.New("upstream down")
 	h.now = start.Add(3 * time.Minute)
 	h.runner.Tick(t.Context())
-	if len(h.pusher.pushes) != 2 {
-		t.Fatalf("pushes = %d, want 2 (cached data)", len(h.pusher.pushes))
+	if len(h.out.pushes) != 2 {
+		t.Fatalf("pushes = %d, want 2 (cached data)", len(h.out.pushes))
 	}
 	// The 08:02 departure has left; minutes count from the new time.
-	if got := minutes(h.pusher.pushes[1]); len(got) != 2 || got[0] != "3" || got[1] != "7" {
-		t.Errorf("minutes = %v, want [3 7]", got)
+	if diff := cmp.Diff([]int{3, 7}, minutes(h.out.pushes[1])); diff != "" {
+		t.Errorf("minutes (-want +got):\n%s", diff)
 	}
 
-	// Past MaxStale, nothing is pushed and the clock's lifetime removes the app.
+	// Past MaxStale, nothing is published.
 	h.now = start.Add(6 * time.Minute)
 	h.runner.Tick(t.Context())
-	if len(h.pusher.pushes) != 2 {
-		t.Fatalf("pushes = %d, want still 2 once data is stale", len(h.pusher.pushes))
+	if len(h.out.pushes) != 2 {
+		t.Fatalf("pushes = %d, want still 2 once data is stale", len(h.out.pushes))
 	}
 }
 
-func TestLastGoodDataIsNotShownAsLive(t *testing.T) {
+func TestFailingSourceIsDimmed(t *testing.T) {
 	h := newHarness(nil)
 	h.prov.live = true
-	rows, _ := h.runner.Rows(t.Context(), h.now)
-	if d := rows[0].Departures[0]; !d.Realtime() {
+	snap, _ := h.runner.Snapshot(t.Context(), h.now)
+	if d := snap.Rows(h.now)[0].Departures[0]; !d.Realtime() {
 		t.Fatalf("fresh departure %+v, want realtime", d)
 	}
 
 	h.prov.err = errors.New("upstream down")
 	h.now = start.Add(time.Minute)
-	rows, ok := h.runner.Rows(t.Context(), h.now)
+	snap, ok := h.runner.Snapshot(t.Context(), h.now)
 	if !ok {
 		t.Fatal("cached data not used")
 	}
-	d := rows[0].Departures[0]
-	if d.Realtime() {
-		t.Errorf("cached departure %+v, want schedule-only", d)
+	src := snap.Sources[0]
+	if !src.Failing || !src.Usable || !src.FetchedAt.Equal(start) {
+		t.Errorf("source = failing %v usable %v fetched %s, want failing, usable, fetched at start",
+			src.Failing, src.Usable, src.FetchedAt)
+	}
+	dimmed := snap.Rows(h.now)[0].Departures[0]
+	if dimmed.Realtime() {
+		t.Errorf("dimmed departure %+v, want schedule-only", dimmed)
 	}
 	// The prediction stays the best estimate of the time.
-	if want := start.Add(3 * time.Minute); !d.Time().Equal(want) {
-		t.Errorf("time = %s, want %s", d.Time(), want)
+	if want := start.Add(3 * time.Minute); !dimmed.Time().Equal(want) {
+		t.Errorf("time = %s, want %s", dimmed.Time(), want)
 	}
 
 	h.prov.err = nil
 	h.now = start.Add(3 * time.Minute)
-	rows, _ = h.runner.Rows(t.Context(), h.now)
-	if !rows[0].Departures[0].Realtime() {
-		t.Error("departure not realtime again after recovery")
+	snap, _ = h.runner.Snapshot(t.Context(), h.now)
+	if snap.Sources[0].Failing || !snap.Rows(h.now)[0].Departures[0].Realtime() {
+		t.Error("source not live again after recovery")
 	}
 }
 
@@ -214,8 +217,8 @@ func TestBacksOffFailingSource(t *testing.T) {
 	h.prov.err = nil
 	h.now = start.Add(6 * time.Minute)
 	h.runner.Tick(t.Context())
-	if h.prov.calls != 3 || len(h.pusher.pushes) != 1 {
-		t.Fatalf("calls = %d pushes = %d, want 3 and 1 after recovery", h.prov.calls, len(h.pusher.pushes))
+	if h.prov.calls != 3 || len(h.out.pushes) != 1 {
+		t.Fatalf("calls = %d pushes = %d, want 3 and 1 after recovery", h.prov.calls, len(h.out.pushes))
 	}
 }
 
@@ -226,8 +229,8 @@ func TestRemovesAppOutsideActiveHours(t *testing.T) {
 	active = false
 	h.runner.Tick(t.Context())
 	h.runner.Tick(t.Context())
-	if h.pusher.deletes != 1 {
-		t.Errorf("deletes = %d, want 1", h.pusher.deletes)
+	if h.out.deletes != 1 {
+		t.Errorf("deletes = %d, want 1", h.out.deletes)
 	}
 	if h.prov.calls != 1 {
 		t.Errorf("calls = %d, want no fetching outside active hours", h.prov.calls)
@@ -236,13 +239,13 @@ func TestRemovesAppOutsideActiveHours(t *testing.T) {
 
 func TestPushFailureIsRetriedNextTick(t *testing.T) {
 	h := newHarness(nil)
-	h.pusher.err = errors.New("clock offline")
+	h.out.err = errors.New("output offline")
 	h.runner.Tick(t.Context())
-	h.pusher.err = nil
+	h.out.err = nil
 	h.now = start.Add(time.Minute)
 	h.runner.Tick(t.Context())
-	if len(h.pusher.pushes) != 1 {
-		t.Errorf("pushes = %d, want 1", len(h.pusher.pushes))
+	if len(h.out.pushes) != 1 {
+		t.Errorf("pushes = %d, want 1", len(h.out.pushes))
 	}
 }
 
@@ -253,8 +256,8 @@ func TestPartialResultsArePushedAndLoggedOnChange(t *testing.T) {
 		h.now = start.Add(time.Duration(i) * time.Minute)
 		h.runner.Tick(t.Context())
 	}
-	if len(h.pusher.pushes) != 3 {
-		t.Errorf("pushes = %d, want every partial result pushed", len(h.pusher.pushes))
+	if len(h.out.pushes) != 3 {
+		t.Errorf("pushes = %d, want every partial result pushed", len(h.out.pushes))
 	}
 	h.prov.partial = nil
 	h.now = start.Add(3 * time.Minute)

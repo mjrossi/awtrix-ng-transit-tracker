@@ -27,7 +27,9 @@ type Query struct {
 // Implementations must return departures for q.StopID only, sorted by
 // Departure.Time ascending, with every Time in [q.Now, q.Now+q.Window], at
 // most q.Limit of them, and must return promptly with ctx.Err() once ctx is
-// done. The transittest package checks these rules. A provider that can
+// done. Implementations must be safe for concurrent use, because boards
+// that name the same provider share one instance and poll it from their own
+// goroutines. The transittest package checks these rules. A provider that can
 // still answer despite a problem returns its departures with a
 // *PartialError.
 type Provider interface {
@@ -102,6 +104,23 @@ func (r *Registry) Register(name string, f Factory) {
 		panic(fmt.Sprintf("transit: provider %q registered twice", name))
 	}
 	r.factories[name] = f
+}
+
+// RegisterConfig registers a factory that decodes the configuration block
+// into a C and passes it to build.
+func RegisterConfig[C any, P Provider](r *Registry, name string, build func(C) (P, error)) {
+	r.Register(name, func(opts Options) (Provider, error) {
+		var cfg C
+		if err := opts.Decode(&cfg); err != nil {
+			return nil, err
+		}
+		p, err := build(cfg)
+		if err != nil {
+			// Returning p would wrap a nil pointer in a non-nil interface.
+			return nil, err
+		}
+		return p, nil
+	})
 }
 
 // New builds the provider registered under name.

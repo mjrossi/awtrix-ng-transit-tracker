@@ -3,7 +3,7 @@
 // that turn raw departures into rows for a display.
 //
 // Nothing outside a provider package should know which provider produced a
-// departure. See docs/PLAN.md for the design.
+// departure. See docs/ARCHITECTURE.md for the design.
 package transit
 
 import (

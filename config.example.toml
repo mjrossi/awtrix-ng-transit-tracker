@@ -92,18 +92,21 @@ active_hours = "06:30-23:30"
 per_row = 3
 # Optional:
 # timezone = "Europe/Madrid"  # IANA zone for this board's active_hours
+# max_stale = "10m"   # reuse the last good data this long while a provider fails
+
+# How the board looks on the clock. Every setting is optional.
+[boards.clock]
 # layout = "rows"     # one line and direction per row, two rows; suits busy bus stops
 # max_rows = 2        # rows layout only
 # overflow = "clip"   # names too wide for the display are cut off instead of scrolling
 # lifetime = "135s"   # app is removed this long after the last push (default 3 × poll_interval)
-# max_stale = "10m"   # reuse the last good data this long while a provider fails
 # duration = "10s"    # time on screen per rotation (default: the clock's setting)
 # font = "small"
 # empty_text = "No departures"
 
 # Shorter display names. About 13 characters fit across the display;
 # `urbanist-timetable preview` marks names that will scroll.
-[boards.labels]
+[boards.clock.labels]
 "Santa Apolónia" = "Sta Apolónia"
 
 [[boards.stops]]
@@ -128,6 +131,8 @@ lines = ["verde"]
 # [[boards]]
 # name = "bus"
 # poll_interval = "60s"
+#
+# [boards.clock]
 # layout = "rows"
 #
 # [[boards.stops]]

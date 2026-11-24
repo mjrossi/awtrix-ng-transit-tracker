@@ -130,8 +130,8 @@ func TestTC002Geometry(t *testing.T) {
 		many.Departures[i].Predicted = &p
 	}
 	rows := []transit.Row{many, canceled(row(bus, "B", 1, 2, 3, 4), 0), row(verde, "C", 3)}
-	for _, layout := range []string{render.LayoutDeparture, render.LayoutRows} {
-		t.Run(layout, func(t *testing.T) {
+	for _, layout := range []render.Layout{render.LayoutDeparture, render.LayoutRows} {
+		t.Run(string(layout), func(t *testing.T) {
 			l := render.TC002(rows, now, render.Options{Layout: layout, MaxRows: 5})
 			if len(l.Regions) > 16 {
 				t.Errorf("%d regions, limit 16", len(l.Regions))
@@ -199,8 +199,53 @@ func TestTextWidth(t *testing.T) {
 			t.Errorf("TextWidth(%q) = %d, want %d", tt.s, got, tt.want)
 		}
 	}
-	if render.Fits("Santa Apolónia") || !render.Fits("Sta Apolónia") {
-		t.Error("Santa Apolónia should overflow 52 px and Sta Apolónia should fit")
+}
+
+func TestViews(t *testing.T) {
+	type view struct {
+		Name             string
+		Shown, Overflows bool
+	}
+	tests := []struct {
+		name string
+		rows []transit.Row
+		opts render.Options
+		want []view
+	}{
+		{
+			name: "departure overflows past the display width",
+			rows: []transit.Row{row(azul, "Santa Apolónia", 2)},
+			want: []view{{"Santa Apolónia", true, true}},
+		},
+		{
+			name: "label makes it fit",
+			rows: []transit.Row{row(azul, "Santa Apolónia", 2)},
+			opts: render.Options{Labels: map[string]string{"Santa Apolónia": "Sta Apolónia"}},
+			want: []view{{"Sta Apolónia", true, false}},
+		},
+		{
+			name: "departure hides all but one row",
+			rows: []transit.Row{row(azul, "Santa Apolónia", 1), row(azul, "Reboleira", 4)},
+			want: []view{{"Santa Apolónia", false, false}, {"Reboleira", true, false}},
+		},
+		{
+			// Fits the full width, but not the box beside the badge and times.
+			name: "rows overflows its narrower box",
+			rows: []transit.Row{row(azul, "Sta Apolónia", 2), row(azul, "Baixa", 3)},
+			opts: render.Options{Layout: render.LayoutRows},
+			want: []view{{"Sta Apolónia", true, true}, {"Baixa", true, false}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got []view
+			for _, v := range render.Views(tt.rows, now, tt.opts) {
+				got = append(got, view{v.Name, v.Shown, v.Overflows})
+			}
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("Views mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 
@@ -235,8 +280,8 @@ func TestBadges(t *testing.T) {
 	}{
 		{"metro gets a bar", azul, []string{"rectFill"}},
 		{"bright fill, unlit number", bus, []string{"rectFill", "735 #000000"}},
-		{"dark fill, light number", navy, []string{"rectFill", "760 " + render.DefaultTextColor}},
-		{"no color, plain number", plain, []string{"15E " + render.DefaultTextColor}},
+		{"dark fill, light number", navy, []string{"rectFill", "760 " + render.TextColor}},
+		{"no color, plain number", plain, []string{"15E " + render.TextColor}},
 		{"long name, mode glyph", worcester, []string{"pixels"}},
 		{"long name, no glyph for the mode", gondola, []string{"rectFill"}},
 	}
@@ -321,8 +366,8 @@ func TestRowsLayoutKeepsFirstCatchableTrip(t *testing.T) {
 // out.
 func TestMarksOnlyWithSmallFont(t *testing.T) {
 	rows := []transit.Row{canceled(row(bus, "Sé", 3, 8, 18), 1)}
-	for _, layout := range []string{render.LayoutDeparture, render.LayoutRows} {
-		t.Run(layout, func(t *testing.T) {
+	for _, layout := range []render.Layout{render.LayoutDeparture, render.LayoutRows} {
+		t.Run(string(layout), func(t *testing.T) {
 			l := render.TC002(rows, now, render.Options{Layout: layout, Font: "large"})
 			minID := "min"
 			if layout == render.LayoutRows {

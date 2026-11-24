@@ -21,10 +21,10 @@ import (
 	"os"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/mjrossi/urbanist-timetable/pkg/transit"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit/internal/upstream"
 )
 
 // Name is the provider type in configuration.
@@ -57,18 +57,6 @@ type Config struct {
 	Headers map[string]string `toml:"headers"`
 }
 
-// feedEntry is the cached state of one realtime feed. Failures are cached
-// for feedTTL too, so boards sharing a failing feed do not each retry it.
-type feedEntry struct {
-	at  time.Time
-	err error
-	// last is the most recent feed that decoded, kept through failures to
-	// tell which stops a failing feed serves.
-	last feed
-	// loading is closed when the fetch in flight finishes; nil when idle.
-	loading chan struct{}
-}
-
 // Provider reads one agency's feeds. It is safe for concurrent use: boards
 // sharing a provider share one download of each feed.
 type Provider struct {
@@ -76,25 +64,16 @@ type Provider struct {
 	http  *http.Client
 	clock func() time.Time
 
-	mu       sync.Mutex
-	static   *static
-	staticAt time.Time
-	// staticErr is the last failed schedule download, cleared on success.
-	staticErr      error
-	staticFailedAt time.Time
-	staticLoading  chan struct{}
-	feeds          map[string]*feedEntry
+	// schedule is nil without a static_url.
+	schedule *upstream.Cache[*static]
+	// feeds holds one cache per realtime URL. Failures are cached for
+	// feedTTL too, so boards sharing a failing feed do not each retry it.
+	feeds map[string]*upstream.Cache[feed]
 }
 
 // Register adds the provider to r.
 func Register(r *transit.Registry) {
-	r.Register(Name, func(opts transit.Options) (transit.Provider, error) {
-		var cfg Config
-		if err := opts.Decode(&cfg); err != nil {
-			return nil, err
-		}
-		return New(cfg, nil)
-	})
+	transit.RegisterConfig(r, Name, func(cfg Config) (*Provider, error) { return New(cfg, nil) })
 }
 
 // New validates cfg and returns a provider. A nil client gets a default;
@@ -104,22 +83,29 @@ func New(cfg Config, client *http.Client) (*Provider, error) {
 		return nil, errors.New("realtime_urls: at least one GTFS-RT TripUpdates URL is required")
 	}
 	for i, u := range cfg.RealtimeURLs {
-		if !validURL(u) {
+		if _, ok := upstream.HTTPURL(u); !ok {
 			return nil, fmt.Errorf("realtime_urls[%d] must be an http(s) URL", i)
 		}
 	}
-	if cfg.StaticURL != "" && !validURL(cfg.StaticURL) {
+	if _, ok := upstream.HTTPURL(cfg.StaticURL); cfg.StaticURL != "" && !ok {
 		return nil, errors.New("static_url must be an http(s) URL")
 	}
 	if client == nil {
 		client = &http.Client{}
 	}
-	return &Provider{cfg: cfg, http: client, clock: time.Now, feeds: map[string]*feedEntry{}}, nil
-}
-
-func validURL(u string) bool {
-	p, err := url.Parse(u)
-	return err == nil && (p.Scheme == "http" || p.Scheme == "https") && p.Host != ""
+	p := &Provider{cfg: cfg, http: client, clock: time.Now, feeds: map[string]*upstream.Cache[feed]{}}
+	if cfg.StaticURL != "" {
+		// A large schedule can take minutes to download, longer than a
+		// board's app lifetime, so stale data is refreshed in the
+		// background.
+		p.schedule = upstream.NewCache(upstream.Policy{TTL: staticTTL, Retry: staticRetry, Background: true, Timeout: staticTimeout}, p.loadStatic)
+	}
+	for _, u := range cfg.RealtimeURLs {
+		p.feeds[u] = upstream.NewCache(upstream.Policy{TTL: feedTTL, Retry: feedTTL, Timeout: feedTimeout}, func(ctx context.Context) (feed, error) {
+			return p.fetchFeed(ctx, u)
+		})
+	}
+	return p, nil
 }
 
 // Departures implements transit.Provider. q.StopID may be a platform or a
@@ -294,77 +280,23 @@ func (s *static) headsign(tu tripUpdate) string {
 	return info.name
 }
 
-// staticFor returns the schedule data, refreshing it daily, and the error
-// of the latest download if it failed. A failed download keeps the previous
-// data and is retried after staticRetry. Only one download runs at a time.
-// While earlier data exists the download runs in the background and every
-// caller gets the earlier data: a large schedule can take minutes, longer
-// than a board's app lifetime. With no data yet, callers wait for it.
+// staticFor returns the schedule data and the error of the latest
+// download if it failed, in which case the previous data is kept. While
+// earlier data exists every caller gets it at once; with none yet, callers
+// wait for the download.
 func (p *Provider) staticFor(ctx context.Context, now time.Time) (*static, error) {
-	if p.cfg.StaticURL == "" {
+	if p.schedule == nil {
 		return nil, nil
 	}
-	p.mu.Lock()
-	for {
-		st, err := p.static, p.staticErr
-		fresh := st != nil && now.Sub(p.staticAt) < staticTTL
-		since := now.Sub(p.staticFailedAt)
-		backingOff := err != nil && since >= 0 && since < staticRetry
-		if fresh || backingOff {
-			p.mu.Unlock()
-			return st, err
-		}
-		if p.staticLoading == nil {
-			break
-		}
-		if st != nil {
-			p.mu.Unlock()
-			return st, err
-		}
-		loading := p.staticLoading
-		p.mu.Unlock()
-		select {
-		case <-loading:
-		case <-ctx.Done():
-			return nil, nil
-		}
-		p.mu.Lock()
-	}
-	done := make(chan struct{})
-	p.staticLoading = done
-	st, err := p.static, p.staticErr
-	p.mu.Unlock()
-
-	if st != nil {
-		// Detached from ctx so the refresh outlives the poll that started it.
-		go p.refreshStatic(context.WithoutCancel(ctx), now, done)
-		return st, err
-	}
-	p.refreshStatic(ctx, now, done)
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.static, p.staticErr
+	return p.schedule.Get(ctx, now)
 }
 
-// refreshStatic downloads the schedule, records the outcome and closes
-// done, which must be p.staticLoading.
-func (p *Provider) refreshStatic(ctx context.Context, now time.Time, done chan struct{}) {
-	ctx, cancel := context.WithTimeout(ctx, staticTimeout)
-	parsed, err := p.downloadStatic(ctx)
-	cancel()
-
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.staticLoading = nil
-	close(done)
-	switch {
-	case err == nil:
-		p.static, p.staticAt, p.staticErr = parsed, now, nil
-	case errors.Is(err, context.Canceled):
-		// Shutting down: no new data, and nothing to back off from.
-	default:
-		p.staticErr, p.staticFailedAt = fmt.Errorf("schedule: %w", err), now
+func (p *Provider) loadStatic(ctx context.Context) (*static, error) {
+	st, err := p.downloadStatic(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("schedule: %w", err)
 	}
+	return st, nil
 }
 
 // downloadStatic fetches and parses the schedule zip. The zip goes to a
@@ -395,54 +327,11 @@ func (p *Provider) downloadStatic(ctx context.Context) (*static, error) {
 // feedTTL however many boards ask. On failure it returns the error and the
 // last feed that decoded, which is empty if none has.
 func (p *Provider) feedFor(ctx context.Context, u string, now time.Time) (f, last feed, err error) {
-	p.mu.Lock()
-	e := p.feeds[u]
-	if e == nil {
-		e = &feedEntry{}
-		p.feeds[u] = e
-	}
-	for {
-		age := now.Sub(e.at)
-		if !e.at.IsZero() && age >= 0 && age < feedTTL {
-			p.mu.Unlock()
-			if e.err != nil {
-				return feed{}, e.last, e.err
-			}
-			return e.last, e.last, nil
-		}
-		if e.loading == nil {
-			break
-		}
-		loading := e.loading
-		p.mu.Unlock()
-		select {
-		case <-loading:
-		case <-ctx.Done():
-			return feed{}, feed{}, ctx.Err()
-		}
-		p.mu.Lock()
-	}
-	done := make(chan struct{})
-	e.loading = done
-	p.mu.Unlock()
-
-	fetchCtx, cancel := context.WithTimeout(ctx, feedTimeout)
-	f, err = p.fetchFeed(fetchCtx, u)
-	cancel()
-
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	e.loading = nil
-	close(done)
-	if errors.Is(err, context.Canceled) {
-		return feed{}, e.last, err
-	}
-	e.at, e.err = now, err
+	last, err = p.feeds[u].Get(ctx, now)
 	if err != nil {
-		return feed{}, e.last, err
+		return feed{}, last, err
 	}
-	e.last = f
-	return f, f, nil
+	return last, last, nil
 }
 
 func (p *Provider) fetchFeed(ctx context.Context, u string) (feed, error) {

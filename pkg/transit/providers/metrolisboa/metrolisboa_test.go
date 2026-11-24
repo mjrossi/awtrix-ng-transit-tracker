@@ -207,6 +207,56 @@ func TestUnknownStation(t *testing.T) {
 	}
 }
 
+// Boards sharing a provider poll it at the same moment at startup; they
+// must share one request for each list and line.
+func TestConcurrentDeparturesShareRequests(t *testing.T) {
+	f := newFakeAPI(t)
+	gate := make(chan struct{})
+	release := sync.OnceFunc(func() { close(gate) })
+	t.Cleanup(release) // before the server closes, which waits for it
+	f.tokenGate = gate
+	p := newProvider(t, f)
+	q := transit.Query{StopID: "BC", Now: recorded, Window: time.Hour}
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 8)
+	for range 8 {
+		wg.Go(func() {
+			_, err := p.Departures(t.Context(), q)
+			errs <- err
+		})
+	}
+	for {
+		f.mu.Lock()
+		n := f.tokenRequests
+		f.mu.Unlock()
+		if n > 0 {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	time.Sleep(20 * time.Millisecond) // let the others reach the wait
+	release()
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Error(err)
+		}
+	}
+
+	f.mu.Lock()
+	got := map[string]int{"token": f.tokenRequests}
+	f.mu.Unlock()
+	for _, path := range []string{"infoEstacao/todos", "infoDestinos/todos", "tempoEspera/Linha/Azul", "tempoEspera/Linha/Verde"} {
+		got[path] = f.count(path)
+	}
+	want := map[string]int{"token": 1, "infoEstacao/todos": 1, "infoDestinos/todos": 1, "tempoEspera/Linha/Azul": 1, "tempoEspera/Linha/Verde": 1}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("requests mismatch (-want +got):\n%s", diff)
+	}
+}
+
 func TestCachesTokenMetadataAndLines(t *testing.T) {
 	f := newFakeAPI(t)
 	p := newProvider(t, f)
@@ -366,6 +416,14 @@ func TestMetadataRefreshFailureKeepsCache(t *testing.T) {
 	}
 	if f.count("infoEstacao/todos") != 2 {
 		t.Error("expected a refresh attempt after a day")
+	}
+	// Later polls within the retry interval reuse the cache.
+	_, err = p.Departures(t.Context(), transit.Query{StopID: "BC", Now: recorded.Add(25*time.Hour + time.Minute), Window: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := f.count("infoEstacao/todos"); n != 2 {
+		t.Errorf("stations fetched %d times, want no retry within 15 minutes", n)
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -25,6 +26,8 @@ type server struct {
 	*httptest.Server
 	linesCalls atomic.Int32
 	failLines  atomic.Bool
+	// linesGate, when set, holds line requests until it is closed.
+	linesGate chan struct{}
 }
 
 // newServer serves testdata the way the API does: known stops from their
@@ -45,6 +48,9 @@ func newServer(t *testing.T) *server {
 	}
 	mux.HandleFunc("GET /v2/lines", func(w http.ResponseWriter, _ *http.Request) {
 		s.linesCalls.Add(1)
+		if s.linesGate != nil {
+			<-s.linesGate
+		}
 		if s.failLines.Load() {
 			http.Error(w, "boom", http.StatusInternalServerError)
 			return
@@ -167,6 +173,44 @@ func TestLinesCachedAndOptional(t *testing.T) {
 	}
 	if l := deps[0].Line; l.ShortName != "4701" || l.Color != "" {
 		t.Errorf("line = %+v, want short name 4701 and no color", l)
+	}
+}
+
+// Boards sharing a provider poll it at the same moment at startup; they
+// must share one download of the line list.
+func TestConcurrentDeparturesShareLines(t *testing.T) {
+	s := newServer(t)
+	s.linesGate = make(chan struct{})
+	release := sync.OnceFunc(func() { close(s.linesGate) })
+	t.Cleanup(release) // before the server closes, which waits for it
+	p := newProvider(t, s)
+	q := transit.Query{StopID: "060001", Now: recorded, Window: time.Hour}
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 8)
+	for range 8 {
+		wg.Go(func() {
+			deps, err := p.Departures(t.Context(), q)
+			if err == nil && (len(deps) == 0 || deps[0].Line.Color == "") {
+				err = errors.New("departures without line colors")
+			}
+			errs <- err
+		})
+	}
+	for s.linesCalls.Load() == 0 {
+		time.Sleep(time.Millisecond)
+	}
+	time.Sleep(20 * time.Millisecond) // let the others reach the wait
+	release()
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Error(err)
+		}
+	}
+	if n := s.linesCalls.Load(); n != 1 {
+		t.Errorf("lines fetched %d times, want 1", n)
 	}
 }
 

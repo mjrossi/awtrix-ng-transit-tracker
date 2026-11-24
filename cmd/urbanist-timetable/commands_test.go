@@ -70,7 +70,7 @@ func TestPrintRowsMarksHiddenRows(t *testing.T) {
 	// The soonest row is not the one the departure layout keeps.
 	rows := []transit.Row{row("South Ferry", 2*time.Minute), row("Van Cortlandt Park", 5*time.Minute)}
 	var out bytes.Buffer
-	printRows(&out, config.Board{Name: "b", Layout: render.LayoutDeparture}, rows, now)
+	printRows(&out, config.Board{Name: "b", Clock: config.BoardClock{Layout: render.LayoutDeparture}}, rows, now)
 	for _, l := range strings.Split(out.String(), "\n") {
 		hidden := strings.Contains(l, "(not shown)")
 		if strings.Contains(l, "South Ferry") && hidden || strings.Contains(l, "Van Cortlandt") && !hidden {

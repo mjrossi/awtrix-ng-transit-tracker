@@ -1,5 +1,5 @@
-// Package scheduler polls providers for each board and pushes the rendered
-// result to the clock.
+// Package scheduler polls providers for each board and hands the result to
+// an Output, such as the clock.
 package scheduler
 
 import (
@@ -9,18 +9,73 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mjrossi/urbanist-timetable/internal/render"
-	"github.com/mjrossi/urbanist-timetable/pkg/awtrix"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit"
 )
 
 // maxBackoff caps how long a failing source waits between attempts.
 const maxBackoff = 10 * time.Minute
 
-// Pusher sends apps to the clock. *awtrix.Client implements it.
-type Pusher interface {
-	PushApp(ctx context.Context, name string, app awtrix.App) error
-	DeleteApp(ctx context.Context, name string) error
+// Output receives each board's snapshots.
+type Output interface {
+	// Publish shows a board's latest snapshot. It is called on every tick
+	// that has usable data, so it also restores an output that lost state.
+	Publish(ctx context.Context, snap Snapshot) error
+	// Withdraw removes a board, such as outside its active hours.
+	Withdraw(ctx context.Context, board string) error
+}
+
+// Snapshot is one board's state after a tick.
+type Snapshot struct {
+	Board string
+	// At is when the tick ran, in the board's location.
+	At time.Time
+	// PerRow caps departures per row in Rows; zero means no cap.
+	PerRow  int
+	Sources []SourceResult
+}
+
+// SourceResult is one stop's data and health in a snapshot.
+type SourceResult struct {
+	Name   string
+	StopID string
+	// FetchedAt is the last successful fetch, or zero if none.
+	FetchedAt time.Time
+	// Failing reports that the latest fetch failed, so Departures are as
+	// old as FetchedAt.
+	Failing bool
+	// Partial is the problem the latest fetch reported alongside its
+	// departures, or empty for a complete result.
+	Partial string
+	// Usable reports whether Departures are fresh enough to show: fetched,
+	// and no older than the board's max_stale.
+	Usable bool
+	// Departures are the cached, unfiltered departures; nil when not
+	// Usable.
+	Departures []transit.Departure
+	Filter     transit.Filter
+}
+
+// Rows filters every usable source at now and groups the result into rows.
+// Departures from a failing source lose their prediction: it is as old as
+// the last good fetch, so it is no longer live, though it stays the best
+// estimate of the time.
+func (s Snapshot) Rows(now time.Time) []transit.Row {
+	var deps []transit.Departure
+	for _, src := range s.Sources {
+		if !src.Usable {
+			continue
+		}
+		// Filter at display time so cached departures that have left, or
+		// are now within the walk time, drop out.
+		kept := src.Filter.Apply(now, src.Departures)
+		if src.Failing {
+			for j, d := range kept {
+				kept[j].Scheduled, kept[j].Predicted = d.Time(), nil
+			}
+		}
+		deps = append(deps, kept...)
+	}
+	return transit.Group(deps, 0, s.PerRow)
 }
 
 // Source is one stop on a board.
@@ -37,15 +92,12 @@ type Board struct {
 	Sources      []Source
 	PollInterval time.Duration
 	Window       time.Duration
-	Lifetime     time.Duration
 	MaxStale     time.Duration
-	Duration     time.Duration
 	PerRow       int
-	// Active reports whether the board should be on the clock at t. Nil
-	// means always.
+	// Active reports whether the board should be shown at t. Nil means
+	// always.
 	Active   func(t time.Time) bool
 	Location *time.Location
-	Render   render.Options
 }
 
 type sourceState struct {
@@ -60,17 +112,17 @@ type sourceState struct {
 
 // Runner drives one board. Create it with NewRunner.
 type Runner struct {
-	board  Board
-	pusher Pusher
-	log    *slog.Logger
-	now    func() time.Time
+	board Board
+	out   Output
+	log   *slog.Logger
+	now   func() time.Time
 
 	state []sourceState
 	shown bool
 }
 
 // NewRunner returns a runner. now may be nil for the wall clock.
-func NewRunner(b Board, p Pusher, log *slog.Logger, now func() time.Time) *Runner {
+func NewRunner(b Board, out Output, log *slog.Logger, now func() time.Time) *Runner {
 	if now == nil {
 		now = time.Now
 	}
@@ -78,11 +130,11 @@ func NewRunner(b Board, p Pusher, log *slog.Logger, now func() time.Time) *Runne
 		b.Location = time.Local
 	}
 	return &Runner{
-		board:  b,
-		pusher: p,
-		log:    log.With(slog.String("board", b.Name)),
-		now:    now,
-		state:  make([]sourceState, len(b.Sources)),
+		board: b,
+		out:   out,
+		log:   log.With(slog.String("board", b.Name)),
+		now:   now,
+		state: make([]sourceState, len(b.Sources)),
 	}
 }
 
@@ -100,65 +152,62 @@ func (r *Runner) Run(ctx context.Context) error {
 	}
 }
 
-// Tick runs one cycle: outside active hours it removes the app; otherwise
-// it refreshes due sources, renders and pushes. Errors are logged, not
-// returned, because the next tick retries.
+// Tick runs one cycle: outside active hours it withdraws the board;
+// otherwise it refreshes due sources and publishes a snapshot. Errors are
+// logged, not returned, because the next tick retries.
 func (r *Runner) Tick(ctx context.Context) {
 	now := r.now().In(r.board.Location)
 
 	if r.board.Active != nil && !r.board.Active(now) {
 		if r.shown {
-			if err := r.pusher.DeleteApp(ctx, r.board.Name); err != nil {
-				r.log.WarnContext(ctx, "remove app outside active hours", slog.Any("err", err))
+			if err := r.out.Withdraw(ctx, r.board.Name); err != nil {
+				r.log.WarnContext(ctx, "withdraw outside active hours", slog.Any("err", err))
 				return
 			}
 			r.shown = false
-			r.log.InfoContext(ctx, "outside active hours; app removed")
+			r.log.InfoContext(ctx, "outside active hours; withdrawn")
 		}
 		return
 	}
 
-	rows, ok := r.Rows(ctx, now)
+	snap, ok := r.Snapshot(ctx, now)
 	if !ok {
-		// Every source failed with nothing fresh enough to reuse. Pushing
-		// "No departures" would be a lie; the app's lifetime removes it.
+		// Every source failed with nothing fresh enough to reuse. Showing
+		// "No departures" would be a lie, so nothing is published; on the
+		// clock, the app's lifetime removes it.
 		return
 	}
-	app := r.App(rows, now)
-	if err := r.pusher.PushApp(ctx, r.board.Name, app); err != nil {
-		r.log.WarnContext(ctx, "push app", slog.Any("err", err))
+	if err := r.out.Publish(ctx, snap); err != nil {
+		r.log.WarnContext(ctx, "publish", slog.Any("err", err))
 		return
 	}
 	r.shown = true
 }
 
-// Rows refreshes due sources and returns the board's rows. ok is false when
-// no source has usable data.
-func (r *Runner) Rows(ctx context.Context, now time.Time) (rows []transit.Row, ok bool) {
-	var deps []transit.Departure
+// Snapshot refreshes due sources and returns the board's state. ok is false
+// when no source has usable data.
+func (r *Runner) Snapshot(ctx context.Context, now time.Time) (snap Snapshot, ok bool) {
+	snap = Snapshot{Board: r.board.Name, At: now, PerRow: r.board.PerRow}
 	for i, src := range r.board.Sources {
 		st := &r.state[i]
 		if !now.Before(st.nextAttempt) {
 			r.refresh(ctx, src, st, now)
 		}
-		if st.fetchedAt.IsZero() || now.Sub(st.fetchedAt) > r.board.MaxStale {
-			continue
+		res := SourceResult{
+			Name:      src.Name,
+			StopID:    src.StopID,
+			FetchedAt: st.fetchedAt,
+			Failing:   st.failures > 0,
+			Partial:   st.partial,
+			Usable:    !st.fetchedAt.IsZero() && now.Sub(st.fetchedAt) <= r.board.MaxStale,
+			Filter:    src.Filter,
 		}
-		ok = true
-		// Filter at render time so cached departures that have left, or are
-		// now within the walk time, drop out.
-		kept := src.Filter.Apply(now, st.deps)
-		if st.failures > 0 {
-			// The last refresh failed, so these predictions are as old as
-			// the last good fetch. Shown as schedule-only, they keep their
-			// best estimate but no longer claim to be live.
-			for j, d := range kept {
-				kept[j].Scheduled, kept[j].Predicted = d.Time(), nil
-			}
+		if res.Usable {
+			res.Departures, ok = st.deps, true
 		}
-		deps = append(deps, kept...)
+		snap.Sources = append(snap.Sources, res)
 	}
-	return transit.Group(deps, 0, r.board.PerRow), ok
+	return snap, ok
 }
 
 func (r *Runner) refresh(ctx context.Context, src Source, st *sourceState, now time.Time) {
@@ -207,16 +256,6 @@ func (r *Runner) notePartial(ctx context.Context, src Source, st *sourceState, p
 		r.log.WarnContext(ctx, "partial departures", slog.String("source", src.Name), slog.String("err", problem))
 	}
 	st.partial = problem
-}
-
-// App renders rows into the payload pushed to the clock.
-func (r *Runner) App(rows []transit.Row, now time.Time) awtrix.App {
-	return awtrix.App{
-		DurationMs:     int(r.board.Duration / time.Millisecond),
-		LifetimeMs:     int(r.board.Lifetime / time.Millisecond),
-		LifetimeExpiry: awtrix.ExpiryRemove,
-		Layout:         render.TC002(rows, now, r.board.Render),
-	}
 }
 
 // RunAll runs every runner until ctx is done.

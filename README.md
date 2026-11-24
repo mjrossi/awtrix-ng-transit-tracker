@@ -104,7 +104,7 @@ provider = "nyc"
 stop = "127N"        # Times Sq-42 St, northbound
 lines = ["1"]
 
-[boards.labels]       # names that fit the display
+[boards.clock.labels] # names that fit the display
 "Van Cortlandt Park-242 St" = "Van Cortlandt"
 ```
 
@@ -119,8 +119,8 @@ urbanist-timetable preview             # fetches once and prints what each board
 urbanist-timetable preview --push      # ...and pushes it to the clock once
 ```
 
-`preview` marks names too wide for the display; give them shorter names
-under `[boards.labels]`.
+`preview` marks names too wide for their space on the display; give them shorter names
+under `[boards.clock.labels]`.
 
 ### 6. Run it
 
@@ -180,7 +180,9 @@ the release version.
 See [`config.example.toml`](./config.example.toml). In short: an
 optional `timezone` for `active_hours`, one `[clock]`, one
 `[providers.NAME]` block per data source, and one `[[boards]]` entry per
-app on the clock, each with one or more stops. Without `timezone`, the
+app on the clock, each with one or more stops. A board's
+`[boards.clock]` table holds how it looks on the clock: layout, labels,
+lifetime and so on. Without `timezone`, the
 `TZ` environment variable applies, which in the image is UTC unless you
 set it. A board's own `timezone` overrides the top-level one for that
 board's `active_hours`, for boards from another city; `"Local"` there
@@ -268,8 +270,10 @@ Secrets for local runs go in `mise.local.toml` (gitignored); copy
 catalog-check` reads system keys as `<SYSTEM>_<OPTION>`, such as
 `LISBON_METRO_CLIENT_ID`, and skips systems without them.
 
-See [`CLAUDE.md`](./CLAUDE.md) for conventions and
-[`CONTRIBUTING.md`](./CONTRIBUTING.md) for adding a city or provider.
+See [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) for how the code fits
+together, [`CLAUDE.md`](./CLAUDE.md) for conventions,
+[`CONTRIBUTING.md`](./CONTRIBUTING.md) for adding a city or provider, and
+[`SECURITY.md`](./SECURITY.md) for the security model and reporting.
 
 ## License
 

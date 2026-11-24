@@ -35,14 +35,17 @@ A provider must:
 
 1. Live in `pkg/transit/providers/<name>/` and implement
    `transit.Provider` (and `transit.StopSearcher` if the API can search).
+   It must be safe for concurrent use: boards that name the same provider
+   block share one instance.
 2. Register itself in `pkg/transit/providers/providers.go`.
 3. Pass `transittest.Run` against recorded responses in its `testdata/`.
    Tests must not call the live API.
-4. Decode its options strictly through `transit.Options`, and read secrets
+4. Decode its options strictly through `transit.Options` (registering with
+   `transit.RegisterConfig` does this for a config struct), and read secrets
    from configuration (where `${NAME}` references the environment), never
    from hard-coded values.
 5. Keep secrets out of error messages: they reach the logs, so name URLs
-   without their query strings.
+   without their query strings. See [`SECURITY.md`](./SECURITY.md).
 6. Return what it can with a `*transit.PartialError` when part of its data
    fails, such as one of several feeds, rather than failing the whole
    query.
@@ -52,15 +55,21 @@ The `demo` provider is the reference implementation.
 
 ## Before opening a pull request
 
-Run `just ci`.
+Run `just ci`, and add user-visible changes under `Unreleased` in
+[`CHANGELOG.md`](./CHANGELOG.md).
 
 ## Releasing
 
 1. Set `version` in `cmd/urbanist-timetable/main.go` to the new version, for
-   builds outside the image, and merge it to `main`.
+   builds outside the image. In `CHANGELOG.md`, rename `Unreleased` to the
+   version and date, and update the compare links. Merge both to `main`.
 2. Tag and push: `git tag v1.2.3 && git push origin v1.2.3`. The `publish`
    workflow runs `just ci`, then pushes the multi-arch image.
-3. Publish the release notes: `gh release create v1.2.3 --generate-notes`.
+3. Publish that version's changelog section as the release notes:
+   ```sh
+   awk '/^## \[1.2.3\]/{f=1;next} /^## \[/{f=0} f' CHANGELOG.md |
+     gh release create v1.2.3 --notes-file -
+   ```
 4. On an arm64 machine, check that
    `docker run --rm ghcr.io/mjrossi/urbanist-timetable:1.2.3 --version`
    prints `1.2.3`.

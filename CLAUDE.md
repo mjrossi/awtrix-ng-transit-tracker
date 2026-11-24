@@ -1,7 +1,10 @@
 # Urbanist Timetable — project conventions
 
 This file is the contract for how code in this repo is written. Read it
-before making non-trivial changes. The design and roadmap are in
+before making non-trivial changes. How the code fits together is in
+[`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md), the TC002 design rules in
+[`docs/rendering.md`](./docs/rendering.md), the security model in
+[`SECURITY.md`](./SECURITY.md), and the roadmap in
 [`docs/PLAN.md`](./docs/PLAN.md).
 
 ## What this is
@@ -25,6 +28,8 @@ Part of the Urbanist family with *The Urbanist Lexicon* (mjrossi.com) and
   scheduler, renderer and clock client never import a provider package.
 - **Providers must pass `transittest.Run`** against recorded responses in
   their `testdata/`. Tests never call live APIs.
+- **Providers are safe for concurrent use.** Boards naming the same
+  provider block share one instance across goroutines.
 - **Filtering happens in the core** (`transit.Filter`), not in providers.
 - **Providers take `Query.Now`**, never the wall clock, so results are
   reproducible.
@@ -50,6 +55,10 @@ Part of the Urbanist family with *The Urbanist Lexicon* (mjrossi.com) and
 - `internal/config/` — TOML loading and validation.
 - `internal/render/` — departure rows to TC002 layouts.
 - `internal/scheduler/` — polling, active hours, backoff, last-good cache.
+- `docs/` — `ARCHITECTURE.md`, `rendering.md`, `PLAN.md` (roadmap only:
+  no build log or history).
+- `CHANGELOG.md` — user-visible changes, Keep a Changelog format. Add an
+  entry under `Unreleased` in the same change.
 
 ## Tooling
 

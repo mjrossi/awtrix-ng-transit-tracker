@@ -29,12 +29,15 @@ func TestExampleConfig(t *testing.T) {
 		t.Errorf("location = %s", cfg.Location())
 	}
 	b0 := cfg.Boards[0]
-	if b0.PollInterval.D() != 45*time.Second || b0.Lifetime.D() != 135*time.Second {
-		t.Errorf("poll %s lifetime %s, want 45s and 135s", b0.PollInterval.D(), b0.Lifetime.D())
+	if b0.PollInterval.D() != 45*time.Second || b0.Clock.Lifetime.D() != 135*time.Second {
+		t.Errorf("poll %s lifetime %s, want 45s and 135s", b0.PollInterval.D(), b0.Clock.Lifetime.D())
+	}
+	if got := b0.Clock.Labels["Santa Apolónia"]; got != "Sta Apolónia" {
+		t.Errorf("label = %q, want the example's [boards.clock.labels] entry", got)
 	}
 	reg := providers.Registry()
 	for name := range cfg.Providers {
-		typ, opts, err := cfg.Provider(name)
+		typ, opts, err := config.ResolveProvider(name, cfg.Providers[name])
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -61,16 +64,16 @@ func TestDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	b := cfg.Boards[0]
-	got := []time.Duration{b.PollInterval.D(), b.Window.D(), b.Lifetime.D(), b.MaxStale.D()}
+	got := []time.Duration{b.PollInterval.D(), b.Window.D(), b.Clock.Lifetime.D(), b.MaxStale.D()}
 	want := []time.Duration{config.DefaultPollInterval, config.DefaultWindow, 3 * config.DefaultPollInterval, config.DefaultMaxStale}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("defaults mismatch (-want +got):\n%s", diff)
 	}
-	if b.Layout != "departure" || b.Overflow != "scroll" {
-		t.Errorf("layout %q overflow %q, want departure and scroll", b.Layout, b.Overflow)
+	if r := b.Clock.Render(); r.Layout != "departure" || r.Overflow != "scroll" || r.MaxRows != 2 {
+		t.Errorf("render options %+v, want departure, scroll and 2 rows", r)
 	}
-	if b.MaxRows != 2 || b.PerRow != 3 {
-		t.Errorf("rows %d per row %d", b.MaxRows, b.PerRow)
+	if b.PerRow != 3 {
+		t.Errorf("per row %d, want 3", b.PerRow)
 	}
 	if cfg.Location() != time.Local {
 		t.Error("empty timezone should be local")
@@ -108,12 +111,13 @@ func TestInvalid(t *testing.T) {
 		"no clock":            {strings.Replace(minimal, `url = "%s"`, "", 1), "clock.url"},
 		"bad name":            {strings.Replace(minimal, `name = "metro"`, `name = "my board"`, 1), "name"},
 		"fast poll":           {strings.Replace(minimal, `name = "metro"`, "name = \"m\"\npoll_interval = \"5s\"", 1), "poll_interval"},
-		"short life":          {strings.Replace(minimal, `name = "metro"`, "name = \"m\"\nlifetime = \"20s\"", 1), "lifetime"},
+		"short life":          {withClock("lifetime = \"20s\""), "clock.lifetime"},
 		"no provider section": {strings.Replace(minimal, "[providers.demo]", "", 1), "providers.demo"},
 		"bad hours":           {strings.Replace(minimal, `name = "metro"`, "name = \"m\"\nactive_hours = \"6-23\"", 1), "active_hours"},
 		"bad zone":            {"timezone = \"Mars/Olympus\"\n" + minimal, "timezone"},
-		"bad layout":          {strings.Replace(minimal, `name = "metro"`, "name = \"m\"\nlayout = \"grid\"", 1), "layout"},
-		"bad overflow":        {strings.Replace(minimal, `name = "metro"`, "name = \"m\"\noverflow = \"wrap\"", 1), "overflow"},
+		"bad layout":          {withClock("layout = \"grid\""), "clock: layout"},
+		"bad overflow":        {withClock("overflow = \"wrap\""), "overflow"},
+		"negative rows":       {withClock("max_rows = -1"), "max_rows"},
 		"duplicate":           {minimal + "[[boards]]\nname = \"metro\"\n[[boards.stops]]\nprovider = \"demo\"\nstop = \"s\"\n", "duplicate"},
 	}
 	for name, tt := range tests {
@@ -125,6 +129,12 @@ func TestInvalid(t *testing.T) {
 			}
 		})
 	}
+}
+
+// withClock returns the minimal config with a [boards.clock] table holding
+// settings.
+func withClock(settings string) string {
+	return strings.Replace(minimal, `name = "metro"`, "name = \"metro\"\n[boards.clock]\n"+settings, 1)
 }
 
 func TestProviderOptionsStrict(t *testing.T) {
@@ -228,12 +238,12 @@ func TestBoardTimezone(t *testing.T) {
 }
 
 func TestLabels(t *testing.T) {
-	src := strings.Replace(minimal, "%s", "clock.local", 1) + "[boards.labels]\n\"Santa Apolónia\" = \"Sta Apolónia\"\n"
+	src := strings.Replace(minimal, "%s", "clock.local", 1) + "[boards.clock.labels]\n\"Santa Apolónia\" = \"Sta Apolónia\"\n"
 	cfg, err := config.Parse([]byte(src), noEnv)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := cfg.Boards[0].Labels["Santa Apolónia"]; got != "Sta Apolónia" {
+	if got := cfg.Boards[0].Clock.Labels["Santa Apolónia"]; got != "Sta Apolónia" {
 		t.Errorf("label = %q", got)
 	}
 }
@@ -257,14 +267,14 @@ func TestProviderType(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	typ, opts, err := cfg.Provider("nyc")
+	typ, opts, err := config.ResolveProvider("nyc", cfg.Providers["nyc"])
 	if err != nil || typ != "gtfsrt" {
 		t.Fatalf("Provider(nyc) = %q, %v", typ, err)
 	}
 	if _, has := opts["type"]; has {
 		t.Error("type key should not reach the provider's options")
 	}
-	if typ, _, _ := cfg.Provider("demo"); typ != "demo" {
+	if typ, _, _ := config.ResolveProvider("demo", cfg.Providers["demo"]); typ != "demo" {
 		t.Errorf("block without type: got %q, want its name", typ)
 	}
 	bad := strings.Replace(minimal, "%s", "clock.local", 1) + "[providers.x]\ntype = 3\n"
@@ -279,7 +289,7 @@ func TestProviderSystem(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	typ, opts, err := cfg.Provider("nyc")
+	typ, opts, err := config.ResolveProvider("nyc", cfg.Providers["nyc"])
 	if err != nil {
 		t.Fatal(err)
 	}

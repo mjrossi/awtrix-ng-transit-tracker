@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/mjrossi/urbanist-timetable/pkg/transit"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit/internal/upstream"
 )
 
 // Name is the provider's name in configuration.
@@ -55,23 +56,17 @@ type Config struct {
 type Provider struct {
 	base *url.URL
 	http *http.Client
+	// lines is optional: without it, departures show the bare line
+	// number and no color.
+	lines *upstream.Cache[map[string]transit.Line]
 
-	mu            sync.Mutex
-	lines         map[string]transit.Line
-	linesAt       time.Time
-	linesFailedAt time.Time
-	stops         []transit.Stop
+	mu    sync.Mutex
+	stops []transit.Stop
 }
 
 // Register adds the provider to r.
 func Register(r *transit.Registry) {
-	r.Register(Name, func(opts transit.Options) (transit.Provider, error) {
-		var cfg Config
-		if err := opts.Decode(&cfg); err != nil {
-			return nil, err
-		}
-		return New(cfg, nil)
-	})
+	transit.RegisterConfig(r, Name, func(cfg Config) (*Provider, error) { return New(cfg, nil) })
 }
 
 // New returns a provider. A nil client gets a default with a timeout.
@@ -80,14 +75,16 @@ func New(cfg Config, client *http.Client) (*Provider, error) {
 	if base == "" {
 		base = DefaultBaseURL
 	}
-	u, err := url.Parse(base)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+	u, ok := upstream.HTTPURL(base)
+	if !ok {
 		return nil, fmt.Errorf("base_url %q must be an http(s) URL", base)
 	}
 	if client == nil {
 		client = &http.Client{Timeout: 20 * time.Second}
 	}
-	return &Provider{base: u, http: client}, nil
+	p := &Provider{base: u, http: client}
+	p.lines = upstream.NewCache(upstream.Policy{TTL: linesTTL, Retry: linesRetry}, p.fetchLines)
+	return p, nil
 }
 
 // arrival is one entry of GET /arrivals/by_stop/{id}.
@@ -108,7 +105,8 @@ func (p *Provider) Departures(ctx context.Context, q transit.Query) ([]transit.D
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	lines := p.linesFor(ctx, q.Now)
+	// A failed refresh keeps the previous lines.
+	lines, _ := p.lines.Get(ctx, q.Now)
 
 	var arrivals []arrival
 	if err := p.get(ctx, "arrivals/by_stop/"+url.PathEscape(q.StopID), &arrivals); err != nil {
@@ -155,34 +153,6 @@ func lineFor(lines map[string]transit.Line, rawID string) transit.Line {
 		return l
 	}
 	return transit.Line{ID: id, ShortName: id, Mode: transit.ModeBus}
-}
-
-// linesFor returns cached line metadata, refreshing it when stale. A failed
-// refresh keeps the previous data, and with none, departures still show
-// with the bare line number and no color; it is retried after linesRetry.
-// The lock is not held during the download.
-func (p *Provider) linesFor(ctx context.Context, now time.Time) map[string]transit.Line {
-	p.mu.Lock()
-	lines, at, failedAt := p.lines, p.linesAt, p.linesFailedAt
-	p.mu.Unlock()
-	if lines != nil && now.Sub(at) < linesTTL {
-		return lines
-	}
-	if since := now.Sub(failedAt); !failedAt.IsZero() && since >= 0 && since < linesRetry {
-		return lines
-	}
-
-	fetched, err := p.fetchLines(ctx)
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if err != nil {
-		if ctx.Err() == nil {
-			p.linesFailedAt = now
-		}
-		return p.lines
-	}
-	p.lines, p.linesAt, p.linesFailedAt = fetched, now, time.Time{}
-	return fetched
 }
 
 func (p *Provider) fetchLines(ctx context.Context) (map[string]transit.Line, error) {
