@@ -199,8 +199,53 @@ func TestTextWidth(t *testing.T) {
 			t.Errorf("TextWidth(%q) = %d, want %d", tt.s, got, tt.want)
 		}
 	}
-	if render.Fits("Santa Apolónia") || !render.Fits("Sta Apolónia") {
-		t.Error("Santa Apolónia should overflow 52 px and Sta Apolónia should fit")
+}
+
+func TestViews(t *testing.T) {
+	type view struct {
+		Name             string
+		Shown, Overflows bool
+	}
+	tests := []struct {
+		name string
+		rows []transit.Row
+		opts render.Options
+		want []view
+	}{
+		{
+			name: "departure overflows past the display width",
+			rows: []transit.Row{row(azul, "Santa Apolónia", 2)},
+			want: []view{{"Santa Apolónia", true, true}},
+		},
+		{
+			name: "label makes it fit",
+			rows: []transit.Row{row(azul, "Santa Apolónia", 2)},
+			opts: render.Options{Labels: map[string]string{"Santa Apolónia": "Sta Apolónia"}},
+			want: []view{{"Sta Apolónia", true, false}},
+		},
+		{
+			name: "departure hides all but one row",
+			rows: []transit.Row{row(azul, "Santa Apolónia", 1), row(azul, "Reboleira", 4)},
+			want: []view{{"Santa Apolónia", false, false}, {"Reboleira", true, false}},
+		},
+		{
+			// Fits the full width, but not the box beside the badge and times.
+			name: "rows overflows its narrower box",
+			rows: []transit.Row{row(azul, "Sta Apolónia", 2), row(azul, "Baixa", 3)},
+			opts: render.Options{Layout: render.LayoutRows},
+			want: []view{{"Sta Apolónia", true, true}, {"Baixa", true, false}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got []view
+			for _, v := range render.Views(tt.rows, now, tt.opts) {
+				got = append(got, view{v.Name, v.Shown, v.Overflows})
+			}
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("Views mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 

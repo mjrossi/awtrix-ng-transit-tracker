@@ -10,7 +10,6 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -281,27 +280,25 @@ func printRows(w io.Writer, b config.Board, rows []transit.Row, now time.Time) {
 		fmt.Fprintln(w, "#   (no departures)")
 	}
 	scrolls := false
-	visible := render.Visible(rows, opts)
-	for _, r := range rows {
-		mins := make([]string, len(r.Departures))
-		for i, d := range r.Departures {
+	for _, v := range render.Views(rows, now, opts) {
+		mins := make([]string, len(v.Row.Departures))
+		for i, d := range v.Row.Departures {
 			mins[i] = strconv.Itoa(d.MinutesUntil(now))
 			if !d.Realtime() {
 				mins[i] += "*"
 			}
 		}
-		name := opts.Label(r.Headsign)
 		mark := ""
 		switch {
-		case !slices.ContainsFunc(visible, func(v transit.Row) bool { return v.Line.ID == r.Line.ID && v.Headsign == r.Headsign }):
+		case !v.Shown:
 			mark = " (not shown)"
-		case opts.Layout == render.LayoutDeparture && !render.Fits(name):
+		case v.Overflows:
 			mark, scrolls = " ~", true
 		}
-		fmt.Fprintf(w, "#   %-8s %-24s %s%s\n", r.Line.ShortName, name, strings.Join(mins, " "), mark)
+		fmt.Fprintf(w, "#   %-8s %-24s %s%s\n", v.Row.Line.ShortName, v.Name, strings.Join(mins, " "), mark)
 	}
 	fmt.Fprintln(w, "#   (* = schedule only)")
 	if scrolls {
-		fmt.Fprintln(w, "#   (~ = too wide for the display; set a shorter name under [boards.clock.labels])")
+		fmt.Fprintln(w, "#   (~ = too wide for its space; set a shorter name under [boards.clock.labels])")
 	}
 }

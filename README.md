@@ -125,7 +125,7 @@ urbanist-timetable preview             # fetches once and prints what each board
 urbanist-timetable preview --push      # ...and pushes it to the clock once
 ```
 
-`preview` marks names too wide for the display; give them shorter names
+`preview` marks names too wide for their space on the display; give them shorter names
 under `[boards.clock.labels]`.
 
 ### 6. Run it

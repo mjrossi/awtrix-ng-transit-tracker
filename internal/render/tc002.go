@@ -144,15 +144,7 @@ func TC002(rows []transit.Row, now time.Time, opts Options) *awtrix.Layout {
 			TextCase: awtrix.TextCaseAsTyped,
 		}}}
 	}
-	shown := Visible(rows, opts)
-	if !opts.marks() {
-		// Without its strike a canceled trip reads as one to catch.
-		for i, r := range shown {
-			shown[i].Departures = slices.DeleteFunc(slices.Clone(r.Departures), func(d transit.Departure) bool {
-				return d.Status == transit.StatusCanceled
-			})
-		}
-	}
+	shown := opts.prepare(Visible(rows, opts))
 	if opts.Layout == LayoutRows {
 		return rowsLayout(shown, now, opts)
 	}
@@ -168,17 +160,83 @@ func TC002(rows []transit.Row, now time.Time, opts Options) *awtrix.Layout {
 // directions keeps one destination instead of flipping to whichever
 // departs next.
 func Visible(rows []transit.Row, opts Options) []transit.Row {
-	opts = opts.WithDefaults()
+	idx := visible(rows, opts.WithDefaults())
+	out := make([]transit.Row, len(idx))
+	for i, j := range idx {
+		out[i] = rows[j]
+	}
+	return out
+}
+
+// visible returns the indexes in rows of the rows Visible returns.
+func visible(rows []transit.Row, opts Options) []int {
 	n := len(rows)
 	if opts.Layout == LayoutRows {
 		n = min(n, opts.MaxRows)
 	}
-	out := slices.Clone(rows[:n])
-	slices.SortStableFunc(out, func(a, b transit.Row) int {
-		return cmp.Or(cmp.Compare(a.Line.ShortName, b.Line.ShortName), cmp.Compare(a.Headsign, b.Headsign))
+	idx := make([]int, n)
+	for i := range idx {
+		idx[i] = i
+	}
+	slices.SortStableFunc(idx, func(a, b int) int {
+		ra, rb := rows[a], rows[b]
+		return cmp.Or(cmp.Compare(ra.Line.ShortName, rb.Line.ShortName), cmp.Compare(ra.Headsign, rb.Headsign))
 	})
 	if opts.Layout != LayoutRows {
-		out = out[:min(len(out), 1)]
+		idx = idx[:min(len(idx), 1)]
+	}
+	return idx
+}
+
+// prepare drops canceled trips from rows when no strike can be drawn:
+// without it a canceled trip reads as one to catch.
+func (o Options) prepare(rows []transit.Row) []transit.Row {
+	if o.marks() {
+		return rows
+	}
+	out := slices.Clone(rows)
+	for i, r := range out {
+		out[i].Departures = slices.DeleteFunc(slices.Clone(r.Departures), func(d transit.Departure) bool {
+			return d.Status == transit.StatusCanceled
+		})
+	}
+	return out
+}
+
+// RowView is how a layout treats one row.
+type RowView struct {
+	Row transit.Row
+	// Name is the headsign as displayed, after Labels.
+	Name  string
+	Shown bool
+	// Overflows reports that Name is wider than the box the layout gives
+	// it, so it scrolls or is clipped.
+	Overflows bool
+}
+
+// Views reports, for each of rows in order, whether the layout shows it and
+// whether its name fits.
+func Views(rows []transit.Row, now time.Time, opts Options) []RowView {
+	opts = opts.WithDefaults()
+	out := make([]RowView, len(rows))
+	for i, r := range rows {
+		out[i] = RowView{Row: r, Name: opts.Label(r.Headsign)}
+	}
+	idx := visible(rows, opts)
+	shown := make([]transit.Row, len(idx))
+	for i, j := range idx {
+		shown[i] = rows[j]
+	}
+	shown = opts.prepare(shown)
+	for i, j := range idx {
+		v := &out[j]
+		v.Shown = true
+		box := awtrix.TC002Width
+		if opts.Layout == LayoutRows {
+			_, bw := badgeRegions("", 0, shown[i].Line, opts)
+			_, box = opts.fitRow(shown[i], now, bw+gap)
+		}
+		v.Overflows = TextWidth(v.Name) > box
 	}
 	return out
 }
@@ -213,34 +271,36 @@ func rowsLayout(rows []transit.Row, now time.Time, opts Options) *awtrix.Layout 
 		id := func(part string) string { return fmt.Sprintf("r%d-%s", i, part) }
 		badge, bw := badgeRegions(id("badge"), y, r.Line, opts)
 		sx := bw + gap
-		name := opts.Label(r.Headsign)
-
-		// Times take what they need, up to half the display, but a second
-		// time is shown only if the name still fits beside it: a name
-		// that scrolls is harder to read than a later departure is to
-		// miss. Canceled trips before the first one a rider can catch
-		// don't count, so they never push it out.
-		deps := r.Departures
-		keep := 1 + slices.IndexFunc(deps, func(d transit.Departure) bool {
-			return d.Status != transit.StatusCanceled
-		})
-		var times timeRow
-		var mx int
-		for {
-			times = fitTimes(deps, now, opts, awtrix.TC002Width/2, false)
-			mx = awtrix.TC002Width - max(times.width, charWidth)
-			if len(times.items) <= max(keep, 1) || TextWidth(name) <= mx-gap-sx {
-				break
-			}
-			deps = deps[:len(times.items)-1]
-		}
-
+		times, nameW := opts.fitRow(r, now, sx)
 		l.Regions = append(l.Regions, badge...)
-		l.Regions = append(l.Regions, opts.nameRegion(id("sign"), awtrix.Box{sx, y, mx - gap - sx, rowHeight}, r.Headsign))
+		l.Regions = append(l.Regions, opts.nameRegion(id("sign"), awtrix.Box{sx, y, nameW, rowHeight}, r.Headsign))
 		l.Regions = append(l.Regions, times.regions(id("min"), id("marks"), awtrix.TC002Width-times.width, y, opts)...)
 		y += rowHeight
 	}
 	return l
+}
+
+// fitRow splits a rows-layout row whose name starts at x between its times
+// and its name, returning the times and the name's width.
+//
+// Times take what they need, up to half the display, but a second time is
+// shown only if the name still fits beside it: a name that scrolls is harder
+// to read than a later departure is to miss. Canceled trips before the first
+// one a rider can catch don't count, so they never push it out.
+func (o Options) fitRow(r transit.Row, now time.Time, x int) (timeRow, int) {
+	name := TextWidth(o.Label(r.Headsign))
+	deps := r.Departures
+	keep := 1 + slices.IndexFunc(deps, func(d transit.Departure) bool {
+		return d.Status != transit.StatusCanceled
+	})
+	for {
+		times := fitTimes(deps, now, o, awtrix.TC002Width/2, false)
+		w := awtrix.TC002Width - max(times.width, charWidth) - gap - x
+		if len(times.items) <= max(keep, 1) || name <= w {
+			return times, w
+		}
+		deps = deps[:len(times.items)-1]
+	}
 }
 
 func (o Options) nameRegion(id string, box awtrix.Box, headsign string) awtrix.Region {
@@ -525,6 +585,3 @@ func TextWidth(s string) int {
 	}
 	return w
 }
-
-// Fits reports whether s fits on one full-width row without scrolling.
-func Fits(s string) bool { return TextWidth(s) <= awtrix.TC002Width }
