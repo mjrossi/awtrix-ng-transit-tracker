@@ -137,42 +137,6 @@ func withClock(settings string) string {
 	return strings.Replace(minimal, `name = "metro"`, "name = \"metro\"\n[boards.clock]\n"+settings, 1)
 }
 
-// Settings that moved to [boards.clock] in v0.3.0 are reported as moved,
-// not just as unknown.
-func TestMovedClockSettings(t *testing.T) {
-	tests := map[string]string{
-		"layout":     `layout = "rows"`,
-		"max_rows":   "max_rows = 1",
-		"lifetime":   `lifetime = "5m"`,
-		"duration":   `duration = "10s"`,
-		"font":       `font = "small"`,
-		"empty_text": `empty_text = "None"`,
-		"overflow":   `overflow = "clip"`,
-		"labels":     "labels = { \"A\" = \"B\" }",
-	}
-	for key, line := range tests {
-		t.Run(key, func(t *testing.T) {
-			src := strings.Replace(strings.Replace(minimal, "%s", "clock.local", 1), `name = "metro"`, "name = \"metro\"\n"+line, 1)
-			_, err := config.Parse([]byte(src), noEnv)
-			if err == nil || !strings.Contains(err.Error(), "[boards.clock") || !strings.Contains(err.Error(), key) {
-				t.Fatalf("got %v, want a hint that %s moved to [boards.clock]", err, key)
-			}
-		})
-	}
-	t.Run("labels table", func(t *testing.T) {
-		src := strings.Replace(minimal, "%s", "clock.local", 1) + "[boards.labels]\n\"A\" = \"B\"\n"
-		if _, err := config.Parse([]byte(src), noEnv); err == nil || !strings.Contains(err.Error(), "[boards.clock.labels]") {
-			t.Fatalf("got %v, want a hint about [boards.clock.labels]", err)
-		}
-	})
-	t.Run("other unknown key", func(t *testing.T) {
-		src := strings.Replace(strings.Replace(minimal, "%s", "clock.local", 1), `name = "metro"`, "name = \"metro\"\nspeed = 1", 1)
-		if _, err := config.Parse([]byte(src), noEnv); err == nil || strings.Contains(err.Error(), "[boards.clock]") {
-			t.Fatalf("got %v, want an unknown-key error without the move hint", err)
-		}
-	})
-}
-
 func TestProviderOptionsStrict(t *testing.T) {
 	var v struct {
 		Lines []struct {

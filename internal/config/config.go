@@ -164,9 +164,6 @@ func Parse(b []byte, lookup func(string) (string, bool)) (*Config, error) {
 	if err := dec.Decode(&c); err != nil {
 		var strict *toml.StrictMissingError
 		if errors.As(err, &strict) {
-			if hint := movedKeysHint(strict); hint != "" {
-				return nil, fmt.Errorf("config: %s\n%s", hint, strict.String())
-			}
 			return nil, fmt.Errorf("config: %s", strict.String())
 		}
 		return nil, fmt.Errorf("config: %w", err)
@@ -178,34 +175,6 @@ func Parse(b []byte, lookup func(string) (string, bool)) (*Config, error) {
 		return nil, fmt.Errorf("config: %w", err)
 	}
 	return &c, nil
-}
-
-// movedToClock are the [[boards]] keys that moved to [boards.clock] in
-// v0.3.0.
-var movedToClock = []string{"layout", "max_rows", "lifetime", "duration", "font", "empty_text", "overflow", "labels"}
-
-// movedKeysHint explains unknown [[boards]] keys that are settings moved to
-// [boards.clock], or returns "" if there are none.
-func movedKeysHint(strict *toml.StrictMissingError) string {
-	var moved []string
-	for _, e := range strict.Errors {
-		k := e.Key()
-		if len(k) >= 2 && k[0] == "boards" && slices.Contains(movedToClock, k[1]) && !slices.Contains(moved, k[1]) {
-			moved = append(moved, k[1])
-		}
-	}
-	var hints []string
-	if i := slices.Index(moved, "labels"); i >= 0 {
-		moved = slices.Delete(moved, i, i+1)
-		hints = append(hints, "[boards.labels] is now [boards.clock.labels]")
-	}
-	if len(moved) > 0 {
-		hints = append([]string{strings.Join(moved, ", ") + " now go under [boards.clock]"}, hints...)
-	}
-	if len(hints) == 0 {
-		return ""
-	}
-	return "since v0.3.0, " + strings.Join(hints, "; ")
 }
 
 var envRef = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)

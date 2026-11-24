@@ -28,12 +28,6 @@ screen instead.
 > the 52 × 16 TC002 is supported; other displays are on the roadmap in
 > [`docs/PLAN.md`](./docs/PLAN.md).
 >
-> **v0.3.0 moved settings:** a board's `layout`, `max_rows`, `overflow`,
-> `lifetime`, `duration`, `font` and `empty_text` now go in a
-> `[boards.clock]` table, and `[boards.labels]` is now
-> `[boards.clock.labels]`. `config validate` names any setting still in the
-> old place.
->
 > **Renamed:** this project was `awtrix-ng-transit-tracker` until v0.2.0.
 > The image is now `ghcr.io/mjrossi/urbanist-timetable`, the binary
 > `urbanist-timetable`, and the environment variables `TIMETABLE_*`
