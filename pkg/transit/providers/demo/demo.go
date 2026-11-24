@@ -56,13 +56,7 @@ type Provider struct {
 
 // Register adds the demo provider to r.
 func Register(r *transit.Registry) {
-	r.Register(Name, func(opts transit.Options) (transit.Provider, error) {
-		var cfg Config
-		if err := opts.Decode(&cfg); err != nil {
-			return nil, err
-		}
-		return New(cfg)
-	})
+	transit.RegisterConfig(r, Name, New)
 }
 
 // New validates cfg and returns a provider.

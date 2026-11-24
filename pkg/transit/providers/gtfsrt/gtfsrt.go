@@ -88,13 +88,7 @@ type Provider struct {
 
 // Register adds the provider to r.
 func Register(r *transit.Registry) {
-	r.Register(Name, func(opts transit.Options) (transit.Provider, error) {
-		var cfg Config
-		if err := opts.Decode(&cfg); err != nil {
-			return nil, err
-		}
-		return New(cfg, nil)
-	})
+	transit.RegisterConfig(r, Name, func(cfg Config) (*Provider, error) { return New(cfg, nil) })
 }
 
 // New validates cfg and returns a provider. A nil client gets a default;

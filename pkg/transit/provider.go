@@ -106,6 +106,23 @@ func (r *Registry) Register(name string, f Factory) {
 	r.factories[name] = f
 }
 
+// RegisterConfig registers a factory that decodes the configuration block
+// into a C and passes it to build.
+func RegisterConfig[C any, P Provider](r *Registry, name string, build func(C) (P, error)) {
+	r.Register(name, func(opts Options) (Provider, error) {
+		var cfg C
+		if err := opts.Decode(&cfg); err != nil {
+			return nil, err
+		}
+		p, err := build(cfg)
+		if err != nil {
+			// Returning p would wrap a nil pointer in a non-nil interface.
+			return nil, err
+		}
+		return p, nil
+	})
+}
+
 // New builds the provider registered under name.
 func (r *Registry) New(name string, opts Options) (Provider, error) {
 	r.mu.RLock()
