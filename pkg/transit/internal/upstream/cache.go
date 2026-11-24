@@ -33,8 +33,10 @@ type Policy struct {
 // poll it at the same moment.
 //
 // Times come from callers, never the wall clock, so providers stay
-// reproducible. A time before the last load counts as expired, so a clock
-// stepped back cannot keep data fresh indefinitely.
+// reproducible. Callers read their time before reaching the cache, so one
+// can arrive with a time slightly before another's load; such a time still
+// counts as fresh. A time more than TTL before the last load counts as
+// expired, so a clock stepped back cannot keep data fresh indefinitely.
 type Cache[T any] struct {
 	policy Policy
 	load   func(context.Context) (T, error)
@@ -159,5 +161,5 @@ func (c *Cache[T]) run(ctx context.Context, now time.Time, cl *call[T]) {
 
 func within(now, since time.Time, d time.Duration) bool {
 	age := now.Sub(since)
-	return age >= 0 && age < d
+	return age > -d && age < d
 }

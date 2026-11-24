@@ -80,8 +80,16 @@ func TestCacheSequence(t *testing.T) {
 			{10 * time.Minute, canceled, got{"a", "context canceled"}},
 			{10 * time.Minute, ok("b"), got{"b", ""}},
 		}},
-		{"clock stepped back counts as expired", policy, []step{
+		{"time slightly before the load stays fresh", policy, []step{
 			{10 * time.Minute, ok("a"), got{"a", ""}},
+			{9 * time.Minute, nil, got{"a", ""}},
+		}},
+		{"time slightly before a failure backs off", policy, []step{
+			{10 * time.Minute, fail("boom"), got{"", "boom"}},
+			{9 * time.Minute, nil, got{"", "boom"}},
+		}},
+		{"clock stepped back past TTL counts as expired", policy, []step{
+			{20 * time.Minute, ok("a"), got{"a", ""}},
 			{9 * time.Minute, ok("b"), got{"b", ""}},
 		}},
 		{"zero retry loads again at once", Policy{TTL: time.Minute}, []step{
