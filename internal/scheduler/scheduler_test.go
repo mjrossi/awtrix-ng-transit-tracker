@@ -78,15 +78,21 @@ type harness struct {
 	logs   *logRecorder
 }
 
-// logRecorder keeps each record's message.
+// logRecorder keeps the messages of records at info and above in msgs, and
+// the rest in debug.
 type logRecorder struct {
-	msgs []string
+	msgs  []string
+	debug []string
 }
 
 func (l *logRecorder) Enabled(context.Context, slog.Level) bool { return true }
 
 func (l *logRecorder) Handle(_ context.Context, r slog.Record) error {
-	l.msgs = append(l.msgs, r.Message)
+	if r.Level < slog.LevelInfo {
+		l.debug = append(l.debug, r.Message)
+	} else {
+		l.msgs = append(l.msgs, r.Message)
+	}
 	return nil
 }
 
@@ -263,8 +269,87 @@ func TestPartialResultsArePushedAndLoggedOnChange(t *testing.T) {
 	h.now = start.Add(3 * time.Minute)
 	h.runner.Tick(t.Context())
 
-	want := []string{"partial departures", "source complete again"}
+	want := []string{"partial departures", "board shown", "source complete again"}
 	if !slices.Equal(h.logs.msgs, want) {
 		t.Errorf("logs = %q, want %q", h.logs.msgs, want)
+	}
+}
+
+func TestLogsBoardStateOnChange(t *testing.T) {
+	h := newHarness(nil)
+	tick := func(after time.Duration) {
+		h.now = start.Add(after)
+		h.runner.Tick(t.Context())
+	}
+	tick(0)
+	tick(time.Minute)
+
+	h.prov.err = errors.New("upstream down")
+	tick(2 * time.Minute)
+	tick(20 * time.Minute) // past MaxStale
+	tick(21 * time.Minute) // still backing off: not logged again
+	h.prov.err = nil
+	tick(40 * time.Minute)
+
+	want := []string{
+		"board shown",
+		"fetch departures",
+		"fetch departures",
+		"no usable data; board not updated",
+		"source recovered",
+		"board shown",
+	}
+	if diff := cmp.Diff(want, h.logs.msgs); diff != "" {
+		t.Errorf("logs (-want +got):\n%s", diff)
+	}
+}
+
+func TestLogsPublishRecovery(t *testing.T) {
+	h := newHarness(nil)
+	h.runner.Tick(t.Context())
+	h.out.err = errors.New("output offline")
+	h.now = start.Add(time.Minute)
+	h.runner.Tick(t.Context())
+	h.out.err = nil
+	h.now = start.Add(2 * time.Minute)
+	h.runner.Tick(t.Context())
+
+	want := []string{"board shown", "publish", "board shown"}
+	if diff := cmp.Diff(want, h.logs.msgs); diff != "" {
+		t.Errorf("logs (-want +got):\n%s", diff)
+	}
+}
+
+func TestLogsStartOutsideActiveHours(t *testing.T) {
+	h := newHarness(func(time.Time) bool { return false })
+	h.runner.Tick(t.Context())
+	h.runner.Tick(t.Context())
+	if diff := cmp.Diff([]string{"outside active hours"}, h.logs.msgs); diff != "" {
+		t.Errorf("logs (-want +got):\n%s", diff)
+	}
+	if h.out.deletes != 0 {
+		t.Errorf("deletes = %d, want 0 for a board never shown", h.out.deletes)
+	}
+}
+
+func TestEveryPollIsLoggedAtDebug(t *testing.T) {
+	h := newHarness(nil)
+	h.runner.Tick(t.Context())
+	h.now = start.Add(time.Minute)
+	h.runner.Tick(t.Context())
+	want := []string{"fetched departures", "published", "fetched departures", "published"}
+	if diff := cmp.Diff(want, h.logs.debug); diff != "" {
+		t.Errorf("debug logs (-want +got):\n%s", diff)
+	}
+}
+
+func TestShutdownDuringFetchIsNotLoggedAsNoData(t *testing.T) {
+	h := newHarness(nil)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	h.prov.err = context.Canceled
+	h.runner.Tick(ctx)
+	if len(h.logs.msgs) != 0 {
+		t.Errorf("logs = %q, want none while stopping", h.logs.msgs)
 	}
 }

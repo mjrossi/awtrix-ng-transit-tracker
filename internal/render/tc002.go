@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/mjrossi/urbanist-timetable/pkg/awtrix"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit"
@@ -47,6 +48,9 @@ type Options struct {
 	Overflow Overflow
 	// Font is an AWTRIX NG font name; see GET /api/v1/capabilities.
 	Font string
+	// NameFont is the font for destination names. Empty picks one per name:
+	// Font, or AccentFont for a name the small font draws badly.
+	NameFont string
 	// EmptyText is shown when there are no departures.
 	EmptyText string
 }
@@ -55,6 +59,10 @@ type Options struct {
 const (
 	DefaultFont      = "small"
 	DefaultEmptyText = "No departures"
+	// AccentFont replaces the small font for names with accents above
+	// Latin-1 letters. The small font fits those accents by shortening the
+	// letter, without a blank row between them, so "ã" reads as a blob.
+	AccentFont = "matrix-light6"
 )
 
 // Colors are the Night theme of the maintainer's Lexicon palette: on an LED
@@ -138,7 +146,7 @@ func TC002(rows []transit.Row, now time.Time, opts Options) *awtrix.Layout {
 			ID:       "empty",
 			Box:      awtrix.Box{0, 0, awtrix.TC002Width, awtrix.TC002Height},
 			Text:     awtrix.PlainText(opts.EmptyText),
-			Font:     opts.Font,
+			Font:     opts.nameFont(opts.EmptyText),
 			Color:    DimColor,
 			Scroll:   opts.scroll(),
 			TextCase: awtrix.TextCaseAsTyped,
@@ -304,16 +312,41 @@ func (o Options) fitRow(r transit.Row, now time.Time, x int) (timeRow, int) {
 }
 
 func (o Options) nameRegion(id string, box awtrix.Box, headsign string) awtrix.Region {
-	return awtrix.Region{
+	name := o.Label(headsign)
+	r := awtrix.Region{
 		ID:       id,
 		Box:      box,
-		Text:     awtrix.PlainText(o.Label(headsign)),
-		Font:     o.Font,
+		Text:     awtrix.PlainText(name),
+		Font:     o.nameFont(name),
 		Color:    TextColor,
 		Align:    awtrix.AlignStart,
 		Scroll:   o.scroll(),
 		TextCase: awtrix.TextCaseAsTyped,
 	}
+	// The clock centers text by its lit rows, and an accented capital lights
+	// one more above the rest, which would push the baseline down a row.
+	if r.Font == AccentFont && strings.ContainsFunc(name, func(c rune) bool {
+		return accentAbove(c) && unicode.IsUpper(c)
+	}) {
+		r.VAlign = awtrix.AlignStart
+	}
+	return r
+}
+
+func (o Options) nameFont(name string) string {
+	if o.NameFont != "" {
+		return o.NameFont
+	}
+	if o.Font == DefaultFont && strings.ContainsFunc(name, accentAbove) {
+		return AccentFont
+	}
+	return o.Font
+}
+
+// accentAbove reports whether c is a Latin-1 letter with a mark above it.
+// Marks on other letters get a row of their own in the small font.
+func accentAbove(c rune) bool {
+	return c >= 'À' && c <= 'ÿ' && !strings.ContainsRune("ÆÇÐ×ØÞßæçð÷øþ", c)
 }
 
 // badgeRegions returns the regions identifying a line and their width.

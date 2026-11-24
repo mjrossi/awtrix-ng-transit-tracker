@@ -35,6 +35,14 @@ Names that still do not fit:
   automatic abbreviation: rules like "Santa" → "Sta" are language-specific.
 - Otherwise they scroll in their box, or with `overflow = "clip"` are cut.
 
+Names with a mark above a Latin-1 letter ("São Sebastião") use the
+`matrix-light6` font: `small` fits those accents by shortening the letter,
+with no blank row between them, so they read as blobs. Other names, the
+times and the badges stay in `small`. `name_font` overrides the choice, and
+a board with its own `font` keeps it. Text is centered by its lit rows, so
+a name with an accented capital, which lights one row more, is aligned to
+the top to keep its baseline.
+
 Other rules:
 
 - Colors are the Night theme of the maintainer's Lexicon palette, since

@@ -12,6 +12,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/urfave/cli/v3"
@@ -29,6 +30,13 @@ func runCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "run",
 		Usage: "poll providers and push every board to the clock until stopped",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:    "state",
+				Usage:   "file that remembers pushed boards, so ones removed from the config also leave the clock",
+				Sources: cli.EnvVars("TIMETABLE_STATE"),
+			},
+		},
 		Action: func(ctx context.Context, c *cli.Command) error {
 			log, err := newLogger(c)
 			if err != nil {
@@ -46,8 +54,31 @@ func runCommand() *cli.Command {
 			if err != nil {
 				return err
 			}
-			log.InfoContext(ctx, "starting", slog.Int("boards", len(runners)), slog.String("clock", clockHost(cfg.Clock.URL)))
-			return scheduler.RunAll(ctx, runners)
+			log.InfoContext(ctx, "starting",
+				slog.String("version", version),
+				slog.Int("boards", len(runners)),
+				slog.String("clock", clockHost(cfg.Clock.URL)))
+			for _, b := range cfg.Boards {
+				stops := make([]string, len(b.Stops))
+				for i, s := range b.Stops {
+					stops[i] = s.Provider + ":" + s.Stop
+				}
+				log.InfoContext(ctx, "board configured",
+					slog.String("board", b.Name),
+					slog.Any("stops", stops),
+					slog.Duration("poll_interval", b.PollInterval.D()),
+					slog.Duration("lifetime", b.Clock.Lifetime.D()))
+			}
+			var wg sync.WaitGroup
+			if path := c.String("state"); path != "" {
+				wg.Go(func() { newCleanup(cfg, path, clock, log).Run(ctx) })
+			} else {
+				log.InfoContext(ctx, "no state file; boards removed from the config keep their place on the clock")
+			}
+			err = scheduler.RunAll(ctx, runners)
+			wg.Wait()
+			log.InfoContext(ctx, "stopped")
+			return err
 		},
 	}
 }

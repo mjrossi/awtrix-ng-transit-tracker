@@ -127,6 +127,7 @@ under `[boards.clock.labels]`.
 ```bash
 docker run -d --name urbanist-timetable --restart unless-stopped \
   -v "$PWD/config.toml:/config/config.toml:ro" \
+  -v timetable-data:/data \
   ghcr.io/mjrossi/urbanist-timetable:latest
 docker logs -f urbanist-timetable
 ```
@@ -140,9 +141,20 @@ services:
     restart: unless-stopped
     volumes:
       - ./config.toml:/config/config.toml:ro
+      - timetable-data:/data
     # environment:
     #   AWTRIX_PASSWORD: ...   # referenced as ${AWTRIX_PASSWORD} in config.toml
+
+volumes:
+  timetable-data:
 ```
+
+`/data` holds a small file naming the boards the service has pushed, so
+that a board you remove from the configuration also leaves the clock's app
+list. To use a folder instead of a named volume, make it writable for the
+container's non-root user. Outside Docker, set `--state` (or
+`TIMETABLE_STATE`) to a file path; without it, removed boards stay in the
+clock's list as "no data".
 
 The configuration is read at startup, so restart the container after
 editing it. To update, run `docker compose pull && docker compose up -d`.
@@ -241,6 +253,12 @@ trips the feed does not list yet are missing until it does.
   (10 minutes by default) while the provider is retried with backoff.
   Minutes are recomputed on every push.
 - Outside `active_hours` the app is removed and no requests are made.
+- A board removed from the configuration is removed from the clock at the
+  next start, including its place in the rotation. If the clock is off, this
+  is retried with backoff, from one minute up to one hour. Apps of other
+  senders, scripts and built-in apps are left alone.
+- Logs show each board's configuration and changes of state. Set
+  `TIMETABLE_LOG_LEVEL=debug` to log every fetch and push.
 - The clock forgets pushed apps when it restarts; the next poll restores
   them.
 - GTFS timetables are downloaded once a day to a temporary file in `/tmp`

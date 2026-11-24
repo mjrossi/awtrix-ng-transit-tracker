@@ -387,3 +387,54 @@ func TestMarksOnlyWithSmallFont(t *testing.T) {
 		t.Error("TC002 modified the caller's rows")
 	}
 }
+
+func TestNameFont(t *testing.T) {
+	tests := []struct {
+		name, headsign string
+		opts           render.Options
+		font, valign   string
+	}{
+		{"plain", "Odivelas", render.Options{}, "small", ""},
+		{"accent above", "São Sebastião", render.Options{}, render.AccentFont, ""},
+		{"accented capital", "Águas Livres", render.Options{}, render.AccentFont, awtrix.AlignStart},
+		// A cedilla hangs below the letter, so small has room for it.
+		{"cedilla", "Praca do Comercio, Praça", render.Options{}, "small", ""},
+		// Extended-A accents get a row of their own in small.
+		{"extended-A", "Žižkov", render.Options{}, "small", ""},
+		{"label decides", "São", render.Options{Labels: map[string]string{"São": "Sao"}}, "small", ""},
+		{"name_font overrides", "Odivelas", render.Options{NameFont: "large"}, "large", ""},
+		{"own font is kept", "São Sebastião", render.Options{Font: "large"}, "large", ""},
+	}
+	for _, tt := range tests {
+		for _, layout := range []render.Layout{render.LayoutDeparture, render.LayoutRows} {
+			t.Run(tt.name+" "+string(layout), func(t *testing.T) {
+				opts := tt.opts
+				opts.Layout = layout
+				l := render.TC002([]transit.Row{row(azul, tt.headsign, 3, 8)}, now, opts)
+				for _, r := range l.Regions {
+					switch {
+					case strings.HasSuffix(r.ID, "sign"):
+						if r.Font != tt.font || r.VAlign != tt.valign {
+							t.Errorf("name font %q valign %q, want %q %q", r.Font, r.VAlign, tt.font, tt.valign)
+						}
+					case strings.HasSuffix(r.ID, "min"):
+						want := tt.opts.Font
+						if want == "" {
+							want = "small"
+						}
+						if r.Font != want {
+							t.Errorf("times font %q, want %q", r.Font, want)
+						}
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestEmptyTextUsesNameFont(t *testing.T) {
+	l := render.TC002(nil, now, render.Options{EmptyText: "Não há"})
+	if f := l.Regions[0].Font; f != render.AccentFont {
+		t.Errorf("font %q, want %q", f, render.AccentFont)
+	}
+}

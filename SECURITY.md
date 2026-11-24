@@ -60,7 +60,9 @@ interpreted.
 
 - A static binary on Alpine, running as a non-root user.
 - No published ports. The only writes are temporary schedule files in
-  `/tmp`; with a read-only root filesystem, downloads fall back to memory.
+  `/tmp`, where with a read-only root filesystem downloads fall back to
+  memory, and the state file in `/data`, which holds the clock's host and
+  board names, never credentials.
 - Images are built by GitHub Actions, from version tags and from `main`,
   only after `just ci` passes.
 
