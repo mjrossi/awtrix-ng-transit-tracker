@@ -15,31 +15,36 @@ import (
 	"github.com/mjrossi/urbanist-timetable/pkg/transit"
 )
 
+// Layout is how a board's rows are arranged on the display.
+type Layout string
+
 // Layouts.
 const (
 	// LayoutDeparture shows one line and direction like a platform sign:
 	// the destination across the top, the line and next times below.
-	LayoutDeparture = "departure"
+	LayoutDeparture Layout = "departure"
 	// LayoutRows shows one line and direction per row, two rows at most.
-	LayoutRows = "rows"
+	LayoutRows Layout = "rows"
 )
 
-// Overflow modes for names wider than their box.
+// Overflow is what a name wider than its box does.
+type Overflow string
+
+// Overflow modes.
 const (
-	OverflowScroll = "scroll"
-	OverflowClip   = "clip"
+	OverflowScroll Overflow = "scroll"
+	OverflowClip   Overflow = "clip"
 )
 
 // Options tunes the TC002 renderer. Zero values take the defaults below.
 type Options struct {
-	Layout string
+	Layout Layout
 	// MaxRows caps rows in LayoutRows; the display fits two.
 	MaxRows int
 	// Labels replaces headsigns for display, such as
 	// "Santa Apolónia" → "Sta Apolónia".
-	Labels map[string]string
-	// Overflow says what a name wider than its box does.
-	Overflow string
+	Labels   map[string]string
+	Overflow Overflow
 	// Font is an AWTRIX NG font name; see GET /api/v1/capabilities.
 	Font string
 	// EmptyText is shown when there are no departures.

@@ -130,8 +130,8 @@ func TestTC002Geometry(t *testing.T) {
 		many.Departures[i].Predicted = &p
 	}
 	rows := []transit.Row{many, canceled(row(bus, "B", 1, 2, 3, 4), 0), row(verde, "C", 3)}
-	for _, layout := range []string{render.LayoutDeparture, render.LayoutRows} {
-		t.Run(layout, func(t *testing.T) {
+	for _, layout := range []render.Layout{render.LayoutDeparture, render.LayoutRows} {
+		t.Run(string(layout), func(t *testing.T) {
 			l := render.TC002(rows, now, render.Options{Layout: layout, MaxRows: 5})
 			if len(l.Regions) > 16 {
 				t.Errorf("%d regions, limit 16", len(l.Regions))
@@ -321,8 +321,8 @@ func TestRowsLayoutKeepsFirstCatchableTrip(t *testing.T) {
 // out.
 func TestMarksOnlyWithSmallFont(t *testing.T) {
 	rows := []transit.Row{canceled(row(bus, "Sé", 3, 8, 18), 1)}
-	for _, layout := range []string{render.LayoutDeparture, render.LayoutRows} {
-		t.Run(layout, func(t *testing.T) {
+	for _, layout := range []render.Layout{render.LayoutDeparture, render.LayoutRows} {
+		t.Run(string(layout), func(t *testing.T) {
 			l := render.TC002(rows, now, render.Options{Layout: layout, Font: "large"})
 			minID := "min"
 			if layout == render.LayoutRows {

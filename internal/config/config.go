@@ -75,8 +75,8 @@ type Board struct {
 type BoardClock struct {
 	// Layout is "departure" (one line and direction, like a platform sign)
 	// or "rows" (one line and direction per row).
-	Layout  string `toml:"layout"`
-	MaxRows int    `toml:"max_rows"`
+	Layout  render.Layout `toml:"layout"`
+	MaxRows int           `toml:"max_rows"`
 	// Lifetime is how long the clock keeps the app without a fresh push.
 	// Defaults to three poll intervals.
 	Lifetime Duration `toml:"lifetime"`
@@ -86,7 +86,7 @@ type BoardClock struct {
 	Font      string   `toml:"font"`
 	EmptyText string   `toml:"empty_text"`
 	// Overflow is "scroll" or "clip" for names wider than their box.
-	Overflow string `toml:"overflow"`
+	Overflow render.Overflow `toml:"overflow"`
 	// Labels maps headsigns to shorter display names.
 	Labels map[string]string `toml:"labels"`
 }
