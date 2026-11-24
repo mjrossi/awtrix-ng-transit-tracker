@@ -102,16 +102,16 @@ const (
 	cleanupMaxRetry = time.Hour
 )
 
-func newCleanup(cfg *config.Config, path string, f clockout.Forgetter, log *slog.Logger) clockout.Cleanup {
+func newCleanup(cfg *config.Config, path string, clock *awtrix.Client, log *slog.Logger) clockout.Cleanup {
 	boards := make([]string, len(cfg.Boards))
 	for i, b := range cfg.Boards {
 		boards[i] = b.Name
 	}
 	return clockout.Cleanup{
 		Path:      path,
-		Clock:     clockHost(cfg.Clock.URL),
+		Clock:     clock.Host(),
 		Boards:    boards,
-		Forgetter: f,
+		Forgetter: clock,
 		Log:       log,
 		Retry:     cleanupRetry,
 		MaxRetry:  cleanupMaxRetry,

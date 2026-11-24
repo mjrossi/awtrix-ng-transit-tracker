@@ -23,13 +23,13 @@ type fakeForgetter struct {
 	errs []error
 }
 
-func (f *fakeForgetter) ForgetApps(_ context.Context, names []string) error {
+func (f *fakeForgetter) ForgetApps(_ context.Context, names []string) ([]string, error) {
 	f.calls = append(f.calls, names)
 	f.times = append(f.times, time.Now())
 	if n := len(f.calls); n <= len(f.errs) {
-		return f.errs[n-1]
+		return nil, f.errs[n-1]
 	}
-	return nil
+	return names, nil
 }
 
 func cleanup(path, clock string, f *fakeForgetter, boards ...string) clockout.Cleanup {
@@ -113,6 +113,30 @@ func TestCleanupBadState(t *testing.T) {
 	cleanup(path, "clock.lan", f, "saldanha").Run(t.Context())
 	if diff := cmp.Diff([][]string{{"b65"}}, f.calls); diff != "" {
 		t.Errorf("forgotten (-want +got):\n%s", diff)
+	}
+}
+
+// A read error other than missing or corrupt (here: the path is a
+// directory) must not be followed by a save, which would lose the names
+// the unreadable file still records.
+func TestCleanupUnreadableStateIsLeftAlone(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	if err := os.Mkdir(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var logs strings.Builder
+	f := &fakeForgetter{}
+	c := cleanup(path, "clock.lan", f, "b65")
+	c.Log = slog.New(slog.NewTextHandler(&logs, nil))
+	c.Run(t.Context())
+	if len(f.calls) != 0 {
+		t.Errorf("forgot %v from an unreadable state file", f.calls)
+	}
+	if !strings.Contains(logs.String(), "level=WARN") {
+		t.Errorf("logs = %q, want a warning", logs.String())
+	}
+	if fi, err := os.Stat(path); err != nil || !fi.IsDir() {
+		t.Errorf("state path was replaced: fi = %v, err = %v", fi, err)
 	}
 }
 

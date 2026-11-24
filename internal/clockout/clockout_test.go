@@ -28,7 +28,7 @@ func (p *fakePusher) PushApp(_ context.Context, name string, app awtrix.App) err
 	return nil
 }
 
-func (p *fakePusher) DeleteApp(_ context.Context, name string) error {
+func (p *fakePusher) DeletePushedApp(_ context.Context, name string) error {
 	p.deleted = append(p.deleted, name)
 	return nil
 }

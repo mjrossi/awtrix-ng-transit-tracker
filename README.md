@@ -149,12 +149,14 @@ volumes:
   timetable-data:
 ```
 
-`/data` holds a small file naming the boards the service has pushed, so
+`/data` holds a small file naming the configured boards, so
 that a board you remove from the configuration also leaves the clock's app
-list. To use a folder instead of a named volume, make it writable for the
-container's non-root user. Outside Docker, set `--state` (or
-`TIMETABLE_STATE`) to a file path; without it, removed boards stay in the
-clock's list as "no data".
+list. Mount a volume there, as above: without one, each new container starts
+with an empty state file, and boards removed from the configuration are not
+cleaned up after a restart. To use a folder instead of a named volume, make
+it writable for the container's non-root user. Outside Docker, set `--state`
+(or `TIMETABLE_STATE`) to a file path; without it, removed boards stay in
+the clock's list as "no data".
 
 The configuration is read at startup, so restart the container after
 editing it. To update, run `docker compose pull && docker compose up -d`.

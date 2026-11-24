@@ -32,6 +32,7 @@ Feed and API contents. They are decoded defensively:
 | GTFS-Realtime feed | 64 MB; hand-written protobuf decoder that skips unknown fields and rejects malformed lengths |
 | Carris Metropolitana JSON | 32 MB |
 | Metro de Lisboa JSON | 4 MB; token response 64 KB |
+| Clock API replies (app list, device state) | 1 MB decoded |
 | Clock error bodies | 64 KB |
 
 Every request has a timeout. Line colors are normalized to `#RRGGBB`
@@ -49,8 +50,9 @@ interpreted.
     (`config.ProviderOptions.Decode`), because values hold expanded
     secrets by then;
   - `gtfsrt` names URLs without credentials or query strings (`redact`);
-  - the clock URL may embed basic-auth credentials; logs show only its host
-    (`clockHost`), and URL parse errors drop the raw URL.
+  - the clock URL may embed basic-auth credentials; logs and the state
+    file show only its host (`Client.Host`), and URL parse errors drop
+    the raw URL.
 
   New providers follow the same rules (CONTRIBUTING.md, "Adding a provider").
 - The clock's basic auth is usually sent over plain HTTP, because AWTRIX NG

@@ -8,7 +8,6 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
-	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -33,7 +32,7 @@ func runCommand() *cli.Command {
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    "state",
-				Usage:   "file that remembers pushed boards, so ones removed from the config also leave the clock",
+				Usage:   "file that remembers the configured boards, so ones removed from the config also leave the clock",
 				Sources: cli.EnvVars("TIMETABLE_STATE"),
 			},
 		},
@@ -57,7 +56,7 @@ func runCommand() *cli.Command {
 			log.InfoContext(ctx, "starting",
 				slog.String("version", version),
 				slog.Int("boards", len(runners)),
-				slog.String("clock", clockHost(cfg.Clock.URL)))
+				slog.String("clock", clock.Host()))
 			for _, b := range cfg.Boards {
 				stops := make([]string, len(b.Stops))
 				for i, s := range b.Stops {
@@ -263,16 +262,6 @@ func stopsCommand() *cli.Command {
 			},
 		}},
 	}
-}
-
-// clockHost is the clock URL's host, for logs: the URL may embed
-// basic-auth credentials, which the clock client accepts.
-func clockHost(u string) string {
-	p, err := url.Parse(u)
-	if err != nil {
-		return "(invalid URL)"
-	}
-	return p.Host
 }
 
 // providerForSearch uses the named provider's settings from the config

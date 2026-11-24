@@ -13,12 +13,6 @@ import (
 	"github.com/mjrossi/urbanist-timetable/pkg/transit"
 )
 
-func TestClockHostDropsCredentials(t *testing.T) {
-	if got := clockHost("http://admin:hunter2@clock.lan:8080"); got != "clock.lan:8080" {
-		t.Errorf("clockHost = %q", got)
-	}
-}
-
 func TestVersionFlag(t *testing.T) {
 	cmd := newRootCommand()
 	var out bytes.Buffer

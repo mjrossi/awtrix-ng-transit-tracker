@@ -16,7 +16,10 @@ import (
 // Forgetter removes apps, and the places they keep, from the clock.
 // *awtrix.Client implements it.
 type Forgetter interface {
-	ForgetApps(ctx context.Context, names []string) error
+	// ForgetApps removes the given names and returns those it actually
+	// removed; names the clock does not know, or that belong to a script
+	// or built-in app, are left alone.
+	ForgetApps(ctx context.Context, names []string) ([]string, error)
 }
 
 // Cleanup removes boards that left the configuration from the clock. The
@@ -47,7 +50,16 @@ type cleanupState struct {
 func (c Cleanup) Run(ctx context.Context) {
 	prev, err := readState(c.Path)
 	if err != nil {
-		c.Log.WarnContext(ctx, "read state; boards removed earlier are not cleaned up", slog.Any("err", err))
+		if !errors.Is(err, errCorrupt) {
+			// A missing file is the first run, and a corrupt one is
+			// replaced below. Any other read error must stop the
+			// cleanup: saving would lose the names the unreadable file
+			// still records.
+			c.Log.WarnContext(ctx, "read state; boards removed earlier are not cleaned up, and the state file is left alone", slog.Any("err", err))
+			return
+		}
+		c.Log.WarnContext(ctx, "state file is corrupt; starting without it", slog.Any("err", err))
+		prev = cleanupState{}
 	}
 	if prev.Clock != c.Clock {
 		prev.Apps = nil
@@ -62,8 +74,16 @@ func (c Cleanup) Run(ctx context.Context) {
 		return
 	}
 	for wait := c.Retry; ; wait = min(2*wait, c.MaxRetry) {
-		err := c.Forgetter.ForgetApps(ctx, stale)
+		removed, err := c.Forgetter.ForgetApps(ctx, stale)
 		if err == nil {
+			if len(removed) > 0 {
+				c.Log.InfoContext(ctx, "removed old boards from the clock", slog.Any("boards", removed))
+			}
+			if left := slices.DeleteFunc(slices.Clone(stale), func(n string) bool {
+				return slices.Contains(removed, n)
+			}); len(left) > 0 {
+				c.Log.InfoContext(ctx, "left old board names on the clock (unknown there, or a script or built-in app has the name)", slog.Any("boards", left))
+			}
 			break
 		}
 		if ctx.Err() != nil {
@@ -77,7 +97,6 @@ func (c Cleanup) Run(ctx context.Context) {
 		case <-time.After(wait):
 		}
 	}
-	c.Log.InfoContext(ctx, "removed old boards from the clock", slog.Any("boards", stale))
 	c.save(ctx, c.Boards)
 }
 
@@ -86,6 +105,10 @@ func (c Cleanup) save(ctx context.Context, apps []string) {
 		c.Log.WarnContext(ctx, "save state; boards removed later will keep their place on the clock", slog.Any("err", err))
 	}
 }
+
+// errCorrupt marks a state file that cannot be parsed. It is safe to
+// replace: it records nothing usable.
+var errCorrupt = errors.New("state: corrupt file")
 
 func readState(path string) (cleanupState, error) {
 	b, err := os.ReadFile(path)
@@ -97,13 +120,14 @@ func readState(path string) (cleanupState, error) {
 	}
 	var s cleanupState
 	if err := json.Unmarshal(b, &s); err != nil {
-		return cleanupState{}, fmt.Errorf("state: %s: %w", path, err)
+		return cleanupState{}, fmt.Errorf("%w: %s: %w", errCorrupt, path, err)
 	}
 	return s, nil
 }
 
-// writeState replaces the file in one step, so a crash leaves the old or the
-// new state.
+// writeState replaces the file in one step and flushes it first, so a
+// crash or power loss leaves the old or the new state, never a rename
+// onto unwritten data.
 func writeState(path string, s cleanupState) error {
 	b, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
@@ -114,12 +138,24 @@ func writeState(path string, s cleanupState) error {
 		return fmt.Errorf("state: %w", err)
 	}
 	defer func() { _ = os.Remove(f.Name()) }()
-	_, err = f.Write(append(b, '\n'))
-	if err = errors.Join(err, f.Close()); err != nil {
+	if _, err := f.Write(append(b, '\n')); err != nil {
+		_ = f.Close()
+		return fmt.Errorf("state: %w", err)
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		return fmt.Errorf("state: %w", err)
+	}
+	if err := f.Close(); err != nil {
 		return fmt.Errorf("state: %w", err)
 	}
 	if err := os.Rename(f.Name(), path); err != nil {
 		return fmt.Errorf("state: %w", err)
+	}
+	// Flush the directory too, so the rename itself survives power loss.
+	if d, err := os.Open(filepath.Dir(path)); err == nil {
+		_ = d.Sync()
+		_ = d.Close()
 	}
 	return nil
 }

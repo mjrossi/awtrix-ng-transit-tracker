@@ -145,8 +145,12 @@ providers). Each widens who the project works for.
   rejected before designing the 32 × 8 renderer.
 - Still to confirm on the maintainer's TC002:
   - after a clock reboot the app returns within one poll;
-  - outside active hours the app is removed with
-    `DELETE /api/v1/apps/{name}`, although it was pushed to
-    `/api/v1/apps/pushed/{name}`;
   - a malformed color is rejected (colors are normalized before pushing,
     so this only confirms the safeguard is needed).
+- No longer open, answered in code (ARCHITECTURE.md, "Failure
+  semantics"): stopping the service removes the app after its lifetime
+  (three polls), because every push carries `lifetimeExpiry: remove`;
+  outside active hours the app is removed with
+  `DELETE /api/v1/apps/{name}` although it was pushed to
+  `/api/v1/apps/pushed/{name}`, and a `404` for an app already gone is
+  treated as success.

@@ -102,8 +102,8 @@ per_row = 3
 # lifetime = "135s"   # app is removed this long after the last push (default 3 × poll_interval)
 # duration = "10s"    # time on screen per rotation (default: the clock's setting)
 # font = "small"
-# name_font = "small" # font of destination names. By default names with accents above
-                      # letters use matrix-light6, which needs AWTRIX NG 1.2.2 or later
+# name_font = "small" # font of destination names and of empty_text. By default names with
+                      # accents above letters use matrix-light6, which needs AWTRIX NG 1.2.2 or later
 # empty_text = "No departures"
 
 # Shorter display names. About 13 characters fit across the display;

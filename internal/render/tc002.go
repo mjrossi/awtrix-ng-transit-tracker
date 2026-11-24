@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/mjrossi/urbanist-timetable/pkg/awtrix"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit"
@@ -48,10 +47,11 @@ type Options struct {
 	Overflow Overflow
 	// Font is an AWTRIX NG font name; see GET /api/v1/capabilities.
 	Font string
-	// NameFont is the font for destination names. Empty picks one per name:
-	// Font, or AccentFont for a name the small font draws badly.
+	// NameFont is the font for destination names and EmptyText. Empty
+	// picks one per name: Font, or AccentFont for a name the small font
+	// draws badly.
 	NameFont string
-	// EmptyText is shown when there are no departures.
+	// EmptyText is shown when there are no departures, drawn in NameFont.
 	EmptyText string
 }
 
@@ -244,7 +244,7 @@ func Views(rows []transit.Row, now time.Time, opts Options) []RowView {
 			_, bw := badgeRegions("", 0, shown[i].Line, opts)
 			_, box = opts.fitRow(shown[i], now, bw+gap)
 		}
-		v.Overflows = TextWidth(v.Name) > box
+		v.Overflows = FontWidth(opts.nameFont(v.Name), v.Name) > box
 	}
 	return out
 }
@@ -296,7 +296,8 @@ func rowsLayout(rows []transit.Row, now time.Time, opts Options) *awtrix.Layout 
 // to read than a later departure is to miss. Canceled trips before the first
 // one a rider can catch don't count, so they never push it out.
 func (o Options) fitRow(r transit.Row, now time.Time, x int) (timeRow, int) {
-	name := TextWidth(o.Label(r.Headsign))
+	label := o.Label(r.Headsign)
+	name := FontWidth(o.nameFont(label), label)
 	deps := r.Departures
 	keep := 1 + slices.IndexFunc(deps, func(d transit.Departure) bool {
 		return d.Status != transit.StatusCanceled
@@ -313,7 +314,7 @@ func (o Options) fitRow(r transit.Row, now time.Time, x int) (timeRow, int) {
 
 func (o Options) nameRegion(id string, box awtrix.Box, headsign string) awtrix.Region {
 	name := o.Label(headsign)
-	r := awtrix.Region{
+	return awtrix.Region{
 		ID:       id,
 		Box:      box,
 		Text:     awtrix.PlainText(name),
@@ -323,14 +324,6 @@ func (o Options) nameRegion(id string, box awtrix.Box, headsign string) awtrix.R
 		Scroll:   o.scroll(),
 		TextCase: awtrix.TextCaseAsTyped,
 	}
-	// The clock centers text by its lit rows, and an accented capital lights
-	// one more above the rest, which would push the baseline down a row.
-	if r.Font == AccentFont && strings.ContainsFunc(name, func(c rune) bool {
-		return accentAbove(c) && unicode.IsUpper(c)
-	}) {
-		r.VAlign = awtrix.AlignStart
-	}
-	return r
 }
 
 func (o Options) nameFont(name string) string {
@@ -596,7 +589,7 @@ func (o Options) scroll() *awtrix.Scroll {
 
 // Font metrics of AWTRIX NG's small and large fonts, from the firmware's
 // visual reference: every character advances 4 px, a space 2 px. The
-// Matrix fonts are proportional, so widths are approximate for them.
+// Matrix fonts are proportional, so FontWidth measures them per glyph.
 const (
 	charWidth  = 4
 	spaceWidth = 2
@@ -618,3 +611,37 @@ func TextWidth(s string) int {
 	}
 	return w
 }
+
+// FontWidth returns the width of s in pixels as drawn in font. The small
+// and large fonts advance every character 4 px; AccentFont is measured
+// with its real per-glyph advances, so the estimate never falls short of
+// the drawn width for names full of wide letters. Other fonts are
+// measured like the small one.
+func FontWidth(font, s string) int {
+	if font != AccentFont {
+		return TextWidth(s)
+	}
+	w := 0
+	for _, r := range s {
+		w += cmp.Or(matrixLight6Advance[r], matrixLight6Default)
+	}
+	return w
+}
+
+// matrixLight6Advance is the advance in pixels of each Latin-1 glyph of
+// AWTRIX NG's matrix-light6 font that differs from the common 4 px, from
+// the font's upstream BDF (trip5/Matrix-Fonts, 6-series/MatrixLight6.bdf;
+// the firmware keeps the original advances). Glyphs outside Latin-1
+// advance 4 px.
+var matrixLight6Advance = map[rune]int{
+	' ': 2, '!': 2, '#': 6, '&': 5, '\'': 2, '(': 3, ')': 3, ',': 2, '.': 2,
+	'1': 3, ':': 2, ';': 2, '@': 5, 'G': 5, 'H': 5, 'I': 2, 'M': 6, 'N': 5,
+	'O': 5, 'Q': 5, 'W': 6, '`': 3, 'i': 2, 'l': 2, 'm': 6, 'w': 6, '|': 2,
+	'~': 5,
+	'¡': 2, '¦': 2, '©': 3, '«': 5, '²': 3, '´': 3, '·': 2, '¸': 3, '¹': 2,
+	'»': 5, '¼': 6, '½': 6, '¾': 8, 'Æ': 6, 'Ì': 3, 'Î': 2, 'Ð': 5, 'Ñ': 5,
+	'Ø': 5, 'ß': 5, 'æ': 6, 'ì': 3, 'í': 3,
+}
+
+// matrixLight6Default is the advance of every other glyph.
+const matrixLight6Default = charWidth

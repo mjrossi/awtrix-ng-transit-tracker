@@ -201,6 +201,32 @@ func TestTextWidth(t *testing.T) {
 	}
 }
 
+// FontWidth measures a matrix-light6 name with the font's real per-glyph
+// advances, so a name of wide letters is not underestimated.
+func TestFontWidth(t *testing.T) {
+	tests := []struct {
+		s    string
+		want int
+	}{
+		{"", 0},
+		{"Reboleira", 32},
+		{"Cais do Sodré", 46},
+		{"Santa Apolónia", 50},
+		{"Águas Livres", 44},
+		{"Wenceslau", 36},
+		{"Mombasa doMonte", 64}, // 4 px per character would say 57
+	}
+	for _, tt := range tests {
+		if got := render.FontWidth(render.AccentFont, tt.s); got != tt.want {
+			t.Errorf("FontWidth(matrix-light6, %q) = %d, want %d", tt.s, got, tt.want)
+		}
+	}
+	// Other fonts keep the fixed 4 px per character.
+	if got := render.FontWidth("small", "Mombasa doMonte"); got != render.TextWidth("Mombasa doMonte") {
+		t.Errorf("FontWidth(small, ...) = %d, want %d", got, render.TextWidth("Mombasa doMonte"))
+	}
+}
+
 func TestViews(t *testing.T) {
 	type view struct {
 		Name             string
@@ -214,14 +240,20 @@ func TestViews(t *testing.T) {
 	}{
 		{
 			name: "departure overflows past the display width",
+			rows: []transit.Row{row(azul, "Mombasa doMonte", 2)},
+			want: []view{{"Mombasa doMonte", true, true}},
+		},
+		{
+			// 50 px in matrix-light6's real glyphs, so it fits the 52 px row.
+			name: "accented name is measured with its real glyphs",
 			rows: []transit.Row{row(azul, "Santa Apolónia", 2)},
-			want: []view{{"Santa Apolónia", true, true}},
+			want: []view{{"Santa Apolónia", true, false}},
 		},
 		{
 			name: "label makes it fit",
-			rows: []transit.Row{row(azul, "Santa Apolónia", 2)},
-			opts: render.Options{Labels: map[string]string{"Santa Apolónia": "Sta Apolónia"}},
-			want: []view{{"Sta Apolónia", true, false}},
+			rows: []transit.Row{row(azul, "Mombasa doMonte", 2)},
+			opts: render.Options{Labels: map[string]string{"Mombasa doMonte": "Mombasa"}},
+			want: []view{{"Mombasa", true, false}},
 		},
 		{
 			name: "departure hides all but one row",
@@ -229,11 +261,11 @@ func TestViews(t *testing.T) {
 			want: []view{{"Santa Apolónia", false, false}, {"Reboleira", true, false}},
 		},
 		{
-			// Fits the full width, but not the box beside the badge and times.
+			// Fits the full width in matrix-light6, but not the box beside the badge and times.
 			name: "rows overflows its narrower box",
-			rows: []transit.Row{row(azul, "Sta Apolónia", 2), row(azul, "Baixa", 3)},
+			rows: []transit.Row{row(azul, "Santa Apolónia", 2), row(azul, "Baixa", 3)},
 			opts: render.Options{Layout: render.LayoutRows},
-			want: []view{{"Sta Apolónia", true, true}, {"Baixa", true, false}},
+			want: []view{{"Santa Apolónia", true, true}, {"Baixa", true, false}},
 		},
 	}
 	for _, tt := range tests {
@@ -396,7 +428,7 @@ func TestNameFont(t *testing.T) {
 	}{
 		{"plain", "Odivelas", render.Options{}, "small", ""},
 		{"accent above", "São Sebastião", render.Options{}, render.AccentFont, ""},
-		{"accented capital", "Águas Livres", render.Options{}, render.AccentFont, awtrix.AlignStart},
+		{"accented capital", "Águas Livres", render.Options{}, render.AccentFont, ""},
 		// A cedilla hangs below the letter, so small has room for it.
 		{"cedilla", "Praca do Comercio, Praça", render.Options{}, "small", ""},
 		// Extended-A accents get a row of their own in small.
