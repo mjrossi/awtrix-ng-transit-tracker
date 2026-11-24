@@ -51,27 +51,36 @@ type Clock struct {
 	Password string `toml:"password"`
 }
 
-// Board is one pushed app on the clock, fed by one or more stops.
+// Board is one set of departures, fed by one or more stops. On the clock it
+// is one pushed app, named after the board.
 type Board struct {
-	// Name is the app name on the clock.
-	Name string `toml:"name"`
-	// Layout is "departure" (one line and direction, like a platform sign)
-	// or "rows" (one line and direction per row).
-	Layout       string      `toml:"layout"`
+	// Name identifies the board, and is its app name on the clock.
+	Name         string      `toml:"name"`
 	PollInterval Duration    `toml:"poll_interval"`
 	Window       Duration    `toml:"window"`
 	ActiveHours  ActiveHours `toml:"active_hours"`
 	// Timezone is the IANA name for active hours; empty uses the top-level
 	// timezone.
 	Timezone string `toml:"timezone"`
-	MaxRows  int    `toml:"max_rows"`
 	PerRow   int    `toml:"per_row"`
+	// MaxStale is how long the last good data is reused while providers
+	// fail.
+	MaxStale Duration   `toml:"max_stale"`
+	Stops    []Stop     `toml:"stops"`
+	Clock    BoardClock `toml:"clock"`
+
+	location *time.Location
+}
+
+// BoardClock is how a board appears on the clock: the [boards.clock] table.
+type BoardClock struct {
+	// Layout is "departure" (one line and direction, like a platform sign)
+	// or "rows" (one line and direction per row).
+	Layout  string `toml:"layout"`
+	MaxRows int    `toml:"max_rows"`
 	// Lifetime is how long the clock keeps the app without a fresh push.
 	// Defaults to three poll intervals.
 	Lifetime Duration `toml:"lifetime"`
-	// MaxStale is how long the last good data is reused while providers
-	// fail.
-	MaxStale Duration `toml:"max_stale"`
 	// Duration is how long the app is shown per rotation; 0 uses the
 	// clock's setting.
 	Duration  Duration `toml:"duration"`
@@ -81,9 +90,18 @@ type Board struct {
 	Overflow string `toml:"overflow"`
 	// Labels maps headsigns to shorter display names.
 	Labels map[string]string `toml:"labels"`
-	Stops  []Stop            `toml:"stops"`
+}
 
-	location *time.Location
+// Render returns the renderer options for the board.
+func (c BoardClock) Render() render.Options {
+	return render.Options{
+		Layout:    c.Layout,
+		MaxRows:   c.MaxRows,
+		Labels:    c.Labels,
+		Overflow:  c.Overflow,
+		Font:      c.Font,
+		EmptyText: c.EmptyText,
+	}
 }
 
 // Location is the board's resolved time zone.
@@ -145,6 +163,9 @@ func Parse(b []byte, lookup func(string) (string, bool)) (*Config, error) {
 	if err := dec.Decode(&c); err != nil {
 		var strict *toml.StrictMissingError
 		if errors.As(err, &strict) {
+			if hint := movedKeysHint(strict); hint != "" {
+				return nil, fmt.Errorf("config: %s\n%s", hint, strict.String())
+			}
 			return nil, fmt.Errorf("config: %s", strict.String())
 		}
 		return nil, fmt.Errorf("config: %w", err)
@@ -156,6 +177,34 @@ func Parse(b []byte, lookup func(string) (string, bool)) (*Config, error) {
 		return nil, fmt.Errorf("config: %w", err)
 	}
 	return &c, nil
+}
+
+// movedToClock are the [[boards]] keys that moved to [boards.clock] in
+// v0.3.0.
+var movedToClock = []string{"layout", "max_rows", "lifetime", "duration", "font", "empty_text", "overflow", "labels"}
+
+// movedKeysHint explains unknown [[boards]] keys that are settings moved to
+// [boards.clock], or returns "" if there are none.
+func movedKeysHint(strict *toml.StrictMissingError) string {
+	var moved []string
+	for _, e := range strict.Errors {
+		k := e.Key()
+		if len(k) >= 2 && k[0] == "boards" && slices.Contains(movedToClock, k[1]) && !slices.Contains(moved, k[1]) {
+			moved = append(moved, k[1])
+		}
+	}
+	var hints []string
+	if i := slices.Index(moved, "labels"); i >= 0 {
+		moved = slices.Delete(moved, i, i+1)
+		hints = append(hints, "[boards.labels] is now [boards.clock.labels]")
+	}
+	if len(moved) > 0 {
+		hints = append([]string{strings.Join(moved, ", ") + " now go under [boards.clock]"}, hints...)
+	}
+	if len(hints) == 0 {
+		return ""
+	}
+	return "since v0.3.0, " + strings.Join(hints, "; ")
 }
 
 var envRef = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
@@ -264,20 +313,20 @@ func (b *Board) applyDefaults() {
 	if b.Window == 0 {
 		b.Window = Duration(DefaultWindow)
 	}
-	if b.Layout == "" {
-		b.Layout = render.LayoutDeparture
+	if b.Clock.Layout == "" {
+		b.Clock.Layout = render.LayoutDeparture
 	}
-	if b.Overflow == "" {
-		b.Overflow = render.OverflowScroll
+	if b.Clock.Overflow == "" {
+		b.Clock.Overflow = render.OverflowScroll
 	}
-	if b.MaxRows == 0 {
-		b.MaxRows = DefaultMaxRows
+	if b.Clock.MaxRows == 0 {
+		b.Clock.MaxRows = DefaultMaxRows
 	}
 	if b.PerRow == 0 {
 		b.PerRow = DefaultPerRow
 	}
-	if b.Lifetime == 0 {
-		b.Lifetime = 3 * b.PollInterval
+	if b.Clock.Lifetime == 0 {
+		b.Clock.Lifetime = 3 * b.PollInterval
 	}
 	if b.MaxStale == 0 {
 		b.MaxStale = Duration(DefaultMaxStale)
@@ -292,19 +341,16 @@ func (b *Board) validate(providers map[string]map[string]any) error {
 	if b.PollInterval.D() < MinPollInterval {
 		errs = append(errs, fmt.Errorf("poll_interval must be at least %s", MinPollInterval))
 	}
-	if b.Lifetime < b.PollInterval {
-		errs = append(errs, errors.New("lifetime must be at least poll_interval, or the app expires between pushes"))
+	if b.Clock.Lifetime < b.PollInterval {
+		errs = append(errs, errors.New("clock.lifetime must be at least poll_interval, or the app expires between pushes"))
 	}
-	if b.Layout != render.LayoutDeparture && b.Layout != render.LayoutRows {
-		errs = append(errs, fmt.Errorf("layout %q must be %q or %q", b.Layout, render.LayoutDeparture, render.LayoutRows))
+	if err := b.Clock.Render().Validate(); err != nil {
+		errs = append(errs, fmt.Errorf("clock: %w", err))
 	}
-	if b.Overflow != render.OverflowScroll && b.Overflow != render.OverflowClip {
-		errs = append(errs, fmt.Errorf("overflow %q must be %q or %q", b.Overflow, render.OverflowScroll, render.OverflowClip))
+	if b.PerRow < 0 {
+		errs = append(errs, errors.New("per_row must not be negative"))
 	}
-	if b.MaxRows < 0 || b.PerRow < 0 {
-		errs = append(errs, errors.New("max_rows and per_row must not be negative"))
-	}
-	if b.Window < 0 || b.MaxStale < 0 || b.Duration < 0 {
+	if b.Window < 0 || b.MaxStale < 0 || b.Clock.Duration < 0 {
 		errs = append(errs, errors.New("durations must not be negative"))
 	}
 	if len(b.Stops) == 0 {

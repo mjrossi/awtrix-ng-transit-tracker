@@ -35,6 +35,8 @@ A provider must:
 
 1. Live in `pkg/transit/providers/<name>/` and implement
    `transit.Provider` (and `transit.StopSearcher` if the API can search).
+   It must be safe for concurrent use: boards that name the same provider
+   block share one instance.
 2. Register itself in `pkg/transit/providers/providers.go`.
 3. Pass `transittest.Run` against recorded responses in its `testdata/`.
    Tests must not call the live API.
@@ -42,7 +44,7 @@ A provider must:
    from configuration (where `${NAME}` references the environment), never
    from hard-coded values.
 5. Keep secrets out of error messages: they reach the logs, so name URLs
-   without their query strings.
+   without their query strings. See [`SECURITY.md`](./SECURITY.md).
 6. Return what it can with a `*transit.PartialError` when part of its data
    fails, such as one of several feeds, rather than failing the whole
    query.

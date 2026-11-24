@@ -5,8 +5,8 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/mjrossi/urbanist-timetable/internal/clockout"
 	"github.com/mjrossi/urbanist-timetable/internal/config"
-	"github.com/mjrossi/urbanist-timetable/internal/render"
 	"github.com/mjrossi/urbanist-timetable/internal/scheduler"
 	"github.com/mjrossi/urbanist-timetable/pkg/awtrix"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit"
@@ -45,13 +45,10 @@ func boardFor(b config.Board, provs map[string]transit.Provider) (scheduler.Boar
 		Name:         b.Name,
 		PollInterval: b.PollInterval.D(),
 		Window:       b.Window.D(),
-		Lifetime:     b.Lifetime.D(),
 		MaxStale:     b.MaxStale.D(),
-		Duration:     b.Duration.D(),
 		PerRow:       b.PerRow,
 		Active:       b.ActiveHours.Contains,
 		Location:     b.Location(),
-		Render:       renderOptions(b),
 	}
 	for _, s := range b.Stops {
 		p, ok := provs[s.Provider]
@@ -68,7 +65,7 @@ func boardFor(b config.Board, provs map[string]transit.Provider) (scheduler.Boar
 	return sb, nil
 }
 
-func newRunners(cfg *config.Config, pusher scheduler.Pusher, log *slog.Logger, now func() time.Time) ([]*scheduler.Runner, error) {
+func newRunners(cfg *config.Config, out scheduler.Output, log *slog.Logger, now func() time.Time) ([]*scheduler.Runner, error) {
 	provs, err := buildProviders(cfg)
 	if err != nil {
 		return nil, err
@@ -79,18 +76,21 @@ func newRunners(cfg *config.Config, pusher scheduler.Pusher, log *slog.Logger, n
 		if err != nil {
 			return nil, err
 		}
-		runners = append(runners, scheduler.NewRunner(sb, pusher, log, now))
+		runners = append(runners, scheduler.NewRunner(sb, out, log, now))
 	}
 	return runners, nil
 }
 
-func renderOptions(b config.Board) render.Options {
-	return render.Options{
-		Layout:    b.Layout,
-		MaxRows:   b.MaxRows,
-		Labels:    b.Labels,
-		Overflow:  b.Overflow,
-		Font:      b.Font,
-		EmptyText: b.EmptyText,
+// newClockOutput returns the clock output for every board. pusher may be nil
+// when apps are only built, not pushed.
+func newClockOutput(cfg *config.Config, pusher clockout.Pusher) *clockout.Output {
+	boards := make(map[string]clockout.Board, len(cfg.Boards))
+	for _, b := range cfg.Boards {
+		boards[b.Name] = clockout.Board{
+			Render:   b.Clock.Render(),
+			Lifetime: b.Clock.Lifetime.D(),
+			Duration: b.Clock.Duration.D(),
+		}
 	}
+	return clockout.New(pusher, boards)
 }

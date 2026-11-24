@@ -27,7 +27,9 @@ type Query struct {
 // Implementations must return departures for q.StopID only, sorted by
 // Departure.Time ascending, with every Time in [q.Now, q.Now+q.Window], at
 // most q.Limit of them, and must return promptly with ctx.Err() once ctx is
-// done. The transittest package checks these rules. A provider that can
+// done. Implementations must be safe for concurrent use, because boards
+// that name the same provider share one instance and poll it from their own
+// goroutines. The transittest package checks these rules. A provider that can
 // still answer despite a problem returns its departures with a
 // *PartialError.
 type Provider interface {

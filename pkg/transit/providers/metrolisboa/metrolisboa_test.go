@@ -367,6 +367,14 @@ func TestMetadataRefreshFailureKeepsCache(t *testing.T) {
 	if f.count("infoEstacao/todos") != 2 {
 		t.Error("expected a refresh attempt after a day")
 	}
+	// Later polls within the retry interval reuse the cache.
+	_, err = p.Departures(t.Context(), transit.Query{StopID: "BC", Now: recorded.Add(25*time.Hour + time.Minute), Window: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := f.count("infoEstacao/todos"); n != 2 {
+		t.Errorf("stations fetched %d times, want no retry within 15 minutes", n)
+	}
 }
 
 func TestSearchStops(t *testing.T) {

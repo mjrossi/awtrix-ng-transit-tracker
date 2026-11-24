@@ -235,8 +235,8 @@ func TestBadges(t *testing.T) {
 	}{
 		{"metro gets a bar", azul, []string{"rectFill"}},
 		{"bright fill, unlit number", bus, []string{"rectFill", "735 #000000"}},
-		{"dark fill, light number", navy, []string{"rectFill", "760 " + render.DefaultTextColor}},
-		{"no color, plain number", plain, []string{"15E " + render.DefaultTextColor}},
+		{"dark fill, light number", navy, []string{"rectFill", "760 " + render.TextColor}},
+		{"no color, plain number", plain, []string{"15E " + render.TextColor}},
 		{"long name, mode glyph", worcester, []string{"pixels"}},
 		{"long name, no glyph for the mode", gondola, []string{"rectFill"}},
 	}

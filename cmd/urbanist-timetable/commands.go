@@ -17,10 +17,10 @@ import (
 
 	"github.com/urfave/cli/v3"
 
+	"github.com/mjrossi/urbanist-timetable/internal/clockout"
 	"github.com/mjrossi/urbanist-timetable/internal/config"
 	"github.com/mjrossi/urbanist-timetable/internal/render"
 	"github.com/mjrossi/urbanist-timetable/internal/scheduler"
-	"github.com/mjrossi/urbanist-timetable/pkg/awtrix"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/catalog"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/providers"
@@ -43,7 +43,7 @@ func runCommand() *cli.Command {
 			if err != nil {
 				return err
 			}
-			runners, err := newRunners(cfg, clock, log, nil)
+			runners, err := newRunners(cfg, newClockOutput(cfg, clock), log, nil)
 			if err != nil {
 				return err
 			}
@@ -77,26 +77,30 @@ func previewCommand() *cli.Command {
 					return fmt.Errorf("no board named %q", name)
 				}
 			}
-			var pusher scheduler.Pusher = noPush{}
+			var pusher clockout.Pusher
 			if c.Bool("push") {
 				if pusher, err = newClock(cfg); err != nil {
 					return err
 				}
 			}
-			runners, err := newRunners(cfg, pusher, log, nil)
+			out := newClockOutput(cfg, pusher)
+			runners, err := newRunners(cfg, out, log, nil)
 			if err != nil {
 				return err
 			}
 			instant := time.Now()
 			for i, r := range runners {
 				now := instant.In(cfg.Boards[i].Location())
-				rows, ok := r.Rows(ctx, now)
+				snap, ok := r.Snapshot(ctx, now)
 				if !ok {
 					return fmt.Errorf("board %s: every source failed", cfg.Boards[i].Name)
 				}
-				app := r.App(rows, now)
+				app, err := out.App(snap)
+				if err != nil {
+					return err
+				}
 				if !c.Bool("json") {
-					printRows(os.Stdout, cfg.Boards[i], rows, now)
+					printRows(os.Stdout, cfg.Boards[i], snap.Rows(now, true), now)
 				}
 				enc := json.NewEncoder(os.Stdout)
 				enc.SetIndent("", "  ")
@@ -104,7 +108,7 @@ func previewCommand() *cli.Command {
 					return err
 				}
 				if c.Bool("push") {
-					if err := pusher.PushApp(ctx, cfg.Boards[i].Name, app); err != nil {
+					if err := out.Publish(ctx, snap); err != nil {
 						return err
 					}
 				}
@@ -271,12 +275,13 @@ func filterBoards(boards []config.Board, name string) []config.Board {
 }
 
 func printRows(w io.Writer, b config.Board, rows []transit.Row, now time.Time) {
-	fmt.Fprintf(w, "# %s (%s layout) at %s\n", b.Name, b.Layout, now.Format("15:04:05 MST"))
+	fmt.Fprintf(w, "# %s (%s layout) at %s\n", b.Name, b.Clock.Layout, now.Format("15:04:05 MST"))
 	if len(rows) == 0 {
 		fmt.Fprintln(w, "#   (no departures)")
 	}
 	scrolls := false
-	visible := render.Visible(rows, renderOptions(b))
+	opts := b.Clock.Render()
+	visible := render.Visible(rows, opts)
 	for _, r := range rows {
 		mins := make([]string, len(r.Departures))
 		for i, d := range r.Departures {
@@ -285,27 +290,18 @@ func printRows(w io.Writer, b config.Board, rows []transit.Row, now time.Time) {
 				mins[i] += "*"
 			}
 		}
-		name := r.Headsign
-		if l, ok := b.Labels[name]; ok {
-			name = l
-		}
+		name := opts.Label(r.Headsign)
 		mark := ""
 		switch {
 		case !slices.ContainsFunc(visible, func(v transit.Row) bool { return v.Line.ID == r.Line.ID && v.Headsign == r.Headsign }):
 			mark = " (not shown)"
-		case b.Layout == render.LayoutDeparture && !render.Fits(name):
+		case b.Clock.Layout == render.LayoutDeparture && !render.Fits(name):
 			mark, scrolls = " ~", true
 		}
 		fmt.Fprintf(w, "#   %-8s %-24s %s%s\n", r.Line.ShortName, name, strings.Join(mins, " "), mark)
 	}
 	fmt.Fprintln(w, "#   (* = schedule only)")
 	if scrolls {
-		fmt.Fprintln(w, "#   (~ = too wide for the display; set a shorter name under [boards.labels])")
+		fmt.Fprintln(w, "#   (~ = too wide for the display; set a shorter name under [boards.clock.labels])")
 	}
 }
-
-// noPush lets preview reuse the runner without a clock.
-type noPush struct{}
-
-func (noPush) PushApp(context.Context, string, awtrix.App) error { return nil }
-func (noPush) DeleteApp(context.Context, string) error           { return nil }

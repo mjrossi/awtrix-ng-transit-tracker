@@ -45,9 +45,8 @@ const (
 const (
 	// metaTTL bounds how long the station and destination lists are cached.
 	metaTTL = 24 * time.Hour
-	// metaRetry is how soon the lists are fetched again after the
-	// destination list failed, so headsigns do not show bare destination
-	// codes for a day.
+	// metaRetry is how soon the lists are fetched again after a failed
+	// refresh, so headsigns do not show bare destination codes for a day.
 	metaRetry = 15 * time.Minute
 	// lineTTL lets boards that share a line reuse one response per poll.
 	lineTTL = 15 * time.Second
@@ -100,12 +99,14 @@ type Provider struct {
 	lisbon   *time.Location
 	clock    func() time.Time
 
-	mu         sync.Mutex
-	token      string
-	tokenExp   time.Time
-	stations   map[string]station
-	dests      map[string]string
-	metaAt     time.Time
+	mu       sync.Mutex
+	token    string
+	tokenExp time.Time
+	stations map[string]station
+	dests    map[string]string
+	// metaNext is when the station and destination lists are next
+	// refreshed.
+	metaNext   time.Time
 	lineByName map[string]lineCache
 }
 
@@ -335,12 +336,12 @@ func (p *Provider) lineEntries(ctx context.Context, line string, now time.Time) 
 }
 
 // meta returns the station and destination lists, refreshing them daily.
-// A failed refresh keeps the previous lists.
+// A failed refresh keeps the previous lists and is retried after metaRetry.
 func (p *Provider) meta(ctx context.Context, now time.Time) (map[string]station, map[string]string, error) {
 	p.mu.Lock()
-	stations, dests, at := p.stations, p.dests, p.metaAt
+	stations, dests, next := p.stations, p.dests, p.metaNext
 	p.mu.Unlock()
-	if stations != nil && now.Sub(at) < metaTTL {
+	if stations != nil && now.Before(next) {
 		return stations, dests, nil
 	}
 
@@ -350,10 +351,15 @@ func (p *Provider) meta(ctx context.Context, now time.Time) (map[string]station,
 		Linha string `json:"linha"`
 	}
 	if err := p.get(ctx, "infoEstacao/todos", &wireStations); err != nil {
-		if stations != nil {
-			return stations, dests, nil
+		if stations == nil {
+			return nil, nil, err
 		}
-		return nil, nil, err
+		if ctx.Err() == nil {
+			p.mu.Lock()
+			p.metaNext = now.Add(metaRetry)
+			p.mu.Unlock()
+		}
+		return stations, dests, nil
 	}
 	stations = make(map[string]station, len(wireStations))
 	for _, s := range wireStations {
@@ -365,7 +371,7 @@ func (p *Provider) meta(ctx context.Context, now time.Time) (map[string]station,
 		Name string `json:"nome_destino"`
 	}
 	newDests := map[string]string{}
-	fetchedAt := now
+	next = now.Add(metaTTL)
 	if err := p.get(ctx, "infoDestinos/todos", &wireDests); err == nil {
 		for _, d := range wireDests {
 			newDests[d.ID] = d.Name
@@ -374,11 +380,11 @@ func (p *Provider) meta(ctx context.Context, now time.Time) (map[string]station,
 		if dests != nil {
 			newDests = dests
 		}
-		fetchedAt = now.Add(metaRetry - metaTTL)
+		next = now.Add(metaRetry)
 	}
 
 	p.mu.Lock()
-	p.stations, p.dests, p.metaAt = stations, newDests, fetchedAt
+	p.stations, p.dests, p.metaNext = stations, newDests, next
 	p.mu.Unlock()
 	return stations, newDests, nil
 }

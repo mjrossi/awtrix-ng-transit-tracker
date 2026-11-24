@@ -7,6 +7,7 @@ package transittest
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 
 	"github.com/mjrossi/urbanist-timetable/pkg/transit"
@@ -21,8 +22,8 @@ type Case struct {
 	WantEmpty bool
 }
 
-// Run checks p against every case, then checks limit and cancellation
-// handling using the first non-empty case.
+// Run checks p against every case, then checks limit, concurrent use and
+// cancellation handling using the first non-empty case.
 func Run(t *testing.T, p transit.Provider, cases []Case) {
 	t.Helper()
 	if len(cases) == 0 {
@@ -69,6 +70,24 @@ func Run(t *testing.T, p transit.Provider, cases []Case) {
 		if len(deps) != 1 {
 			t.Fatalf("got %d departures with Limit 1, want 1", len(deps))
 		}
+	})
+
+	// Boards share one provider and poll it from their own goroutines, so
+	// this only catches data races under the race detector.
+	t.Run("safe for concurrent use", func(t *testing.T) {
+		const callers = 8
+		var wg sync.WaitGroup
+		for range callers {
+			wg.Go(func() {
+				deps, err := p.Departures(t.Context(), base.Query)
+				if err != nil {
+					t.Errorf("Departures: %v", err)
+					return
+				}
+				CheckDepartures(t, base.Query, deps)
+			})
+		}
+		wg.Wait()
 	})
 
 	t.Run("honors canceled context", func(t *testing.T) {

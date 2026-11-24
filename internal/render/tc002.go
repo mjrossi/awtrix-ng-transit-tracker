@@ -3,6 +3,7 @@ package render
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"math"
 	"slices"
@@ -41,39 +42,51 @@ type Options struct {
 	Overflow string
 	// Font is an AWTRIX NG font name; see GET /api/v1/capabilities.
 	Font string
-	// TextColor is used for names and live minutes.
-	TextColor string
-	// DimColor is used for schedule-only minutes and the empty message.
-	DimColor string
-	// AccentColor marks live minutes, and nothing else.
-	AccentColor string
-	// RuleColor is for decoration that carries no meaning: the hairline
-	// under the destination and the dots between times.
-	RuleColor string
 	// EmptyText is shown when there are no departures.
 	EmptyText string
 }
 
-// Defaults for Options. The colors are the Night theme of the maintainer's
-// Lexicon palette: on an LED matrix the unlit pixels are the background,
-// so a light theme does not apply.
+// Defaults for Options.
 const (
-	DefaultFont        = "small"
-	DefaultTextColor   = "#EAE4D9"
-	DefaultDimColor    = "#A0998E"
-	DefaultAccentColor = "#D9955A"
-	DefaultRuleColor   = "#5B4535"
-	DefaultEmptyText   = "No departures"
+	DefaultFont      = "small"
+	DefaultEmptyText = "No departures"
 )
+
+// Colors are the Night theme of the maintainer's Lexicon palette: on an LED
+// matrix the unlit pixels are the background, so a light theme does not
+// apply.
+const (
+	// TextColor is used for names and live minutes.
+	TextColor = "#EAE4D9"
+	// DimColor is used for schedule-only minutes and the empty message.
+	DimColor = "#A0998E"
+	// AccentColor marks live minutes, and nothing else.
+	AccentColor = "#D9955A"
+	// RuleColor is for decoration that carries no meaning: the hairline
+	// under the destination and the dots between times.
+	RuleColor = "#5B4535"
+)
+
+// Validate reports a layout, overflow mode or row count the renderer does
+// not support. Empty values are valid and take the defaults.
+func (o Options) Validate() error {
+	var errs []error
+	if o.Layout != "" && o.Layout != LayoutDeparture && o.Layout != LayoutRows {
+		errs = append(errs, fmt.Errorf("layout %q must be %q or %q", o.Layout, LayoutDeparture, LayoutRows))
+	}
+	if o.Overflow != "" && o.Overflow != OverflowScroll && o.Overflow != OverflowClip {
+		errs = append(errs, fmt.Errorf("overflow %q must be %q or %q", o.Overflow, OverflowScroll, OverflowClip))
+	}
+	if o.MaxRows < 0 {
+		errs = append(errs, errors.New("max_rows must not be negative"))
+	}
+	return errors.Join(errs...)
+}
 
 func (o Options) withDefaults() Options {
 	o.Layout = cmp.Or(o.Layout, LayoutDeparture)
 	o.Overflow = cmp.Or(o.Overflow, OverflowScroll)
 	o.Font = cmp.Or(o.Font, DefaultFont)
-	o.TextColor = cmp.Or(o.TextColor, DefaultTextColor)
-	o.DimColor = cmp.Or(o.DimColor, DefaultDimColor)
-	o.AccentColor = cmp.Or(o.AccentColor, DefaultAccentColor)
-	o.RuleColor = cmp.Or(o.RuleColor, DefaultRuleColor)
 	o.EmptyText = cmp.Or(o.EmptyText, DefaultEmptyText)
 	if o.MaxRows <= 0 || o.MaxRows > maxRows {
 		o.MaxRows = maxRows
@@ -120,7 +133,7 @@ func TC002(rows []transit.Row, now time.Time, opts Options) *awtrix.Layout {
 			Box:      awtrix.Box{0, 0, awtrix.TC002Width, awtrix.TC002Height},
 			Text:     awtrix.PlainText(opts.EmptyText),
 			Font:     opts.Font,
-			Color:    opts.DimColor,
+			Color:    DimColor,
 			Scroll:   opts.scroll(),
 			TextCase: awtrix.TextCaseAsTyped,
 		}}}
@@ -194,7 +207,7 @@ func rowsLayout(rows []transit.Row, now time.Time, opts Options) *awtrix.Layout 
 		id := func(part string) string { return fmt.Sprintf("r%d-%s", i, part) }
 		badge, bw := badgeRegions(id("badge"), y, r.Line, opts)
 		sx := bw + gap
-		name := opts.label(r.Headsign)
+		name := opts.Label(r.Headsign)
 
 		// Times take what they need, up to half the display, but a second
 		// time is shown only if the name still fits beside it: a name
@@ -228,9 +241,9 @@ func (o Options) nameRegion(id string, box awtrix.Box, headsign string) awtrix.R
 	return awtrix.Region{
 		ID:       id,
 		Box:      box,
-		Text:     awtrix.PlainText(o.label(headsign)),
+		Text:     awtrix.PlainText(o.Label(headsign)),
 		Font:     o.Font,
-		Color:    o.TextColor,
+		Color:    TextColor,
 		Align:    awtrix.AlignStart,
 		Scroll:   o.scroll(),
 		TextCase: awtrix.TextCaseAsTyped,
@@ -250,7 +263,7 @@ func badgeRegions(id string, y int, line transit.Line, opts Options) ([]awtrix.R
 	// A glyph or bar in a color too dark to light up would not show; a
 	// filled badge copes, because its number switches to cream.
 	if color == "" || luminance(color) < minMarkLuminance {
-		color = opts.TextColor
+		color = TextColor
 	}
 	if line.Mode != transit.ModeMetro && line.ShortName != "" && TextWidth(line.ShortName) <= maxBadgeW {
 		w := TextWidth(line.ShortName)
@@ -259,7 +272,7 @@ func badgeRegions(id string, y int, line transit.Line, opts Options) ([]awtrix.R
 			Box:      awtrix.Box{0, y, w, rowHeight},
 			Text:     awtrix.PlainText(line.ShortName),
 			Font:     opts.Font,
-			Color:    opts.TextColor,
+			Color:    TextColor,
 			Align:    awtrix.AlignStart,
 			Scroll:   &awtrix.Scroll{Mode: awtrix.ScrollStatic},
 			TextCase: awtrix.TextCaseAsTyped,
@@ -269,7 +282,7 @@ func badgeRegions(id string, y int, line transit.Line, opts Options) ([]awtrix.R
 		}
 		// Regions are drawn in list order, later ones on top, so the name
 		// follows its fill.
-		name.ID, name.Box[0], name.Color = id+"-name", 1, badgeTextColor(line.Color, opts.TextColor)
+		name.ID, name.Box[0], name.Color = id+"-name", 1, badgeTextColor(line.Color)
 		fill := awtrix.Region{
 			ID:   id,
 			Box:  awtrix.Box{0, y, w + 2, rowHeight},
@@ -291,18 +304,18 @@ func badgeRegions(id string, y int, line transit.Line, opts Options) ([]awtrix.R
 	}}, barWidth
 }
 
-// badgeTextColor picks whichever of unlit and text contrasts more with
-// fill. It ignores agencies' route_text_color: some pair white with a
-// bright yellow, which on LEDs is two bright colors side by side.
 // minMarkLuminance is the relative luminance below which a line color is
 // treated as unlit.
 const minMarkLuminance = 0.01
 
-func badgeTextColor(fill, text string) string {
-	if contrast(fill, unlit) >= contrast(fill, text) {
+// badgeTextColor picks whichever of unlit and TextColor contrasts more with
+// fill. It ignores agencies' route_text_color: some pair white with a
+// bright yellow, which on LEDs is two bright colors side by side.
+func badgeTextColor(fill string) string {
+	if contrast(fill, unlit) >= contrast(fill, TextColor) {
 		return unlit
 	}
-	return text
+	return TextColor
 }
 
 // contrast is the WCAG contrast ratio of two "#RRGGBB" colors.
@@ -390,9 +403,9 @@ func fitTimes(deps []transit.Departure, now time.Time, opts Options, width int, 
 		if w > width {
 			break
 		}
-		color := opts.DimColor
+		color := DimColor
 		if live {
-			color = opts.TextColor
+			color = TextColor
 		}
 		t.items = append(t.items, timeItem{text: text, x: x, color: color, live: live, canceled: canceled})
 		end, t.width = x+TextWidth(text), w
@@ -411,12 +424,12 @@ func (t timeRow) rule(x int, opts Options) []awtrix.Command {
 		}
 		dot := x + it.x + TextWidth(it.text)
 		if dot-1 > from {
-			cmds = append(cmds, awtrix.RectFill(from, 0, dot-1-from, 1, opts.RuleColor))
+			cmds = append(cmds, awtrix.RectFill(from, 0, dot-1-from, 1, RuleColor))
 		}
 		from = dot + 2
 	}
 	if from < awtrix.TC002Width {
-		cmds = append(cmds, awtrix.RectFill(from, 0, awtrix.TC002Width-from, 1, opts.RuleColor))
+		cmds = append(cmds, awtrix.RectFill(from, 0, awtrix.TC002Width-from, 1, RuleColor))
 	}
 	return cmds
 }
@@ -434,13 +447,13 @@ func (t timeRow) regions(textID, marksID string, x, y int, opts Options) []awtri
 		frags = append(frags, awtrix.Fragment{Text: it.text, Color: it.color})
 		mx, w := 1+it.x, TextWidth(it.text)
 		if it.live {
-			marks = append(marks, awtrix.Pixel(mx+w, topRow, opts.AccentColor))
+			marks = append(marks, awtrix.Pixel(mx+w, topRow, AccentColor))
 		}
 		if it.canceled {
-			marks = append(marks, awtrix.RectFill(mx-1, midRow, w+2, 1, opts.TextColor))
+			marks = append(marks, awtrix.RectFill(mx-1, midRow, w+2, 1, TextColor))
 		}
 		if i < len(t.items)-1 {
-			marks = append(marks, awtrix.Pixel(mx+w+timeGap/2, midRow, opts.RuleColor))
+			marks = append(marks, awtrix.Pixel(mx+w+timeGap/2, midRow, RuleColor))
 		}
 	}
 	regions := []awtrix.Region{{
@@ -466,7 +479,9 @@ func (t timeRow) regions(textID, marksID string, x, y int, opts Options) []awtri
 // "3 8 18" reads as three numbers, with room for a dot between them.
 const spacer = "  "
 
-func (o Options) label(headsign string) string {
+// Label returns the display name for headsign: its entry in Labels, or the
+// headsign itself.
+func (o Options) Label(headsign string) string {
 	if l, ok := o.Labels[headsign]; ok {
 		return l
 	}
