@@ -98,12 +98,10 @@ func New(cfg Config, client *http.Client) (*Provider, error) {
 		// A large schedule can take minutes to download, longer than a
 		// board's app lifetime, so stale data is refreshed in the
 		// background.
-		p.schedule = upstream.NewCache(upstream.Policy{TTL: staticTTL, Retry: staticRetry, Background: true}, p.loadStatic)
+		p.schedule = upstream.NewCache(upstream.Policy{TTL: staticTTL, Retry: staticRetry, Background: true, Timeout: staticTimeout}, p.loadStatic)
 	}
 	for _, u := range cfg.RealtimeURLs {
-		p.feeds[u] = upstream.NewCache(upstream.Policy{TTL: feedTTL, Retry: feedTTL}, func(ctx context.Context) (feed, error) {
-			ctx, cancel := context.WithTimeout(ctx, feedTimeout)
-			defer cancel()
+		p.feeds[u] = upstream.NewCache(upstream.Policy{TTL: feedTTL, Retry: feedTTL, Timeout: feedTimeout}, func(ctx context.Context) (feed, error) {
 			return p.fetchFeed(ctx, u)
 		})
 	}
@@ -294,8 +292,6 @@ func (p *Provider) staticFor(ctx context.Context, now time.Time) (*static, error
 }
 
 func (p *Provider) loadStatic(ctx context.Context) (*static, error) {
-	ctx, cancel := context.WithTimeout(ctx, staticTimeout)
-	defer cancel()
 	st, err := p.downloadStatic(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("schedule: %w", err)

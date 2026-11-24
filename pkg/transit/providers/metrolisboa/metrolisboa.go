@@ -147,8 +147,6 @@ func New(cfg Config, client *http.Client) (*Provider, error) {
 		clock:       time.Now,
 		lineEntries: map[string]*upstream.Cache[[]entry]{},
 	}
-	// Station failures are not cached, so a provider with no list yet
-	// recovers on the next poll.
 	// Without a station list the provider can answer nothing, so a first
 	// load that fails is retried on the next poll rather than after
 	// metaRetry.

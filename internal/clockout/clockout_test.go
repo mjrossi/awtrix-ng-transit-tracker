@@ -101,3 +101,13 @@ func TestAppNeedsBoardSettings(t *testing.T) {
 		t.Error("App for an unknown board: want an error")
 	}
 }
+
+func TestNoPusher(t *testing.T) {
+	o := clockout.New(nil, map[string]clockout.Board{"metro": {}})
+	if err := o.Publish(t.Context(), snapshot()); err == nil {
+		t.Error("Publish without a pusher: want an error")
+	}
+	if err := o.Withdraw(t.Context(), "metro"); err == nil {
+		t.Error("Withdraw without a pusher: want an error")
+	}
+}

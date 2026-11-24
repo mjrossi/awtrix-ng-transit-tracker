@@ -4,6 +4,7 @@ package clockout
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -57,8 +58,15 @@ func (o *Output) App(snap scheduler.Snapshot) (awtrix.App, error) {
 	}, nil
 }
 
+// errNoPusher is returned by Publish and Withdraw on an output built
+// without a pusher, which can only build apps.
+var errNoPusher = errors.New("clock: output has no pusher")
+
 // Publish implements scheduler.Output.
 func (o *Output) Publish(ctx context.Context, snap scheduler.Snapshot) error {
+	if o.pusher == nil {
+		return errNoPusher
+	}
 	app, err := o.App(snap)
 	if err != nil {
 		return err
@@ -68,5 +76,8 @@ func (o *Output) Publish(ctx context.Context, snap scheduler.Snapshot) error {
 
 // Withdraw implements scheduler.Output.
 func (o *Output) Withdraw(ctx context.Context, board string) error {
+	if o.pusher == nil {
+		return errNoPusher
+	}
 	return o.pusher.DeleteApp(ctx, board)
 }

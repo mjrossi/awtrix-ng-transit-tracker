@@ -262,7 +262,7 @@ func TestCacheBackgroundRefresh(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := newGatedLoader()
-			c := NewCache(Policy{TTL: 10 * time.Minute, Retry: time.Minute, Background: true}, g.load)
+			c := NewCache(Policy{TTL: 10 * time.Minute, Retry: time.Minute, Background: true, Timeout: time.Hour}, g.load)
 			c.onWait = func() { t.Error("waited although earlier data exists") }
 
 			g.gate <- result{val: "a"}
@@ -294,6 +294,34 @@ func TestCacheBackgroundRefresh(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A load that overruns Timeout fails like any other upstream failure, so
+// callers back off from it.
+func TestCacheTimeout(t *testing.T) {
+	loads := 0
+	c := NewCache(Policy{TTL: time.Minute, Retry: time.Minute, Timeout: time.Millisecond}, func(ctx context.Context) (string, error) {
+		loads++
+		<-ctx.Done()
+		return "", ctx.Err()
+	})
+	for range 2 {
+		if _, err := c.Get(t.Context(), t0); !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("err = %v, want context.DeadlineExceeded", err)
+		}
+	}
+	if loads != 1 {
+		t.Errorf("loaded %d times, want 1", loads)
+	}
+}
+
+func TestCacheBackgroundNeedsTimeout(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Error("NewCache with Background and no Timeout: want a panic")
+		}
+	}()
+	NewCache(Policy{TTL: time.Minute, Background: true}, func(context.Context) (string, error) { return "", nil })
 }
 
 func TestHTTPURL(t *testing.T) {

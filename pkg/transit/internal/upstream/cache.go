@@ -21,8 +21,11 @@ type Policy struct {
 	RetryOnlyWithData bool
 	// Background refreshes stale data without waiting for it: callers get
 	// the earlier data while the load runs. Callers still wait when there
-	// is no earlier data.
+	// is no earlier data. It requires Timeout, because a background load
+	// outlives the caller that started it and nothing else stops it.
 	Background bool
+	// Timeout bounds each load; zero leaves it to the caller's context.
+	Timeout time.Duration
 }
 
 // Cache holds one value loaded from upstream. It is safe for concurrent
@@ -57,10 +60,12 @@ type call[T any] struct {
 	discarded bool
 }
 
-// NewCache returns an empty cache that fills itself with load. Load
-// applies its own timeout; a background refresh gets a context that is
-// never canceled.
+// NewCache returns an empty cache that fills itself with load. It panics if
+// p sets Background without a Timeout.
 func NewCache[T any](p Policy, load func(context.Context) (T, error)) *Cache[T] {
+	if p.Background && p.Timeout <= 0 {
+		panic("upstream: Policy.Background requires a Timeout")
+	}
 	return &Cache[T]{policy: p, load: load}
 }
 
@@ -71,7 +76,9 @@ func NewCache[T any](p Policy, load func(context.Context) (T, error)) *Cache[T] 
 func (c *Cache[T]) Get(ctx context.Context, now time.Time) (T, error) {
 	c.mu.Lock()
 	for {
-		if c.has && within(now, c.loadedAt, c.policy.TTL) || c.err != nil && (c.has || !c.policy.RetryOnlyWithData) && within(now, c.failedAt, c.policy.Retry) {
+		fresh := c.has && within(now, c.loadedAt, c.policy.TTL)
+		backingOff := c.err != nil && (c.has || !c.policy.RetryOnlyWithData) && within(now, c.failedAt, c.policy.Retry)
+		if fresh || backingOff {
 			val, err := c.val, c.err
 			c.mu.Unlock()
 			return val, err
@@ -127,6 +134,11 @@ func (c *Cache[T]) Wait() {
 }
 
 func (c *Cache[T]) run(ctx context.Context, now time.Time, cl *call[T]) {
+	if c.policy.Timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, c.policy.Timeout)
+		defer cancel()
+	}
 	val, err := c.load(ctx)
 
 	c.mu.Lock()
