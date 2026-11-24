@@ -182,7 +182,7 @@ optional `timezone` for `active_hours`, one `[clock]`, one
 `[providers.NAME]` block per data source, and one `[[boards]]` entry per
 app on the clock, each with one or more stops. Without `timezone`, the
 `TZ` environment variable applies, which in the image is UTC unless you
-set it.
+set it. A board can set its own `timezone`, for boards from another city.
 
 ## Systems
 

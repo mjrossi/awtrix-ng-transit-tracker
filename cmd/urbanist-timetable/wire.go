@@ -40,7 +40,7 @@ func newClock(cfg *config.Config) (*awtrix.Client, error) {
 	return awtrix.NewClient(cfg.Clock.URL, opts...)
 }
 
-func boardFor(cfg *config.Config, b config.Board, provs map[string]transit.Provider) (scheduler.Board, error) {
+func boardFor(b config.Board, provs map[string]transit.Provider) (scheduler.Board, error) {
 	sb := scheduler.Board{
 		Name:         b.Name,
 		PollInterval: b.PollInterval.D(),
@@ -50,7 +50,7 @@ func boardFor(cfg *config.Config, b config.Board, provs map[string]transit.Provi
 		Duration:     b.Duration.D(),
 		PerRow:       b.PerRow,
 		Active:       b.ActiveHours.Contains,
-		Location:     cfg.Location(),
+		Location:     b.Location(),
 		Render:       renderOptions(b),
 	}
 	for _, s := range b.Stops {
@@ -75,7 +75,7 @@ func newRunners(cfg *config.Config, pusher scheduler.Pusher, log *slog.Logger, n
 	}
 	runners := make([]*scheduler.Runner, 0, len(cfg.Boards))
 	for _, b := range cfg.Boards {
-		sb, err := boardFor(cfg, b, provs)
+		sb, err := boardFor(b, provs)
 		if err != nil {
 			return nil, err
 		}

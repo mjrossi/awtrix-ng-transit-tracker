@@ -87,8 +87,9 @@ func previewCommand() *cli.Command {
 			if err != nil {
 				return err
 			}
-			now := time.Now().In(cfg.Location())
+			instant := time.Now()
 			for i, r := range runners {
+				now := instant.In(cfg.Boards[i].Location())
 				rows, ok := r.Rows(ctx, now)
 				if !ok {
 					return fmt.Errorf("board %s: every source failed", cfg.Boards[i].Name)

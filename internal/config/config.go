@@ -33,8 +33,9 @@ const (
 
 // Config is the whole file.
 type Config struct {
-	// Timezone is an IANA name used for active hours. Empty means the
-	// process's local zone (the TZ environment variable in Docker).
+	// Timezone is the IANA name for active hours on boards that set none.
+	// Empty means the process's local zone (the TZ environment variable in
+	// Docker).
 	Timezone  string                    `toml:"timezone"`
 	Clock     Clock                     `toml:"clock"`
 	Providers map[string]map[string]any `toml:"providers"`
@@ -60,8 +61,11 @@ type Board struct {
 	PollInterval Duration    `toml:"poll_interval"`
 	Window       Duration    `toml:"window"`
 	ActiveHours  ActiveHours `toml:"active_hours"`
-	MaxRows      int         `toml:"max_rows"`
-	PerRow       int         `toml:"per_row"`
+	// Timezone is the IANA name for active hours; empty uses the top-level
+	// timezone.
+	Timezone string `toml:"timezone"`
+	MaxRows  int    `toml:"max_rows"`
+	PerRow   int    `toml:"per_row"`
 	// Lifetime is how long the clock keeps the app without a fresh push.
 	// Defaults to three poll intervals.
 	Lifetime Duration `toml:"lifetime"`
@@ -78,6 +82,16 @@ type Board struct {
 	// Labels maps headsigns to shorter display names.
 	Labels map[string]string `toml:"labels"`
 	Stops  []Stop            `toml:"stops"`
+
+	location *time.Location
+}
+
+// Location is the board's resolved time zone.
+func (b Board) Location() *time.Location {
+	if b.location == nil {
+		return time.Local
+	}
+	return b.location
 }
 
 // Stop is one stop on a board and the filters applied to it.
@@ -222,6 +236,14 @@ func (c *Config) validate() error {
 	for i := range c.Boards {
 		b := &c.Boards[i]
 		b.applyDefaults()
+		b.location = c.Location()
+		if b.Timezone != "" {
+			loc, err := time.LoadLocation(b.Timezone)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("boards[%d] (%s): timezone: %w", i, b.Name, err))
+			}
+			b.location = loc
+		}
 		if err := b.validate(c.Providers); err != nil {
 			errs = append(errs, fmt.Errorf("boards[%d] (%s): %w", i, b.Name, err))
 		}

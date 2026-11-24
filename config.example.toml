@@ -5,6 +5,7 @@
 # variable is an error.
 
 # IANA time zone for active_hours. Empty uses the TZ environment variable.
+# A board's own `timezone` overrides it.
 timezone = "Europe/Lisbon"
 
 [clock]
@@ -90,6 +91,7 @@ active_hours = "06:30-23:30"
 # Departure times to show (fewer if they do not fit).
 per_row = 3
 # Optional:
+# timezone = "Europe/Madrid"  # IANA zone for this board's active_hours
 # layout = "rows"     # one line and direction per row, two rows; suits busy bus stops
 # max_rows = 2        # rows layout only
 # overflow = "clip"   # names too wide for the display are cut off instead of scrolling

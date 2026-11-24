@@ -280,6 +280,12 @@ docs/                     this plan and design notes
    Then switch the README's Docker and Compose examples to the published
    image, and add a short release checklist (tag, notes, verify the
    image runs on arm64).
+8. **Per-board time zone.** Done. An optional `timezone` on `[[boards]]`
+   reads that board's `active_hours`, falling back to the top-level one,
+   so boards from several cities need no hand-converted hours and do not
+   drift when only one city changes clocks for daylight saving time. It
+   is a board setting rather than a provider one because `active_hours`
+   is, and one board can combine stops from several providers.
 
 ## Later
 
@@ -320,14 +326,6 @@ providers). Each widens who the project works for.
   order through the firmware's rotation API at startup, moving only this
   service's apps relative to each other. Off by default: with one agency
   or two boards, a card is a few seconds per round with no departures.
-- **Per-board time zone.** `active_hours` reads the one top-level
-  `timezone`, so a clock showing boards from several cities needs their
-  hours converted by hand, and they drift by an hour for the weeks a year
-  when only one city has changed clocks for daylight saving time. An
-  optional `timezone` on `[[boards]]`, falling back to the top-level one,
-  fixes both. It belongs on the board rather than the provider because
-  `active_hours` is a board setting and one board can combine stops from
-  several providers.
 - **32 × 8 renderer.** Both layouts use the TC002-only `layout` key, so
   32 × 8 AWTRIX NG clocks such as the Ulanzi TC001, probably the more
   common device, cannot show boards. Needs its own design: a scrolling
