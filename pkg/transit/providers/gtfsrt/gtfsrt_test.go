@@ -37,11 +37,22 @@ type agency struct {
 	wantHeader    string
 	// staticGate, when set, holds schedule downloads until it is closed.
 	staticGate chan struct{}
+	// etag, when set, is sent with the schedule, and a request that already
+	// has it is answered 304 Not Modified.
+	etag        string
+	notModified atomic.Int32
 }
 
 // newAgency serves testdata/<dir> like an agency: the static CSV files
 // zipped at /gtfs.zip and the recorded feed at /realtime.pb.
 func newAgency(t *testing.T, dir string) *agency {
+	t.Helper()
+	return newAgencyWithout(t, dir, nil)
+}
+
+// newAgencyWithout is newAgency with the schedule lines for which drop
+// returns true left out.
+func newAgencyWithout(t *testing.T, dir string, drop func(file, line string) bool) *agency {
 	t.Helper()
 	var zipped bytes.Buffer
 	zw := zip.NewWriter(&zipped)
@@ -49,6 +60,15 @@ func newAgency(t *testing.T, dir string) *agency {
 		b, err := os.ReadFile(filepath.Join("testdata", dir, name))
 		if err != nil {
 			t.Fatal(err)
+		}
+		if drop != nil {
+			var kept []string
+			for line := range strings.SplitSeq(string(b), "\n") {
+				if !drop(name, line) {
+					kept = append(kept, line)
+				}
+			}
+			b = []byte(strings.Join(kept, "\n"))
 		}
 		w, err := zw.Create(name)
 		if err != nil {
@@ -68,7 +88,7 @@ func newAgency(t *testing.T, dir string) *agency {
 
 	a := &agency{}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /gtfs.zip", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("GET /gtfs.zip", func(w http.ResponseWriter, r *http.Request) {
 		a.staticCalls.Add(1)
 		if a.staticGate != nil {
 			<-a.staticGate
@@ -76,6 +96,14 @@ func newAgency(t *testing.T, dir string) *agency {
 		if a.failStatic.Load() {
 			http.Error(w, "down", http.StatusBadGateway)
 			return
+		}
+		if a.etag != "" {
+			w.Header().Set("ETag", a.etag)
+			if r.Header.Get("If-None-Match") == a.etag {
+				a.notModified.Add(1)
+				w.WriteHeader(http.StatusNotModified)
+				return
+			}
 		}
 		_, _ = w.Write(zipped.Bytes())
 	})
@@ -519,5 +547,60 @@ func TestStaticTempFile(t *testing.T) {
 	}
 	if len(deps) == 0 || deps[0].Line.Color == "" {
 		t.Error("schedule not loaded through the in-memory fallback")
+	}
+}
+
+func TestUnknownStop(t *testing.T) {
+	tests := map[string]struct {
+		stop   string
+		change func(*agency)
+		mutate func(*gtfsrt.Config)
+		want   bool
+	}{
+		"not in schedule or feed": {stop: "NOPE", want: true},
+		"in schedule, no trips":   {stop: "A27"},
+		"no schedule":             {stop: "NOPE", mutate: func(c *gtfsrt.Config) { c.StaticURL = "" }},
+		"schedule failed":         {stop: "NOPE", change: func(a *agency) { a.failStatic.Store(true) }},
+		"a feed failed": {stop: "NOPE", mutate: func(c *gtfsrt.Config) {
+			c.RealtimeURLs = append(c.RealtimeURLs, strings.Replace(c.RealtimeURLs[0], "realtime", "missing", 1))
+		}},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			a := newAgency(t, "mta")
+			if tt.change != nil {
+				tt.change(a)
+			}
+			var m []func(*gtfsrt.Config)
+			if tt.mutate != nil {
+				m = append(m, tt.mutate)
+			}
+			_, err := a.provider(t, m...).Departures(t.Context(), transit.Query{StopID: tt.stop, Now: mtaRecorded, Window: time.Hour})
+			if got := errors.Is(err, transit.ErrUnknownStop); got != tt.want {
+				t.Errorf("err = %v, want unknown stop %v", err, tt.want)
+			}
+		})
+	}
+}
+
+// A platform the feed names but the schedule lacks is still served.
+func TestStopInFeedButNotInSchedule(t *testing.T) {
+	a := newAgencyWithout(t, "mta", func(file, line string) bool {
+		return file == "stops.txt" && strings.HasPrefix(line, "235N,")
+	})
+	deps, err := a.provider(t).Departures(t.Context(), transit.Query{StopID: "235N", Now: mtaRecorded, Window: time.Hour})
+	if err != nil || len(deps) == 0 {
+		t.Errorf("got %d departures, err %v; want the feed's departures", len(deps), err)
+	}
+}
+
+func TestStopName(t *testing.T) {
+	p := newAgency(t, "mta").provider(t)
+	var namer transit.StopNamer = p
+	if name, ok := namer.StopName(t.Context(), "235", mtaRecorded); !ok || name != "Atlantic Av-Barclays Ctr" {
+		t.Errorf("StopName(235) = %q, %v", name, ok)
+	}
+	if name, ok := namer.StopName(t.Context(), "NOPE", mtaRecorded); ok {
+		t.Errorf("StopName(NOPE) = %q, want not found", name)
 	}
 }

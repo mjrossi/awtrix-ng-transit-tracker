@@ -5,8 +5,10 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io/fs"
 	"maps"
 	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -165,6 +167,50 @@ func (c *Config) Quiet(t time.Time) bool {
 // Location is the resolved time zone.
 func (c *Config) Location() *time.Location { return orLocal(c.location) }
 
+// DefaultPath is where the configuration lives unless --config says
+// otherwise: $XDG_CONFIG_HOME/urbanist-timetable/config.toml, else
+// ~/.config/urbanist-timetable/config.toml. A file in the working
+// directory is not the default, because config.toml is a common name.
+func DefaultPath() string {
+	dir := os.Getenv("XDG_CONFIG_HOME")
+	if dir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "config.toml"
+		}
+		dir = filepath.Join(home, ".config")
+	}
+	return filepath.Join(dir, "urbanist-timetable", "config.toml")
+}
+
+// LoadProvider reads the [providers.NAME] block from the file at path,
+// expanding ${NAME} references in that block only, so a missing variable or
+// a mistake elsewhere does not stop a query. found is false when the file or
+// the block does not exist.
+func LoadProvider(path, name string) (settings map[string]any, found bool, err error) {
+	b, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("config: %w", err)
+	}
+	c, err := decode(b)
+	if err != nil {
+		return nil, false, err
+	}
+	settings, found = c.Providers[name]
+	if !found {
+		return nil, false, nil
+	}
+	missing := map[string]bool{}
+	expandAny(settings, expander(os.LookupEnv, missing))
+	if err := missingError(missing); err != nil {
+		return nil, false, fmt.Errorf("config: providers.%s: %w", name, err)
+	}
+	return settings, true, nil
+}
+
 // Load reads, expands and validates the file at path.
 func Load(path string) (*Config, error) {
 	b, err := os.ReadFile(path)
@@ -178,6 +224,21 @@ func Load(path string) (*Config, error) {
 // clock and provider settings are replaced with environment variables
 // through lookup, so secrets can stay out of the file.
 func Parse(b []byte, lookup func(string) (string, bool)) (*Config, error) {
+	c, err := decode(b)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.expandEnv(lookup); err != nil {
+		return nil, fmt.Errorf("config: %w", err)
+	}
+	if err := c.validate(); err != nil {
+		return nil, fmt.Errorf("config: %w", err)
+	}
+	return c, nil
+}
+
+// decode reads a configuration strictly, without expanding or validating it.
+func decode(b []byte) (*Config, error) {
 	var c Config
 	dec := toml.NewDecoder(bytes.NewReader(b))
 	dec.DisallowUnknownFields()
@@ -192,12 +253,6 @@ func Parse(b []byte, lookup func(string) (string, bool)) (*Config, error) {
 		}
 		return nil, fmt.Errorf("config: %w", err)
 	}
-	if err := c.expandEnv(lookup); err != nil {
-		return nil, fmt.Errorf("config: %w", err)
-	}
-	if err := c.validate(); err != nil {
-		return nil, fmt.Errorf("config: %w", err)
-	}
 	return &c, nil
 }
 
@@ -207,7 +262,20 @@ var envRef = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
 // references in comments are left alone and values need no TOML escaping.
 func (c *Config) expandEnv(lookup func(string) (string, bool)) error {
 	missing := map[string]bool{}
-	expand := func(s string) string {
+	expand := expander(lookup, missing)
+	c.Clock.URL = expand(c.Clock.URL)
+	c.Clock.Username = expand(c.Clock.Username)
+	c.Clock.Password = expand(c.Clock.Password)
+	for _, opts := range c.Providers {
+		expandAny(opts, expand)
+	}
+	return missingError(missing)
+}
+
+// expander replaces ${NAME} references through lookup, recording the names
+// it cannot find in missing.
+func expander(lookup func(string) (string, bool), missing map[string]bool) func(string) string {
+	return func(s string) string {
 		return envRef.ReplaceAllStringFunc(s, func(m string) string {
 			name := envRef.FindStringSubmatch(m)[1]
 			v, ok := lookup(name)
@@ -218,21 +286,14 @@ func (c *Config) expandEnv(lookup func(string) (string, bool)) error {
 			return v
 		})
 	}
-	c.Clock.URL = expand(c.Clock.URL)
-	c.Clock.Username = expand(c.Clock.Username)
-	c.Clock.Password = expand(c.Clock.Password)
-	for _, opts := range c.Providers {
-		expandAny(opts, expand)
+}
+
+func missingError(missing map[string]bool) error {
+	if len(missing) == 0 {
+		return nil
 	}
-	if len(missing) > 0 {
-		names := make([]string, 0, len(missing))
-		for n := range missing {
-			names = append(names, n)
-		}
-		slices.Sort(names)
-		return fmt.Errorf("environment variables not set: %s", strings.Join(names, ", "))
-	}
-	return nil
+	names := slices.Sorted(maps.Keys(missing))
+	return fmt.Errorf("environment variables not set: %s", strings.Join(names, ", "))
 }
 
 // expandAny expands strings in v, updating maps and slices in place.
@@ -268,14 +329,13 @@ func (c *Config) validate() error {
 	if err := c.QuietHours.Validate(); err != nil {
 		errs = append(errs, fmt.Errorf("quiet_hours: %w", err))
 	}
-	if c.Clock.URL == "" {
-		errs = append(errs, errors.New("clock.url is required"))
-	}
-	if len(c.Boards) == 0 {
-		errs = append(errs, errors.New("at least one [[boards]] entry is required"))
+	// The clock and boards are optional together, for commands that only
+	// query providers. One without the other is a mistake worth reporting.
+	if c.Clock != (Clock{}) || len(c.Boards) > 0 {
+		errs = append(errs, c.RequireClock())
 	}
 	for name, raw := range c.Providers {
-		if _, _, err := ResolveProvider(name, raw); err != nil {
+		if _, _, err := catalog.Resolve(name, raw); err != nil {
 			errs = append(errs, fmt.Errorf("providers.%s: %w", name, err))
 		}
 	}
@@ -299,6 +359,19 @@ func (c *Config) validate() error {
 			errs = append(errs, fmt.Errorf("boards[%d]: duplicate name %q", i, b.Name))
 		}
 		seen[b.Name] = true
+	}
+	return errors.Join(errs...)
+}
+
+// RequireClock reports what the clock commands need and the configuration
+// lacks: the clock's URL and at least one board.
+func (c *Config) RequireClock() error {
+	var errs []error
+	if c.Clock.URL == "" {
+		errs = append(errs, errors.New("clock.url is required"))
+	}
+	if len(c.Boards) == 0 {
+		errs = append(errs, errors.New("at least one [[boards]] entry is required"))
 	}
 	return errors.Join(errs...)
 }
@@ -360,69 +433,4 @@ func (b *Board) validate(providers map[string]map[string]any) error {
 		}
 	}
 	return errors.Join(errs...)
-}
-
-// ResolveProvider works out a provider block's type and options:
-//   - `system = "ID"` takes the type and settings of a catalog system,
-//     overlaid with the block's other keys;
-//   - otherwise `type = "..."` names the type;
-//   - otherwise the block's NAME is the type.
-func ResolveProvider(name string, raw map[string]any) (typ string, opts ProviderOptions, err error) {
-	user := maps.Clone(raw)
-	sysID, hasSystem := user["system"]
-	typeName, hasType := user["type"]
-	delete(user, "system")
-	delete(user, "type")
-
-	switch {
-	case hasSystem && hasType:
-		return "", nil, errors.New("set either system or type, not both")
-	case hasSystem:
-		id, _ := sysID.(string)
-		sys, ok := catalog.Get(id)
-		if !ok {
-			return "", nil, fmt.Errorf("unknown system %q; run `urbanist-timetable systems` to list them", id)
-		}
-		merged := sys.Merge(user)
-		if missing := sys.Missing(merged); len(missing) > 0 {
-			return "", nil, fmt.Errorf("system %q needs %s; run `urbanist-timetable systems show %s`", id, strings.Join(missing, " and "), id)
-		}
-		return sys.Provider, merged, nil
-	case hasType:
-		t, _ := typeName.(string)
-		if t == "" {
-			return "", nil, errors.New("type must be a non-empty string")
-		}
-		return t, user, nil
-	default:
-		return name, user, nil
-	}
-}
-
-// ProviderOptions implements transit.Options for one [providers.NAME]
-// block, decoding it strictly so typos in provider settings are reported.
-type ProviderOptions map[string]any
-
-// Decode implements transit.Options.
-func (o ProviderOptions) Decode(v any) error {
-	b, err := toml.Marshal(map[string]any(o))
-	if err != nil {
-		return fmt.Errorf("re-encode options: %w", err)
-	}
-	dec := toml.NewDecoder(bytes.NewReader(b))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(v); err != nil {
-		var strict *toml.StrictMissingError
-		if errors.As(err, &strict) {
-			// Only key names: strict.String() quotes the offending lines,
-			// whose values have had ${NAME} secrets filled in by now.
-			keys := make([]string, len(strict.Errors))
-			for i, e := range strict.Errors {
-				keys[i] = strings.Join(e.Key(), ".")
-			}
-			return fmt.Errorf("unknown setting %s", strings.Join(keys, ", "))
-		}
-		return err
-	}
-	return nil
 }

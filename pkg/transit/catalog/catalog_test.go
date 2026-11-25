@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mjrossi/urbanist-timetable/internal/config"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/catalog"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/providers"
@@ -39,7 +38,7 @@ func TestSystemsBuild(t *testing.T) {
 			for _, k := range s.RequiredOptions {
 				user[k] = "dummy"
 			}
-			if _, err := reg.New(s.Provider, config.ProviderOptions(s.Merge(user))); err != nil {
+			if _, err := reg.New(s.Provider, catalog.Options(s.Merge(user))); err != nil {
 				t.Errorf("build: %v", err)
 			}
 		})
@@ -80,14 +79,14 @@ func TestLive(t *testing.T) {
 		t.Run(s.ID, func(t *testing.T) {
 			user := map[string]any{}
 			for _, k := range s.RequiredOptions {
-				env := strings.ToUpper(strings.ReplaceAll(s.ID+"_"+k, "-", "_"))
+				env := s.EnvName(k)
 				v := os.Getenv(env)
 				if v == "" {
 					t.Skipf("set %s to check this system", env)
 				}
 				user[k] = v
 			}
-			p, err := reg.New(s.Provider, config.ProviderOptions(s.Merge(user)))
+			p, err := reg.New(s.Provider, catalog.Options(s.Merge(user)))
 			if err != nil {
 				t.Fatal(err)
 			}

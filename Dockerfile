@@ -23,7 +23,7 @@ RUN apk add --no-cache ca-certificates && \
     mkdir /data && chown app:app /data
 COPY --from=builder /out/urbanist-timetable /usr/local/bin/urbanist-timetable
 USER app
-ENV TIMETABLE_CONFIG=/config/config.toml TIMETABLE_STATE=/data/state.json
+ENV TIMETABLE_CONFIG=/config/config.toml TIMETABLE_STATE=/data/state.json TIMETABLE_CACHE=/data/cache
 VOLUME ["/config", "/data"]
 ENTRYPOINT ["urbanist-timetable"]
-CMD ["run"]
+CMD ["clock", "run"]

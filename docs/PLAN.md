@@ -1,7 +1,7 @@
 # Plan
 
-Urbanist Timetable is a small Go service that polls public transit
-departure data and shows it on an AWTRIX NG pixel clock (Ulanzi TC002,
+Urbanist Timetable is a small Go tool that shows public transit
+departures in a terminal and on an AWTRIX NG pixel clock (Ulanzi TC002,
 52 × 16). It runs in Docker, for example on a NAS, and is meant to be usable by anyone, in any
 city. It belongs to the Urbanist family, alongside *The Urbanist Lexicon*
 and *Urbanist Atlas*.
@@ -26,15 +26,11 @@ and *Urbanist Atlas*.
 
 ## Direction
 
-Two releases follow, described in the
+One release follows, described in the
 [design](./superpowers/specs/2026-11-25-clock-cli-library-design.md):
-
-1. **v0.6.0, a command-line tool.** `departures` prints a stop's next
-   departures in a terminal, without a configuration file for systems that
-   need no key. The clock becomes a group of commands beside it.
-2. **v0.7.0, a library.** `pkg/` gets a core free of configuration code,
-   examples, and a lower Go requirement, so other Go programs can use the
-   providers.
+**v0.7.0, a library.** `pkg/` gets a core free of configuration code,
+examples, and a lower Go requirement, so other Go programs can use the
+providers.
 
 ## Data sources: agencies are data, adapters are code
 

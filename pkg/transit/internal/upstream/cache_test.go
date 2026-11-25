@@ -361,3 +361,23 @@ func TestHTTPURL(t *testing.T) {
 		}
 	}
 }
+
+// A cold process can serve an expired copy of upstream data, such as a
+// schedule file on disk, while reporting that refreshing it failed.
+func TestCacheKeepsAStaleValueWithItsError(t *testing.T) {
+	calls := 0
+	c := NewCache(Policy{TTL: time.Hour, Retry: time.Minute}, func(context.Context) (string, error) {
+		calls++
+		return "old", &StaleError{Err: errors.New("down")}
+	})
+	now := time.Date(2026, 11, 25, 8, 0, 0, 0, time.UTC)
+	for _, at := range []time.Time{now, now.Add(30 * time.Second)} {
+		v, err := c.Get(t.Context(), at)
+		if v != "old" || err == nil || err.Error() != "down" {
+			t.Errorf("Get = %q, %v; want the stale value and its error", v, err)
+		}
+	}
+	if calls != 1 {
+		t.Errorf("loaded %d times within Retry, want 1", calls)
+	}
+}

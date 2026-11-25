@@ -2,7 +2,7 @@
 
 > Your next departure, wherever you look.
 
-Live public transit departures on an
+Live public transit departures in your terminal, or on an
 [AWTRIX NG](https://github.com/Blueforcer/awtrix-ng) pixel clock (Ulanzi
 TC002).
 
@@ -10,11 +10,14 @@ A companion to [*The Urbanist Lexicon*](https://mjrossi.com/blog) and
 [*Urbanist Atlas*](https://urbanistatlas.com).
 
 ```
-Sta Apolónia
-▌ 3  8  14
+$ urbanist-timetable departures sf-bart EMBR --limit 3
+Embarcadero                                       22:44
+Green-S  OAK Airport / SF / Daly City           2 22 41
+Blue-N   SF / OAK Airport / Dublin/Pleasanton   3 22 42
+Red-S    SF / SFO Airport / Millbrae            5 24 44
 ```
 
-Each board shows one line and direction, like a platform sign: the
+On the clock, each board shows one line and direction, like a platform sign: the
 destination on top, then the line color (or bus number) and minutes until
 the next departures. Live predictions are bright with an amber dot;
 schedule-only times are dimmed. Add a board per direction and the clock
@@ -26,7 +29,7 @@ screen instead, and a `grid` layout the next departure of up to four lines.
 > [ready-made systems](#systems) checked against their live feeds, plus
 > dedicated providers for Metro de Lisboa and Carris Metropolitana, and
 > [Transitland](https://www.transit.land/) for thousands more. Only
-> the 52 × 16 TC002 is supported. What comes next is in
+> the 52 × 16 TC002 is supported on the clock. What comes next is in
 > [`docs/PLAN.md`](./docs/PLAN.md).
 >
 > **Renamed:** this project was `awtrix-ng-transit-tracker` until v0.2.0.
@@ -35,7 +38,37 @@ screen instead, and a `grid` layout the next departure of up to four lines.
 > (formerly `TRANSIT_*`). Images published before the rename are at
 > `ghcr.io/mjrossi/awtrix-ng-transit-tracker`.
 
-## Getting started
+## In your terminal
+
+With Go installed:
+
+```bash
+go install github.com/mjrossi/urbanist-timetable/cmd/urbanist-timetable@latest
+
+urbanist-timetable systems                          # ready-made systems
+urbanist-timetable stops search nyc-subway times sq # find a stop ID
+urbanist-timetable departures nyc-subway 127N       # its next departures
+urbanist-timetable departures nyc-subway 127N --lines 1,2,3 --watch
+```
+
+Systems that need no key work without a configuration file. For one that
+does, set its variables, which `systems show ID` names (such as
+`LISBON_METRO_CLIENT_ID`), or add a block to
+`~/.config/urbanist-timetable/config.toml` as described under
+[Providers](#providers). Any agency with GTFS-Realtime works from its feed
+URLs:
+
+```bash
+urbanist-timetable departures --static https://example.org/gtfs.zip \
+  --realtime https://example.org/tripupdates.pb STOP_ID
+```
+
+Schedules are downloaded once a day into your cache directory (`--cache-dir`;
+`off` turns it off), so later commands are quick. `--json` prints JSON for
+scripts; its shape may change before 1.0. Times marked `*` are from the
+schedule, without a live prediction.
+
+## On a pixel clock
 
 You need a TC002 with AWTRIX NG 1.2.2 or later on your network, and Docker
 on a machine that stays on, such as a NAS. Images for `linux/amd64` and
@@ -116,11 +149,11 @@ Delete the demo boards and providers you do not use.
 
 ```bash
 urbanist-timetable config validate     # checks the file and builds its providers and clock client
-urbanist-timetable preview             # fetches once and prints what each board would show
-urbanist-timetable preview --push      # ...and pushes it to the clock once
+urbanist-timetable clock preview         # fetches once and prints what each board would show
+urbanist-timetable clock preview --push  # ...and pushes it to the clock once
 ```
 
-`preview` marks names too wide for their space on the display; give them shorter names
+`clock preview` marks names too wide for their space on the display; give them shorter names
 under `[boards.clock.labels]`.
 
 ### 6. Run it
@@ -150,8 +183,8 @@ volumes:
   timetable-data:
 ```
 
-`/data` holds a small file naming the configured boards, so
-that a board you remove from the configuration also leaves the clock's app
+`/data` holds the cached schedules and a small file naming the configured
+boards, so that a board you remove from the configuration also leaves the clock's app
 list. Mount a volume there, as above: without one, each new container starts
 with an empty state file, and boards removed from the configuration are not
 cleaned up after a restart. To use a folder instead of a named volume, make
@@ -175,17 +208,23 @@ referenced but not set is a configuration error.
 ## Commands
 
 ```bash
-urbanist-timetable run                          # poll and push until stopped (the image's default)
-urbanist-timetable preview [--board NAME]       # fetch once, print rows and payload
-urbanist-timetable preview --push               # ...and push it to the clock once
-urbanist-timetable preview --json               # print only the payload
-urbanist-timetable config validate              # check config.toml
-urbanist-timetable stops search PROVIDER WORDS  # find stop IDs
+urbanist-timetable departures SOURCE STOP...    # next departures; see --help for filters
+urbanist-timetable stops search SOURCE WORDS    # find stop IDs
 urbanist-timetable systems [show ID]            # ready-made systems
+urbanist-timetable config validate              # check the configuration
+urbanist-timetable clock run                    # poll and push until stopped (the image's default)
+urbanist-timetable clock preview [--board NAME] # fetch once, print rows and payload
+urbanist-timetable clock preview --push         # ...and push it to the clock once
+urbanist-timetable clock preview --json         # print only the payload
 ```
 
-Global flags: `--config` (`TIMETABLE_CONFIG`, default `config.toml`; in the
-image, `/config/config.toml`), `--log-format json|text`
+SOURCE is a `[providers.NAME]` block in the configuration, a system ID, or
+a provider that needs no settings.
+
+Global flags: `--config` (`TIMETABLE_CONFIG`, default
+`~/.config/urbanist-timetable/config.toml`, or under `$XDG_CONFIG_HOME`; in the
+image, `/config/config.toml`), `--cache-dir` (`TIMETABLE_CACHE`, default
+your user cache directory; in the image, `/data/cache`), `--log-format json|text`
 (`TIMETABLE_LOG_FORMAT`, default `json`), `--log-level
 debug|info|warn|error` (`TIMETABLE_LOG_LEVEL`), and `--version`, which prints
 the release version.
@@ -217,7 +256,7 @@ midnight:
 A hidden board is not polled, and the clock skips it. In quiet hours the
 service uses no network at all, except to hide the boards at the start: each
 within one `poll_interval`, retried if the clock does not answer, until the
-app's `lifetime` has passed. `preview` and `stops search` still work. The
+app's `lifetime` has passed. `clock preview` and `stops search` still work. The
 display stays on and shows the clock's other apps.
 
 A hidden board returns to the same place if you have arranged the rotation in
@@ -393,7 +432,7 @@ so one stop shown from 06:30 to 23:30 takes about:
 For schedule-only agencies a long interval costs little.
 `config validate` prints the estimate for your boards, taking `active_hours`
 and `quiet_hours` into account, and warns when it exceeds `monthly_quota`;
-`run` logs it at startup. Blocks with the same key share its quota, so they
+`clock run` logs it at startup. Blocks with the same key share its quota, so they
 are added up against the smallest `monthly_quota` any of them sets. Stop
 searches, previews and retries count too, but are not in the estimate.
 
@@ -430,7 +469,7 @@ just ci          # lint, test, validate the example config
 
 | Command | Does |
 |---|---|
-| `just run [config]` / `just preview [config]` | `run` or `preview` against `config.toml` with text logs |
+| `just run [config]` / `just preview [config]` | `clock run` or `clock preview` against `config.toml` with text logs |
 | `just build` | Builds `bin/urbanist-timetable` |
 | `just test` / `just lint` / `just fmt` | Tests with the race detector; lint; format |
 | `just golden` | Rewrites the renderer's golden files after an intended layout change |

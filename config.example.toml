@@ -129,7 +129,7 @@ per_row = 3
 # empty_text = "No departures"
 
 # Shorter display names. About 13 characters fit across the display;
-# `urbanist-timetable preview` marks names that will scroll.
+# `urbanist-timetable clock preview` marks names that will scroll.
 [boards.clock.labels]
 "Santa Apolónia" = "Sta Apolónia"
 

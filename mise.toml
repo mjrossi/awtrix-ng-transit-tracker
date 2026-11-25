@@ -9,5 +9,8 @@ go = "1.27.3"
 "aqua:golangci/golangci-lint" = "2.15.0"
 
 [env]
+# The CLI defaults to ~/.config/urbanist-timetable/config.toml; work in this
+# repository uses its own config.toml.
+TIMETABLE_CONFIG = "config.toml"
 TIMETABLE_LOG_FORMAT = "json"
 TIMETABLE_LOG_LEVEL = "info"

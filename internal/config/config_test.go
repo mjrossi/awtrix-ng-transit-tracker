@@ -2,6 +2,7 @@ package config_test
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/mjrossi/urbanist-timetable/internal/config"
 	"github.com/mjrossi/urbanist-timetable/internal/render"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit/catalog"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/providers"
 )
 
@@ -38,7 +40,7 @@ func TestExampleConfig(t *testing.T) {
 	}
 	reg := providers.Registry()
 	for name := range cfg.Providers {
-		typ, opts, err := config.ResolveProvider(name, cfg.Providers[name])
+		typ, opts, err := catalog.Resolve(name, cfg.Providers[name])
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -167,26 +169,6 @@ func TestInvalid(t *testing.T) {
 // settings.
 func withClock(settings string) string {
 	return strings.Replace(minimal, `name = "metro"`, "name = \"metro\"\n[boards.clock]\n"+settings, 1)
-}
-
-func TestProviderOptionsStrict(t *testing.T) {
-	var v struct {
-		Lines []struct {
-			ID string `toml:"id"`
-		} `toml:"lines"`
-	}
-	opts := config.ProviderOptions{"lines": []any{map[string]any{"id": "a", "colr": "x"}}}
-	if err := opts.Decode(&v); err == nil {
-		t.Error("unknown provider key accepted")
-	}
-
-	// Values are expanded from the environment by now; a typo in a
-	// secret's key must not print the secret.
-	opts = config.ProviderOptions{"clientsecret": "SUPERSECRET"}
-	err := opts.Decode(&v)
-	if err == nil || !strings.Contains(err.Error(), "clientsecret") || strings.Contains(err.Error(), "SUPERSECRET") {
-		t.Errorf("err = %v; want the key named without its value", err)
-	}
 }
 
 func TestDailyWindow(t *testing.T) {
@@ -340,22 +322,7 @@ func TestStopFilter(t *testing.T) {
 	}
 }
 
-func TestProviderType(t *testing.T) {
-	src := strings.Replace(minimal, "%s", "clock.local", 1) + "[providers.nyc]\ntype = \"gtfsrt\"\nrealtime_urls = [\"https://x\"]\n"
-	cfg, err := config.Parse([]byte(src), noEnv)
-	if err != nil {
-		t.Fatal(err)
-	}
-	typ, opts, err := config.ResolveProvider("nyc", cfg.Providers["nyc"])
-	if err != nil || typ != "gtfsrt" {
-		t.Fatalf("Provider(nyc) = %q, %v", typ, err)
-	}
-	if _, has := opts["type"]; has {
-		t.Error("type key should not reach the provider's options")
-	}
-	if typ, _, _ := config.ResolveProvider("demo", cfg.Providers["demo"]); typ != "demo" {
-		t.Errorf("block without type: got %q, want its name", typ)
-	}
+func TestProviderTypeMustBeAString(t *testing.T) {
 	bad := strings.Replace(minimal, "%s", "clock.local", 1) + "[providers.x]\ntype = 3\n"
 	if _, err := config.Parse([]byte(bad), noEnv); err == nil || !strings.Contains(err.Error(), "providers.x") {
 		t.Errorf("non-string type: got %v", err)
@@ -364,21 +331,6 @@ func TestProviderType(t *testing.T) {
 
 func TestProviderSystem(t *testing.T) {
 	base := strings.Replace(minimal, "%s", "clock.local", 1)
-	cfg, err := config.Parse([]byte(base+"[providers.nyc]\nsystem = \"nyc-subway\"\nheaders = { \"X-Test\" = \"1\" }\n"), noEnv)
-	if err != nil {
-		t.Fatal(err)
-	}
-	typ, opts, err := config.ResolveProvider("nyc", cfg.Providers["nyc"])
-	if err != nil {
-		t.Fatal(err)
-	}
-	if typ != "gtfsrt" || opts["static_url"] == nil || opts["headers"] == nil {
-		t.Errorf("got type %q options %v; want the catalog's gtfsrt settings plus the user's headers", typ, opts)
-	}
-	if _, has := opts["system"]; has {
-		t.Error("system key should not reach the provider's options")
-	}
-
 	tests := map[string]struct{ block, want string }{
 		"unknown system":  {"[providers.x]\nsystem = \"atlantis-metro\"\n", "unknown system"},
 		"missing keys":    {"[providers.metro]\nsystem = \"lisbon-metro\"\n", "client_id and client_secret"},
@@ -391,5 +343,94 @@ func TestProviderSystem(t *testing.T) {
 				t.Fatalf("got %v, want error mentioning %q", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestClockAndBoardsAreOptionalTogether(t *testing.T) {
+	const provider = "[providers.demo]\n"
+	const clock = "[clock]\nurl = \"http://clock.local\"\n"
+	const board = "[[boards]]\nname = \"metro\"\n[[boards.stops]]\nprovider = \"demo\"\nstop = \"s1\"\n"
+	tests := map[string]struct {
+		src          string
+		parseErr     string
+		requireClock bool
+	}{
+		"empty file":       {src: ""},
+		"providers only":   {src: provider},
+		"clock, no boards": {src: provider + clock, parseErr: "[[boards]]"},
+		"boards, no clock": {src: provider + board, parseErr: "clock.url"},
+		"clock and boards": {src: provider + clock + board, requireClock: true},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			cfg, err := config.Parse([]byte(tt.src), noEnv)
+			if tt.parseErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.parseErr) {
+					t.Fatalf("err = %v, want one mentioning %q", err, tt.parseErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = cfg.RequireClock()
+			if tt.requireClock != (err == nil) {
+				t.Errorf("RequireClock = %v", err)
+			}
+			if err != nil && (!strings.Contains(err.Error(), "clock.url") || !strings.Contains(err.Error(), "[[boards]]")) {
+				t.Errorf("RequireClock = %v, want it to name clock.url and [[boards]]", err)
+			}
+		})
+	}
+}
+
+func TestLoadProviderReadsOnlyItsBlock(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	src := "[clock]\nurl = \"http://clock.local\"\npassword = \"${TT_UNSET}\"\n" +
+		"[providers.a]\nsystem = \"atlantis\"\n" +
+		"[providers.b]\ntype = \"gtfsrt\"\nrealtime_urls = [\"${TT_FEED}\"]\n"
+	if err := os.WriteFile(path, []byte(src), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TT_FEED", "https://feed.example")
+	settings, found, err := config.LoadProvider(path, "b")
+	if err != nil || !found {
+		t.Fatalf("b: found %v, err %v", found, err)
+	}
+	if got := settings["realtime_urls"].([]any)[0]; got != "https://feed.example" {
+		t.Errorf("b's variable not expanded: %v", got)
+	}
+	if _, found, err := config.LoadProvider(path, "a"); err != nil || !found {
+		t.Errorf("a: found %v, err %v; resolving it is left to the caller", found, err)
+	}
+	if _, found, err := config.LoadProvider(path, "c"); err != nil || found {
+		t.Errorf("c: found %v, err %v", found, err)
+	}
+	if _, found, err := config.LoadProvider(filepath.Join(t.TempDir(), "missing.toml"), "b"); err != nil || found {
+		t.Errorf("missing file: found %v, err %v", found, err)
+	}
+	if err := os.WriteFile(path, []byte("colck = 1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := config.LoadProvider(path, "b"); err == nil || !strings.Contains(err.Error(), "colck") {
+		t.Errorf("unknown top-level key: err = %v", err)
+	}
+	if err := os.WriteFile(path, []byte("[providers.b]\nkey = \"${TT_UNSET}\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := config.LoadProvider(path, "b"); err == nil || !strings.Contains(err.Error(), "TT_UNSET") {
+		t.Errorf("unset variable in the block: err = %v", err)
+	}
+}
+
+func TestDefaultPath(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "/x")
+	if got := config.DefaultPath(); got != "/x/urbanist-timetable/config.toml" {
+		t.Errorf("with XDG_CONFIG_HOME: %q", got)
+	}
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("HOME", "/h")
+	if got := config.DefaultPath(); got != "/h/.config/urbanist-timetable/config.toml" {
+		t.Errorf("with HOME: %q", got)
 	}
 }

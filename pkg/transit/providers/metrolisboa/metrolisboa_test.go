@@ -591,3 +591,14 @@ func TestRetriesFailedDestinations(t *testing.T) {
 		t.Errorf("destinations fetched %d times, want the list cached once loaded", n)
 	}
 }
+
+func TestStopName(t *testing.T) {
+	p := newProvider(t, newFakeAPI(t))
+	var namer transit.StopNamer = p
+	if name, ok := namer.StopName(t.Context(), "SS", recorded); !ok || name != "São Sebastião" {
+		t.Errorf("StopName(SS) = %q, %v", name, ok)
+	}
+	if name, ok := namer.StopName(t.Context(), "NOPE", recorded); ok {
+		t.Errorf("StopName(NOPE) = %q, want not found", name)
+	}
+}

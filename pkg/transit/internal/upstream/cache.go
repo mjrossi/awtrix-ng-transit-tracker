@@ -157,9 +157,16 @@ func (c *Cache[T]) run(ctx context.Context, now time.Time, cl *call[T]) {
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	var stale *StaleError
 	switch {
 	case err == nil:
 		c.val, c.has, c.loadedAt, c.err = val, true, now, nil
+	case errors.As(err, &stale):
+		// loadedAt stays as it was, so the stale value never counts as fresh.
+		if !c.has {
+			c.val, c.has = val, true
+		}
+		c.err, c.failedAt = err, now
 	case errors.Is(err, context.Canceled):
 		// Shutting down: no new data, and nothing to back off from.
 		cl.discarded = true
@@ -170,6 +177,17 @@ func (c *Cache[T]) run(ctx context.Context, now time.Time, cl *call[T]) {
 	c.inflight = nil
 	close(cl.done)
 }
+
+// StaleError is returned by a load that could not refresh its data but
+// returns an older copy with the error. The cache keeps that copy if it has
+// nothing better, reports the error, and retries after Policy.Retry.
+type StaleError struct {
+	Err error
+}
+
+func (e *StaleError) Error() string { return e.Err.Error() }
+
+func (e *StaleError) Unwrap() error { return e.Err }
 
 func within(now, since time.Time, d time.Duration) bool {
 	age := now.Sub(since)

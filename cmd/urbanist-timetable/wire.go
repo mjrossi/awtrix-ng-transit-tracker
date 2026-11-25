@@ -10,16 +10,17 @@ import (
 	"github.com/mjrossi/urbanist-timetable/internal/scheduler"
 	"github.com/mjrossi/urbanist-timetable/pkg/awtrix"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit/catalog"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/providers"
 )
 
 // buildProviders constructs each configured provider once, so boards that
 // share a provider share its caches and connections.
-func buildProviders(cfg *config.Config) (map[string]transit.Provider, error) {
-	reg := providers.Registry()
+func buildProviders(cfg *config.Config, opts ...providers.Option) (map[string]transit.Provider, error) {
+	reg := providers.Registry(opts...)
 	out := make(map[string]transit.Provider, len(cfg.Providers))
 	for name, raw := range cfg.Providers {
-		typ, opts, err := config.ResolveProvider(name, raw)
+		typ, opts, err := catalog.Resolve(name, raw)
 		if err != nil {
 			return nil, fmt.Errorf("providers.%s: %w", name, err)
 		}

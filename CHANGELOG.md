@@ -7,6 +7,51 @@ version may break configuration.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-25
+
+### Added
+
+- `departures`: the next departures at one or more stops, in the terminal.
+  The source is a provider block, a catalog system or a provider type, or
+  feed URLs with `--realtime` and `--static`. Filters match the board
+  settings (`--lines`, `--headsigns`, `--min-lead`, `--canceled`); `--json`
+  prints JSON whose shape may change before 1.0, and `--watch` redraws.
+- `--cache-dir` (`TIMETABLE_CACHE`) keeps GTFS schedules between runs,
+  revalidating them after a day. It defaults to the user's cache directory;
+  the Docker image uses `/data/cache`, so a restart no longer downloads
+  the schedule again. `off` turns it off.
+- An unknown stop or system suggests the command that finds the right one.
+
+### Changed
+
+- `run` and `preview` are now `clock run` and `clock preview`, beside the
+  terminal commands. The Docker image runs `clock run` by default; a
+  deployment that passes `run` itself must pass `clock run` instead.
+- A `gtfsrt` board on a stop that is in neither the schedule nor any feed
+  now fails, and backs off, instead of showing "No departures". A typo in a
+  stop ID used to look like a quiet stop.
+- For programs that import `pkg/`: `transit.StopNamer` gives a stop's name
+  where a provider already holds it (`gtfsrt`, `metrolisboa`).
+- The configuration file defaults to
+  `~/.config/urbanist-timetable/config.toml` (or under `$XDG_CONFIG_HOME`)
+  instead of `config.toml` in the working directory. Pass
+  `--config config.toml` for the old behavior. The Docker image is
+  unaffected: it sets `TIMETABLE_CONFIG`.
+- `[clock]` and `[[boards]]` are optional together, so a file can hold only
+  provider blocks for `stops search`. `run` and `preview` still need both.
+- `stops search` reads only the named provider block, so an unset variable
+  or an invalid setting elsewhere in the file no longer stops it. A
+  misspelled key anywhere is still an error. A catalog system
+  that needs keys reads them from `<SYSTEM>_<OPTION>` environment variables,
+  such as `LISBON_METRO_CLIENT_ID`, when the file has no block for it.
+- `config validate` reports providers as well as boards.
+- For programs that import `pkg/`: `catalog.Resolve` and `catalog.Options`
+  replace the internal provider resolution, and `providers.Open` builds a
+  provider from a system or type name. Unknown systems and missing keys are
+  typed errors (`catalog.ErrUnknownSystem`, `catalog.MissingOptionsError`).
+- `gtfsrt.New` and `gtfsrt.Register` take options; `gtfsrt.WithCacheDir`
+  keeps schedules on disk between processes.
+
 ## [0.5.0] - 2026-11-25
 
 ### Added
@@ -163,7 +208,8 @@ First release: live departures on an AWTRIX NG clock (Ulanzi TC002).
   Metropolitana, Lisbon Metro, NYC Subway and SF BART.
 - Commands: `run`, `preview`, `config validate`, `systems`, `stops search`.
 
-[Unreleased]: https://github.com/mjrossi/urbanist-timetable/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/mjrossi/urbanist-timetable/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/mjrossi/urbanist-timetable/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/mjrossi/urbanist-timetable/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/mjrossi/urbanist-timetable/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/mjrossi/urbanist-timetable/compare/v0.2.0...v0.3.0

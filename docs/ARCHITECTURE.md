@@ -36,13 +36,14 @@ It listens on no ports.
 | `pkg/transit` | `Departure`, `Line`, `Provider`, `Query`, `PartialError`, `ErrUnknownStop`, `Metered`, `Quota`, `Filter`, `Group`, `Registry`, `MatchesSearch`, `ModeForRouteType` | none |
 | `pkg/transit/transittest` | the provider contract suite | `transit` |
 | `pkg/transit/providers/<name>` | one data source each | `transit` only |
-| `pkg/transit/providers` | the built-in registry | every provider |
-| `pkg/transit/catalog` | embedded system entries (`systems/*.toml`) | none |
+| `pkg/transit/providers` | the built-in registry, and `Open` | every provider, `catalog` |
+| `pkg/transit/catalog` | embedded system entries (`systems/*.toml`), and resolving a provider block (`Resolve`, `Options`) | none |
 | `pkg/awtrix` | typed AWTRIX NG HTTP client and payload types | none |
 | `internal/render` | departure rows → TC002 `awtrix.Layout` | `transit`, `awtrix` |
 | `internal/scheduler` | polling, backoff, last-good cache, active and quiet hours, `Snapshot`, the `Output` interface | `transit` |
+| `internal/termout` | departures → aligned terminal text or JSON | `transit` |
 | `internal/clockout` | the clock `Output`: snapshot → TC002 app → push or expire; cleanup of removed boards | `scheduler`, `render`, `awtrix` |
-| `internal/config` | TOML decoding, `${NAME}` expansion, validation, provider resolution, monthly request estimates | `transit`, `catalog`, `render`, `awtrix` |
+| `internal/config` | TOML decoding, `${NAME}` expansion, validation, reading one provider block (`LoadProvider`), monthly request estimates | `transit`, `catalog`, `render`, `awtrix` |
 | `cmd/urbanist-timetable` | CLI commands and wiring (`wire.go`) | everything |
 
 Rules, from [CLAUDE.md](../CLAUDE.md):
@@ -56,7 +57,7 @@ Rules, from [CLAUDE.md](../CLAUDE.md):
 
 ## Concurrency model
 
-- `run` starts one `scheduler.Runner` per board (`scheduler.RunAll`). Each
+- `clock run` starts one `scheduler.Runner` per board (`scheduler.RunAll`). Each
   runner ticks on its own `time.Ticker` and owns its per-source state, so
   that state needs no lock. A snapshot shares the cached departure slices
   with the runner; a refresh replaces a slice rather than changing it, and
@@ -74,7 +75,7 @@ Rules, from [CLAUDE.md](../CLAUDE.md):
 
   | Provider | Cached | TTL | After a failure |
   |---|---|---|---|
-  | `gtfsrt` | schedule zip | 24 h | keep last, retry in 15 min |
+  | `gtfsrt` | schedule zip, in memory and, with a cache directory, on disk | 24 h, then a conditional request on disk | keep last, retry in 15 min; a new process uses an expired file and reports the failure |
   | `gtfsrt` | each realtime feed | 15 s | failure cached for 15 s too |
   | `metrolisboa` | stations | 24 h | keep last, retry in 15 min; with none yet, retry next poll |
   | `metrolisboa` | destinations | 24 h | keep last, retry in 15 min |
@@ -98,7 +99,7 @@ Rules, from [CLAUDE.md](../CLAUDE.md):
   `Query.Now`, so boards keep their own poll interval. Providers with a
   quota implement `transit.Metered`; `Config.QuotaUses` estimates
   their requests and adds up the blocks with the same `Quota.Account`;
-  `config validate` and `run` warn above the quota. An answer from the cache
+  `config validate` and `clock run` warn above the quota. An answer from the cache
   looks fresh to the scheduler, so `refresh_interval` is at most 10 minutes.
   A prediction shown as live is at most that plus one `poll_interval` old,
   since the next fetch waits for a poll. A failed fetch is
@@ -178,14 +179,15 @@ overflow, lifetime, duration) go in its `[boards.clock]` table
 
 ## Provider resolution
 
-A `[providers.NAME]` block becomes a provider in `config.ResolveProvider`:
+A `[providers.NAME]` block becomes a provider in `catalog.Resolve`, and
+`providers.Open` resolves and builds one in a single call:
 
 1. `system = "ID"`: the catalog entry's provider and options, overlaid with
    the block's other keys. The entry's `required_options` must be present.
 2. Otherwise `type = "..."` names the provider.
 3. Otherwise NAME is the provider type.
 
-The options are decoded strictly (`config.ProviderOptions.Decode`), so a
+The options are decoded strictly (`catalog.Options.Decode`), so a
 mistyped key is an error that names the key but not its value.
 
 ## Adding things

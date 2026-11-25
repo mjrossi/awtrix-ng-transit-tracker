@@ -28,7 +28,7 @@ Feed and API contents. They are decoded defensively:
 
 | Input | Bound |
 |---|---|
-| GTFS schedule zip | 512 MB download; staged in a temporary file, only routes, stops and trips kept |
+| GTFS schedule zip | 512 MB download; staged in a temporary file, or kept in the cache directory when one is set, with only routes, stops and trips held in memory |
 | GTFS-Realtime feed | 64 MB; hand-written protobuf decoder that skips unknown fields and rejects malformed lengths |
 | Carris Metropolitana JSON | 32 MB |
 | Metro de Lisboa JSON | 4 MB; token response 64 KB |
@@ -48,9 +48,11 @@ interpreted.
   escaping. A missing variable is an error that names the variable.
 - Secrets must not reach logs or error messages:
   - provider option errors name the unknown key, never the line
-    (`config.ProviderOptions.Decode`), because values hold expanded
+    (`catalog.Options.Decode`), because values hold expanded
     secrets by then;
   - `gtfsrt` names URLs without credentials or query strings (`redact`);
+  - cached `gtfsrt` schedules are named by a SHA-256 of their URL and hold
+    only the zip and its ETag and Last-Modified, never the URL or headers;
   - `transitland` sends its key in the `apikey` header, never the URL, so
     request errors cannot carry it;
   - the `transitland` key, `gtfsrt` `headers` and `metrolisboa` credentials
@@ -68,9 +70,11 @@ interpreted.
 ## Container
 
 - A static binary on Alpine, running as a non-root user.
-- No published ports. The only writes are temporary schedule files in
-  `/tmp`, where with a read-only root filesystem downloads fall back to
-  memory, and the state file in `/data`, which holds the clock's host and
-  board names, never credentials.
+- No published ports. The only writes are the state file in `/data`, which
+  holds the clock's host and board names, never credentials, and GTFS
+  schedules in `/data/cache` (`--cache-dir`), named by a hash of their URL.
+  Without a cache directory, schedules are staged as temporary files in
+  `/tmp`, and with a read-only root filesystem downloads fall back to
+  memory.
 - Images are built by GitHub Actions, from version tags and from `main`,
   only after `just ci` passes.

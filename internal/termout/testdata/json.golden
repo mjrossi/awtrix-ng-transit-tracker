@@ -1,0 +1,33 @@
+{
+  "source": "nyc-subway",
+  "at": "2026-11-25T22:31:00-05:00",
+  "partial": true,
+  "departures": [
+    {
+      "stop": "127N",
+      "line": {
+        "id": "1",
+        "name": "1",
+        "color": "#D82233",
+        "mode": "metro"
+      },
+      "headsign": "Van Cortlandt Park-242 St",
+      "scheduled": "2026-11-25T22:33:00-05:00",
+      "predicted": "2026-11-25T22:33:00-05:00",
+      "status": "scheduled",
+      "minutes": 2
+    },
+    {
+      "stop": "127N",
+      "line": {
+        "id": "735",
+        "name": "735",
+        "mode": "bus"
+      },
+      "headsign": "Cais do Sodré",
+      "scheduled": "2026-11-25T22:34:00-05:00",
+      "status": "scheduled",
+      "minutes": 3
+    }
+  ]
+}

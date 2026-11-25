@@ -6,8 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"log/slog"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -23,6 +23,14 @@ import (
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/catalog"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/providers"
 )
+
+func clockCommand() *cli.Command {
+	return &cli.Command{
+		Name:     "clock",
+		Usage:    "show boards on an AWTRIX NG clock",
+		Commands: []*cli.Command{runCommand(), previewCommand()},
+	}
+}
 
 func runCommand() *cli.Command {
 	return &cli.Command{
@@ -57,11 +65,14 @@ func runBoards(ctx context.Context, c *cli.Command) error {
 	if err != nil {
 		return err
 	}
+	if err := cfg.RequireClock(); err != nil {
+		return fmt.Errorf("config: %w", err)
+	}
 	clock, err := newClock(cfg)
 	if err != nil {
 		return err
 	}
-	provs, err := buildProviders(cfg)
+	provs, err := buildProviders(cfg, cacheOptions(c)...)
 	if err != nil {
 		return err
 	}
@@ -132,6 +143,9 @@ func preview(ctx context.Context, c *cli.Command) error {
 	if err != nil {
 		return err
 	}
+	if err := cfg.RequireClock(); err != nil {
+		return fmt.Errorf("config: %w", err)
+	}
 	if name := c.String("board"); name != "" {
 		cfg.Boards = filterBoards(cfg.Boards, name)
 		if len(cfg.Boards) == 0 {
@@ -146,7 +160,7 @@ func preview(ctx context.Context, c *cli.Command) error {
 		}
 	}
 	out := newClockOutput(cfg, pusher)
-	provs, err := buildProviders(cfg)
+	provs, err := buildProviders(cfg, cacheOptions(c)...)
 	if err != nil {
 		return err
 	}
@@ -200,15 +214,17 @@ func configCommand() *cli.Command {
 				if err != nil {
 					return err
 				}
-				provs, err := buildProviders(cfg)
+				provs, err := buildProviders(cfg, cacheOptions(c)...)
 				if err != nil {
 					return err
 				}
-				if _, err := newClock(cfg); err != nil {
-					return err
+				if cfg.Clock.URL != "" {
+					if _, err := newClock(cfg); err != nil {
+						return err
+					}
 				}
 				w := c.Root().Writer
-				fmt.Fprintf(w, "%s: OK (%d boards)\n", c.String("config"), len(cfg.Boards))
+				fmt.Fprintf(w, "%s: OK (%d providers, %d boards)\n", c.String("config"), len(cfg.Providers), len(cfg.Boards))
 				writeQuotaUses(w, cfg.QuotaUses(provs))
 				return nil
 			},
@@ -268,8 +284,7 @@ func systemsCommand() *cli.Command {
 				}
 				fmt.Fprintf(w, "\n[providers.%s]\nsystem = %q\n", s.ID, s.ID)
 				for _, k := range s.RequiredOptions {
-					env := strings.ToUpper(strings.ReplaceAll(s.ID+"_"+k, "-", "_"))
-					fmt.Fprintf(w, "%s = \"${%s}\"\n", k, env)
+					fmt.Fprintf(w, "%s = \"${%s}\"\n", k, s.EnvName(k))
 				}
 				fmt.Fprintf(w, "\n# Find stop IDs: urbanist-timetable stops search %s <words...>\n", s.ID)
 				fmt.Fprintf(w, "# Example stop: %s\n", s.SampleStop)
@@ -293,7 +308,7 @@ func stopsCommand() *cli.Command {
 				}
 				name := c.Args().First()
 				search := strings.Join(c.Args().Tail(), " ")
-				p, err := providerForSearch(c.String("config"), name)
+				p, err := openSource(c.String("config"), name, cacheOptions(c)...)
 				if err != nil {
 					return err
 				}
@@ -318,30 +333,28 @@ func stopsCommand() *cli.Command {
 	}
 }
 
-// providerForSearch uses the named provider's settings from the config
-// file. Without a matching block, name may be a catalog system or a
-// provider type that needs no settings, so search works before a config
-// exists. A config file that exists but does not load is an error, since
-// silently searching with other settings would mislead.
-func providerForSearch(path, name string) (transit.Provider, error) {
-	raw := map[string]any{}
-	if _, ok := catalog.Get(name); ok {
-		raw["system"] = name
-	}
-	cfg, err := config.Load(path)
-	switch {
-	case err == nil:
-		if r, ok := cfg.Providers[name]; ok {
-			raw = r
-		}
-	case !errors.Is(err, fs.ErrNotExist):
-		return nil, err
-	}
-	typ, opts, err := config.ResolveProvider(name, raw)
+// openSource builds the provider name refers to: a [providers.NAME] block
+// in the file at path, else a catalog system, with required options read
+// from <SYSTEM>_<OPTION> environment variables, else a provider type that
+// needs no settings. Only that block is read, so a query works before the
+// rest of the configuration does.
+func openSource(path, name string, opts ...providers.Option) (transit.Provider, error) {
+	settings, found, err := config.LoadProvider(path, name)
 	if err != nil {
 		return nil, err
 	}
-	return providers.Registry().New(typ, opts)
+	if !found {
+		settings = map[string]any{}
+		if sys, ok := catalog.Get(name); ok {
+			settings["system"] = name
+			for _, k := range sys.RequiredOptions {
+				if v := os.Getenv(sys.EnvName(k)); v != "" {
+					settings[k] = v
+				}
+			}
+		}
+	}
+	return providers.Open(name, settings, opts...)
 }
 
 func filterBoards(boards []config.Board, name string) []config.Board {

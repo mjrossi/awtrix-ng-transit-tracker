@@ -9,9 +9,10 @@ before making non-trivial changes. How the code fits together is in
 
 ## What this is
 
-A Go service that polls public transit departures and shows them on
-an AWTRIX NG clock (Ulanzi TC002, 52 × 16). It runs as one Docker container with a mounted
-`config.toml`; it listens on no ports. What comes next is in
+A Go command-line tool and service for public transit departures: it
+prints them in a terminal (`departures`), and polls them for an AWTRIX NG
+clock (Ulanzi TC002, 52 × 16) as one Docker container with a mounted
+`config.toml` (`clock run`). It listens on no ports. What comes next is in
 `docs/PLAN.md`, "Direction".
 
 Part of the Urbanist family with *The Urbanist Lexicon* (mjrossi.com) and
@@ -41,8 +42,9 @@ Part of the Urbanist family with *The Urbanist Lexicon* (mjrossi.com) and
 
 ## Layout
 
-- `cmd/urbanist-timetable/` — thin urfave/cli wrapper: `run`, `preview`,
-  `config validate`, `stops search`, `systems`. No business logic.
+- `cmd/urbanist-timetable/` — thin urfave/cli wrapper: `departures`,
+  `stops search`, `systems`, `config validate`, `clock run`,
+  `clock preview`. No business logic.
 - `pkg/transit/` — the importable core: model, `Provider`, `Filter`,
   `Group`, `Registry`.
 - `pkg/transit/transittest/` — the provider contract suite.
@@ -54,6 +56,7 @@ Part of the Urbanist family with *The Urbanist Lexicon* (mjrossi.com) and
 - `pkg/awtrix/` — typed AWTRIX NG HTTP client.
 - `internal/config/` — TOML loading and validation.
 - `internal/render/` — departure rows to TC002 layouts.
+- `internal/termout/` — departures to terminal text and JSON.
 - `internal/scheduler/` — polling, active and quiet hours, backoff,
   last-good cache.
 - `docs/` — `ARCHITECTURE.md`, `rendering.md`, `PLAN.md` (roadmap only:

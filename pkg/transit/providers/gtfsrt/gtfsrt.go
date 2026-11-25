@@ -65,6 +65,7 @@ type Provider struct {
 	http  *http.Client
 	clock func() time.Time
 
+	cacheDir string
 	// schedule is nil without a static_url.
 	schedule *upstream.Cache[*static]
 	// feeds holds one cache per realtime URL. Failures are cached for
@@ -72,14 +73,14 @@ type Provider struct {
 	feeds map[string]*upstream.Cache[feed]
 }
 
-// Register adds the provider to r.
-func Register(r *transit.Registry) {
-	transit.RegisterConfig(r, Name, func(cfg Config) (*Provider, error) { return New(cfg, nil) })
+// Register adds the provider to r, built with opts.
+func Register(r *transit.Registry, opts ...Option) {
+	transit.RegisterConfig(r, Name, func(cfg Config) (*Provider, error) { return New(cfg, nil, opts...) })
 }
 
 // New validates cfg and returns a provider. A nil client gets a default;
 // requests are bounded by per-request timeouts either way.
-func New(cfg Config, client *http.Client) (*Provider, error) {
+func New(cfg Config, client *http.Client, opts ...Option) (*Provider, error) {
 	if len(cfg.RealtimeURLs) == 0 {
 		return nil, errors.New("realtime_urls: at least one GTFS-RT TripUpdates URL is required")
 	}
@@ -98,11 +99,14 @@ func New(cfg Config, client *http.Client) (*Provider, error) {
 	}
 	client = upstream.KeepHeadersOnHost(client, slices.Collect(maps.Keys(cfg.Headers))...)
 	p := &Provider{cfg: cfg, http: client, clock: time.Now, feeds: map[string]*upstream.Cache[feed]{}}
+	for _, o := range opts {
+		o(p)
+	}
 	if cfg.StaticURL != "" {
 		// A large schedule can take minutes to download, longer than a
 		// board's app lifetime, so stale data is refreshed in the
 		// background.
-		p.schedule = upstream.NewCache(upstream.Policy{TTL: staticTTL, Retry: staticRetry, Background: true, Timeout: staticTimeout}, p.loadStatic)
+		p.schedule = upstream.NewCacheAt(upstream.Policy{TTL: staticTTL, Retry: staticRetry, Background: true, Timeout: staticTimeout}, p.loadStatic)
 	}
 	for _, u := range cfg.RealtimeURLs {
 		p.feeds[u] = upstream.NewCache(upstream.Policy{TTL: feedTTL, Retry: feedTTL, Timeout: feedTimeout}, func(ctx context.Context) (feed, error) {
@@ -115,6 +119,8 @@ func New(cfg Config, client *http.Client) (*Provider, error) {
 // Departures implements transit.Provider. q.StopID may be a platform or a
 // parent station, in which case departures from all its platforms are
 // returned.
+// When the schedule and every feed have loaded, a stop in none of them is
+// transit.ErrUnknownStop.
 //
 // When some realtime feeds fail, departures from the rest come back with a
 // *transit.PartialError, unless a failed feed is the only one known to
@@ -154,6 +160,13 @@ func (p *Provider) Departures(ctx context.Context, q transit.Query) ([]transit.D
 	}
 	if loaded == 0 || servedByFailed && !servedByOK {
 		return nil, errors.Join(problems...)
+	}
+	// Only a complete answer can tell a stop does not exist: the schedule
+	// and every feed loaded, the schedule lacks it and no trip stops there.
+	if st != nil && staticErr == nil && len(problems) == 0 && !servedByOK {
+		if _, ok := st.stops[q.StopID]; !ok {
+			return nil, fmt.Errorf("%w %q", transit.ErrUnknownStop, q.StopID)
+		}
 	}
 
 	transit.SortByTime(out)
@@ -295,9 +308,21 @@ func (p *Provider) staticFor(ctx context.Context, now time.Time) (*static, error
 	return p.schedule.Get(ctx, now)
 }
 
-func (p *Provider) loadStatic(ctx context.Context) (*static, error) {
-	st, err := p.downloadStatic(ctx)
+func (p *Provider) loadStatic(ctx context.Context, now time.Time) (*static, error) {
+	var (
+		st  *static
+		err error
+	)
+	if p.cacheDir != "" {
+		st, err = p.loadCachedStatic(ctx, now)
+	} else {
+		st, err = p.downloadStatic(ctx)
+	}
 	if err != nil {
+		var stale *upstream.StaleError
+		if errors.As(err, &stale) {
+			return st, &upstream.StaleError{Err: fmt.Errorf("schedule: %w", stale.Err)}
+		}
 		return nil, fmt.Errorf("schedule: %w", err)
 	}
 	return st, nil
@@ -320,7 +345,7 @@ func (p *Provider) downloadStatic(ctx context.Context) (*static, error) {
 		_ = f.Close()
 		_ = os.Remove(f.Name())
 	}()
-	size, err := p.fetchTo(ctx, p.cfg.StaticURL, f, maxStaticBody)
+	size, err := p.fetchTo(ctx, p.cfg.StaticURL, nil, maxStaticBody, to(f))
 	if err != nil {
 		return nil, err
 	}
@@ -341,15 +366,23 @@ func (p *Provider) fetchFeed(ctx context.Context, u string) (feed, error) {
 
 func (p *Provider) fetch(ctx context.Context, u string, limit int64) ([]byte, error) {
 	var buf bytes.Buffer
-	if _, err := p.fetchTo(ctx, u, &buf, limit); err != nil {
+	if _, err := p.fetchTo(ctx, u, nil, limit, to(&buf)); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
 }
 
-// fetchTo copies the body of a GET to w, failing above limit bytes. Errors
-// name the URL without its query string, which may hold an API key.
-func (p *Provider) fetchTo(ctx context.Context, u string, w io.Writer, limit int64) (int64, error) {
+// to sends every 200 response's body to w.
+func to(w io.Writer) func(int, http.Header) (io.Writer, error) {
+	return func(int, http.Header) (io.Writer, error) { return w, nil }
+}
+
+// fetchTo copies the body of a GET, sent with the extra headers, to the
+// writer that dest picks from the response's status and headers, failing
+// above limit bytes. dest sees 200 responses, and 304 ones when extra makes
+// the request conditional. Errors name the URL without its query string, which may hold
+// an API key.
+func (p *Provider) fetchTo(ctx context.Context, u string, extra http.Header, limit int64, dest func(status int, h http.Header) (io.Writer, error)) (int64, error) {
 	shown := redact(u)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
@@ -358,6 +391,9 @@ func (p *Provider) fetchTo(ctx context.Context, u string, w io.Writer, limit int
 	req.Header.Set("User-Agent", upstream.UserAgent)
 	for k, v := range p.cfg.Headers {
 		req.Header.Set(k, v)
+	}
+	for k := range extra {
+		req.Header.Set(k, extra.Get(k))
 	}
 	resp, err := p.http.Do(req)
 	if err != nil {
@@ -368,9 +404,15 @@ func (p *Provider) fetchTo(ctx context.Context, u string, w io.Writer, limit int
 		return 0, fmt.Errorf("%s: GET %s: %w", Name, shown, err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
+	conditional := len(extra) > 0 && resp.StatusCode == http.StatusNotModified
+	if resp.StatusCode != http.StatusOK && !conditional {
 		upstream.Drain(resp.Body)
 		return 0, fmt.Errorf("%s: GET %s: %s", Name, shown, resp.Status)
+	}
+	w, err := dest(resp.StatusCode, resp.Header)
+	if err != nil {
+		upstream.Drain(resp.Body)
+		return 0, fmt.Errorf("%s: GET %s: %w", Name, shown, err)
 	}
 	n, err := io.Copy(w, io.LimitReader(resp.Body, limit+1))
 	if err != nil {
@@ -427,4 +469,15 @@ func (p *Provider) SearchStops(ctx context.Context, search string) ([]transit.St
 		return cmp.Or(strings.Compare(a.Name, b.Name), strings.Compare(a.ID, b.ID))
 	})
 	return out, nil
+}
+
+// StopName implements transit.StopNamer from the schedule, loading it if
+// needed.
+func (p *Provider) StopName(ctx context.Context, id string, now time.Time) (string, bool) {
+	st, _ := p.staticFor(ctx, now)
+	if st == nil {
+		return "", false
+	}
+	info, ok := st.stops[id]
+	return info.name, ok && info.name != ""
 }

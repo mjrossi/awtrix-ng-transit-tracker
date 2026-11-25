@@ -515,3 +515,13 @@ func (p *Provider) accessToken(ctx context.Context) (string, error) {
 	p.mu.Unlock()
 	return tok.AccessToken, nil
 }
+
+// StopName implements transit.StopNamer from the cached station list.
+func (p *Provider) StopName(ctx context.Context, id string, now time.Time) (string, bool) {
+	stations, err := p.stationList(ctx, now)
+	if err != nil {
+		return "", false
+	}
+	s, ok := stations[id]
+	return s.name, ok && s.name != ""
+}

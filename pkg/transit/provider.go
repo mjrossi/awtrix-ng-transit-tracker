@@ -73,6 +73,13 @@ type StopSearcher interface {
 	SearchStops(ctx context.Context, search string) ([]Stop, error)
 }
 
+// StopNamer is implemented by providers that already hold stop names, so a
+// display can title a stop without a search. ok is false when the name is
+// unknown or could not be loaded.
+type StopNamer interface {
+	StopName(ctx context.Context, id string, now time.Time) (name string, ok bool)
+}
+
 // Metered is implemented by providers whose upstream API has a monthly
 // request quota, so the configuration can be checked against it.
 type Metered interface {

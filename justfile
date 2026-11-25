@@ -12,12 +12,12 @@ default:
 # run against ./config.toml with text logs
 [group('dev')]
 run config="config.toml":
-    go run ./cmd/urbanist-timetable --config {{config}} --log-format=text run
+    go run ./cmd/urbanist-timetable --config {{config}} --log-format=text clock run
 
 # fetch once and print each board without pushing
 [group('dev')]
 preview config="config.toml":
-    go run ./cmd/urbanist-timetable --config {{config}} --log-format=text preview
+    go run ./cmd/urbanist-timetable --config {{config}} --log-format=text clock preview
 
 # build the binary to bin/urbanist-timetable
 [group('dev')]

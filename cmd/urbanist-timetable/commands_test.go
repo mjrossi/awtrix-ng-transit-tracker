@@ -3,12 +3,14 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +19,7 @@ import (
 	"github.com/mjrossi/urbanist-timetable/internal/render"
 	"github.com/mjrossi/urbanist-timetable/pkg/awtrix"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit/catalog"
 )
 
 func noEnv(string) (string, bool) { return "", false }
@@ -110,7 +113,7 @@ func TestStopsSearchPrintsMatches(t *testing.T) {
 }
 
 func TestPreviewPrintsRowsAndPayload(t *testing.T) {
-	out, err := runCLI(t, demoConfig, "preview")
+	out, err := runCLI(t, demoConfig, "clock", "preview")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +123,7 @@ func TestPreviewPrintsRowsAndPayload(t *testing.T) {
 		}
 	}
 
-	out, err = runCLI(t, demoConfig, "preview", "--json", "--board", "metro")
+	out, err = runCLI(t, demoConfig, "clock", "preview", "--json", "--board", "metro")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +132,7 @@ func TestPreviewPrintsRowsAndPayload(t *testing.T) {
 		t.Errorf("--json printed more than a payload: %v", err)
 	}
 
-	if _, err := runCLI(t, demoConfig, "preview", "--board", "bus"); err == nil || !strings.Contains(err.Error(), `no board named "bus"`) {
+	if _, err := runCLI(t, demoConfig, "clock", "preview", "--board", "bus"); err == nil || !strings.Contains(err.Error(), `no board named "bus"`) {
 		t.Errorf("err = %v, want no such board", err)
 	}
 }
@@ -171,6 +174,19 @@ func TestVersionFlag(t *testing.T) {
 	}
 }
 
+func TestConfigValidateWithoutClock(t *testing.T) {
+	out, err := validateConfig(t, "[providers.carrismetropolitana]\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "OK (1 providers, 0 boards)") {
+		t.Errorf("output %q", out)
+	}
+	if _, err := runCLI(t, "[providers.carrismetropolitana]\n", "clock", "preview"); err == nil || !strings.Contains(err.Error(), "clock.url") {
+		t.Errorf("preview without a clock: err = %v", err)
+	}
+}
+
 func TestConfigValidateBuildsClock(t *testing.T) {
 	src := "[clock]\nurl = \"ftp://clock.local\"\n[providers.demo]\n[[providers.demo.lines]]\nid = \"azul\"\nheadway = \"6m\"\n[[boards]]\nname = \"metro\"\n[[boards.stops]]\nprovider = \"demo\"\nstop = \"s1\"\n"
 	_, err := validateConfig(t, src)
@@ -179,18 +195,30 @@ func TestConfigValidateBuildsClock(t *testing.T) {
 	}
 }
 
-func TestProviderForSearch(t *testing.T) {
+func TestOpenSource(t *testing.T) {
 	dir := t.TempDir()
-	if _, err := providerForSearch(filepath.Join(dir, "missing.toml"), "helsinki-hsl"); err != nil {
+	missing := filepath.Join(dir, "missing.toml")
+	if _, err := openSource(missing, "helsinki-hsl"); err != nil {
 		t.Errorf("without a config file: %v", err)
 	}
 
-	broken := filepath.Join(dir, "config.toml")
-	if err := os.WriteFile(broken, []byte("[clock]\nurl = \"${TT_TEST_UNSET_CLOCK}\"\n"), 0o600); err != nil {
+	unrelated := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(unrelated, []byte("[clock]\nurl = \"${TT_TEST_UNSET_CLOCK}\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := providerForSearch(broken, "helsinki-hsl"); err == nil || !strings.Contains(err.Error(), "TT_TEST_UNSET_CLOCK") {
-		t.Errorf("err = %v; want the config error reported", err)
+	if _, err := openSource(unrelated, "helsinki-hsl"); err != nil {
+		t.Errorf("an unset variable outside the block stopped the query: %v", err)
+	}
+
+	t.Setenv("LISBON_METRO_CLIENT_ID", "id")
+	t.Setenv("LISBON_METRO_CLIENT_SECRET", "secret")
+	if _, err := openSource(missing, "lisbon-metro"); err != nil {
+		t.Errorf("keys from the environment: %v", err)
+	}
+	t.Setenv("LISBON_METRO_CLIENT_SECRET", "")
+	var me *catalog.MissingOptionsError
+	if _, err := openSource(missing, "lisbon-metro"); !errors.As(err, &me) || !slices.Equal(me.Options, []string{"client_secret"}) {
+		t.Errorf("err = %v, want client_secret missing", err)
 	}
 }
 
@@ -375,5 +403,35 @@ func TestConfigValidateSumsBlocksSharingAKey(t *testing.T) {
 				t.Errorf("warning printed = %v, want %v: %q", got, tt.warn, out)
 			}
 		})
+	}
+}
+
+func TestHint(t *testing.T) {
+	tests := map[string]struct {
+		err  error
+		want string
+	}{
+		"unknown system": {fmt.Errorf("providers.x: %w", fmt.Errorf("%w %q", catalog.ErrUnknownSystem, "atlantis")), "hint: run `urbanist-timetable systems`"},
+		"missing keys":   {errors.Join(errors.New("other"), &catalog.MissingOptionsError{System: "lisbon-metro", Options: []string{"client_id"}}), "hint: run `urbanist-timetable systems show lisbon-metro`"},
+		"anything else":  {errors.New("boom"), ""},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := hint(tt.err); got != tt.want {
+				t.Errorf("hint = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestOldCommandsAreGone(t *testing.T) {
+	root := newRootCommand()
+	for _, name := range []string{"run", "preview"} {
+		if root.Command(name) != nil {
+			t.Errorf("root still has %q", name)
+		}
+		if c := root.Command("clock"); c == nil || c.Command(name) == nil {
+			t.Errorf("clock lacks %q", name)
+		}
 	}
 }
