@@ -58,6 +58,10 @@ func (c Cleanup) Run(ctx context.Context) {
 		prev = cleanupState{}
 	}
 	if prev.Clock != c.Clock {
+		if len(prev.Apps) > 0 {
+			c.Log.InfoContext(ctx, "the clock's address changed; boards recorded for the old address are forgotten",
+				slog.String("from", prev.Clock), slog.String("to", c.Clock), slog.Any("boards", prev.Apps))
+		}
 		prev.Apps = nil
 	}
 	stale := slices.DeleteFunc(slices.Clone(prev.Apps), func(n string) bool {

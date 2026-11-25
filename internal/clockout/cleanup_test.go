@@ -93,9 +93,17 @@ func TestCleanupIgnoresAnotherClocksApps(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state.json")
 	f := &fakeForgetter{}
 	cleanup(path, "old.lan", f, "b65").Run(t.Context())
-	cleanup(path, "new.lan", f, "saldanha").Run(t.Context())
+	var logs strings.Builder
+	c := cleanup(path, "new.lan", f, "saldanha")
+	c.Log = slog.New(slog.NewTextHandler(&logs, nil))
+	c.Run(t.Context())
 	if len(f.calls) != 0 {
 		t.Errorf("forgot %v on a different clock", f.calls)
+	}
+	for _, want := range []string{"level=INFO", "old.lan", "new.lan", "b65"} {
+		if !strings.Contains(logs.String(), want) {
+			t.Errorf("logs = %q, want %q in them", logs.String(), want)
+		}
 	}
 }
 

@@ -174,6 +174,9 @@ func (r *Runner) Tick(ctx context.Context) {
 	if r.board.Active != nil && !r.board.Active(now) {
 		if r.shown {
 			if err := r.out.Withdraw(ctx, r.board.Name); err != nil {
+				if ctx.Err() != nil {
+					return
+				}
 				r.log.WarnContext(ctx, "withdraw outside active hours", slog.Any("err", err))
 				return
 			}
@@ -198,6 +201,9 @@ func (r *Runner) Tick(ctx context.Context) {
 		return
 	}
 	if err := r.out.Publish(ctx, snap); err != nil {
+		if ctx.Err() != nil {
+			return
+		}
 		r.phase = phasePublishFailed
 		r.log.WarnContext(ctx, "publish", slog.Any("err", err))
 		return

@@ -103,7 +103,7 @@ per_row = 3
 # duration = "10s"    # time on screen per rotation (default: the clock's setting)
 # font = "small"
 # name_font = "small" # font of destination names and of empty_text. By default names with
-                      # accents above letters use matrix-light6, which needs AWTRIX NG 1.2.2 or later
+                      # accents above letters use matrix-light6
 # empty_text = "No departures"
 
 # Shorter display names. About 13 characters fit across the display;

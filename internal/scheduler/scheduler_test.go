@@ -52,9 +52,9 @@ func (p *fakeProvider) Departures(_ context.Context, q transit.Query) ([]transit
 }
 
 type fakeOutput struct {
-	pushes  []scheduler.Snapshot
-	deletes int
-	err     error
+	pushes      []scheduler.Snapshot
+	withdrawals int
+	err         error
 }
 
 func (o *fakeOutput) Publish(_ context.Context, snap scheduler.Snapshot) error {
@@ -66,8 +66,8 @@ func (o *fakeOutput) Publish(_ context.Context, snap scheduler.Snapshot) error {
 }
 
 func (o *fakeOutput) Withdraw(context.Context, string) error {
-	o.deletes++
-	return nil
+	o.withdrawals++
+	return o.err
 }
 
 type harness struct {
@@ -235,8 +235,8 @@ func TestRemovesAppOutsideActiveHours(t *testing.T) {
 	active = false
 	h.runner.Tick(t.Context())
 	h.runner.Tick(t.Context())
-	if h.out.deletes != 1 {
-		t.Errorf("deletes = %d, want 1", h.out.deletes)
+	if h.out.withdrawals != 1 {
+		t.Errorf("withdrawals = %d, want 1", h.out.withdrawals)
 	}
 	if h.prov.calls != 1 {
 		t.Errorf("calls = %d, want no fetching outside active hours", h.prov.calls)
@@ -327,8 +327,8 @@ func TestLogsStartOutsideActiveHours(t *testing.T) {
 	if diff := cmp.Diff([]string{"outside active hours"}, h.logs.msgs); diff != "" {
 		t.Errorf("logs (-want +got):\n%s", diff)
 	}
-	if h.out.deletes != 0 {
-		t.Errorf("deletes = %d, want 0 for a board never shown", h.out.deletes)
+	if h.out.withdrawals != 0 {
+		t.Errorf("withdrawals = %d, want 0 for a board never shown", h.out.withdrawals)
 	}
 }
 
@@ -351,5 +351,39 @@ func TestShutdownDuringFetchIsNotLoggedAsNoData(t *testing.T) {
 	h.runner.Tick(ctx)
 	if len(h.logs.msgs) != 0 {
 		t.Errorf("logs = %q, want none while stopping", h.logs.msgs)
+	}
+}
+
+// Cached data is still usable after an interrupted fetch, so the tick goes on
+// to publish with a context that is already done.
+func TestShutdownDuringPublishIsNotLogged(t *testing.T) {
+	h := newHarness(nil)
+	h.runner.Tick(t.Context())
+	h.logs.msgs = nil
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	h.prov.err = context.Canceled
+	h.out.err = context.Canceled
+	h.now = start.Add(time.Minute)
+	h.runner.Tick(ctx)
+	if len(h.logs.msgs) != 0 {
+		t.Errorf("logs = %q, want none while stopping", h.logs.msgs)
+	}
+}
+
+func TestShutdownDuringWithdrawIsNotLogged(t *testing.T) {
+	active := true
+	h := newHarness(func(time.Time) bool { return active })
+	h.runner.Tick(t.Context())
+	h.logs.msgs = nil
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	active = false
+	h.out.err = context.Canceled
+	h.runner.Tick(ctx)
+	if h.out.withdrawals != 1 || len(h.logs.msgs) != 0 {
+		t.Errorf("withdrawals = %d, logs = %q; want 1 and none", h.out.withdrawals, h.logs.msgs)
 	}
 }

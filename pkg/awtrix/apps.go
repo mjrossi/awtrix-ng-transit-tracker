@@ -11,6 +11,11 @@ import (
 
 const originPushed = "pushed"
 
+// builtinNames are the firmware's built-in apps on every clock model. A
+// pushed app of the same name hides a built-in one from the app list, and
+// there is no lookup for them as there is for scripts.
+var builtinNames = []string{"Time", "Status", "Date", "Temperature", "Humidity", "Battery"}
+
 // listedApp is one entry of GET /api/v1/apps.
 type listedApp struct {
 	Name string `json:"name"`
@@ -58,6 +63,7 @@ func (c *Client) ForgetApps(ctx context.Context, names []string) ([]string, erro
 	}
 	var forget, removed, expire []string
 	for n, owned := range scripts {
+		owned = owned || slices.Contains(builtinNames, n)
 		known := false
 		for _, a := range apps {
 			if a.Name != n {

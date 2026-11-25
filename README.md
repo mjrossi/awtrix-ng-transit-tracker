@@ -36,9 +36,9 @@ screen instead.
 
 ## Getting started
 
-You need an AWTRIX NG clock on your network and Docker on a machine that
-stays on, such as a NAS. Images for `linux/amd64` and `linux/arm64` are
-published to `ghcr.io/mjrossi/urbanist-timetable`:
+You need a TC002 with AWTRIX NG 1.2.2 or later on your network, and Docker
+on a machine that stays on, such as a NAS. Images for `linux/amd64` and
+`linux/arm64` are published to `ghcr.io/mjrossi/urbanist-timetable`:
 
 | Tag | Contents |
 |---|---|

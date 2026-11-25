@@ -192,6 +192,24 @@ func TestForgetAppsScriptingOff(t *testing.T) {
 	}
 }
 
+// The clock lists a pushed app named like a built-in one only as pushed, so
+// the list does not show that the place belongs to the built-in.
+func TestForgetAppsKeepsBuiltinPlaces(t *testing.T) {
+	c := &fakeClock{scripting: true, apps: `[
+	 {"name":"Time","enabled":false,"slot":0,"present":true,"origin":"pushed"},
+	 {"name":"Status","enabled":true,"slot":1,"present":true,"origin":"builtin"}]`}
+	removed, err := c.client(t).ForgetApps(t.Context(), []string{"Time"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff([]string{"PUT /api/v1/apps/pushed/Time"}, c.writes); diff != "" {
+		t.Errorf("writes (-want +got):\n%s", diff)
+	}
+	if len(removed) != 0 {
+		t.Errorf("removed = %v, want none", removed)
+	}
+}
+
 // The list itself also shows ownership, whatever the script lookup says.
 func TestForgetAppsTrustsListOverLookup(t *testing.T) {
 	for _, list := range []string{apps, appsScriptingOff} {
