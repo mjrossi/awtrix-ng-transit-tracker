@@ -20,6 +20,11 @@ type Query struct {
 	Window time.Duration
 }
 
+// Contains reports whether t is in [Now, Now+Window].
+func (q Query) Contains(t time.Time) bool {
+	return !t.Before(q.Now) && !t.After(q.Now.Add(q.Window))
+}
+
 // Provider returns departures from one data source.
 //
 // Implementations must return departures for q.StopID only, sorted by

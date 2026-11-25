@@ -8,6 +8,7 @@
 package carrismetropolitana
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -68,18 +69,11 @@ func Register(r *transit.Registry) {
 
 // New returns a provider. A nil client gets a default with a timeout.
 func New(cfg Config, client *http.Client) (*Provider, error) {
-	base := cfg.BaseURL
-	if base == "" {
-		base = DefaultBaseURL
-	}
-	u, err := upstream.HTTPURL("base_url", base)
+	u, err := upstream.HTTPURL("base_url", cmp.Or(cfg.BaseURL, DefaultBaseURL))
 	if err != nil {
 		return nil, err
 	}
-	if client == nil {
-		client = &http.Client{Timeout: 20 * time.Second}
-	}
-	p := &Provider{base: u, http: client}
+	p := &Provider{base: u, http: upstream.ClientOrDefault(client)}
 	p.lines = upstream.NewCache(upstream.Policy{TTL: linesTTL, Retry: linesRetry}, p.fetchLines)
 	return p, nil
 }
@@ -113,7 +107,6 @@ func (p *Provider) Departures(ctx context.Context, q transit.Query) ([]transit.D
 		return nil, err
 	}
 
-	end := q.Now.Add(q.Window)
 	out := make([]transit.Departure, 0, len(arrivals))
 	for _, a := range arrivals {
 		// An observed arrival means the bus has already been at the stop.
@@ -131,7 +124,7 @@ func (p *Provider) Departures(ctx context.Context, q transit.Query) ([]transit.D
 			t := time.Unix(*a.EstimatedUnix, 0).In(q.Now.Location())
 			d.Predicted = &t
 		}
-		if t := d.Time(); t.Before(q.Now) || t.After(end) {
+		if !q.Contains(d.Time()) {
 			continue
 		}
 		out = append(out, d)
@@ -164,11 +157,7 @@ func (p *Provider) fetchLines(ctx context.Context) (map[string]transit.Line, err
 	}
 	lines := make(map[string]transit.Line, len(wire))
 	for _, l := range wire {
-		short := l.ShortName
-		if short == "" {
-			short = l.ID
-		}
-		lines[l.ID] = transit.Line{ID: l.ID, ShortName: short, Color: transit.NormalizeColor(l.Color), Mode: transit.ModeBus}
+		lines[l.ID] = transit.Line{ID: l.ID, ShortName: cmp.Or(l.ShortName, l.ID), Color: transit.NormalizeColor(l.Color), Mode: transit.ModeBus}
 	}
 	return lines, nil
 }
@@ -230,7 +219,7 @@ func (p *Provider) get(ctx context.Context, path string, v any) error {
 		return err
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "urbanist-timetable")
+	req.Header.Set("User-Agent", upstream.UserAgent)
 	resp, err := p.http.Do(req)
 	if err != nil {
 		return fmt.Errorf("%s: %w", Name, err)
@@ -238,10 +227,10 @@ func (p *Provider) get(ctx context.Context, path string, v any) error {
 	defer resp.Body.Close()
 	switch {
 	case resp.StatusCode == http.StatusNotFound:
-		_, _ = io.Copy(io.Discard, resp.Body)
+		upstream.Drain(resp.Body)
 		return errNotFound
 	case resp.StatusCode != http.StatusOK:
-		_, _ = io.Copy(io.Discard, resp.Body)
+		upstream.Drain(resp.Body)
 		return fmt.Errorf("%s: GET %s: %s", Name, path, resp.Status)
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, maxBody)).Decode(v); err != nil {

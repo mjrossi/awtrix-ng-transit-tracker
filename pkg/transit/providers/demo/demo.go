@@ -5,6 +5,7 @@
 package demo
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -87,12 +88,8 @@ func New(cfg Config) (*Provider, error) {
 		for _, s := range lc.Stops {
 			stops[s] = true
 		}
-		short := lc.ShortName
-		if short == "" {
-			short = lc.ID
-		}
 		p.lines = append(p.lines, line{
-			Line:     transit.Line{ID: lc.ID, ShortName: short, Color: transit.NormalizeColor(lc.Color), Mode: mode},
+			Line:     transit.Line{ID: lc.ID, ShortName: cmp.Or(lc.ShortName, lc.ID), Color: transit.NormalizeColor(lc.Color), Mode: mode},
 			headsign: lc.Headsign,
 			headway:  headway,
 			offset:   offset,
@@ -108,32 +105,32 @@ func (p *Provider) Departures(ctx context.Context, q transit.Query) ([]transit.D
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	end := q.Now.Add(q.Window)
 	var out []transit.Departure
 	for _, l := range p.lines {
 		if len(l.stops) > 0 && !l.stops[q.StopID] {
 			continue
 		}
-		out = append(out, l.departures(q.StopID, q.Now, end)...)
+		out = append(out, l.departures(q)...)
 	}
 	transit.SortByTime(out)
 	return out, nil
 }
 
 // departures lists scheduled times on the grid offset + k*headway (counted
-// from the Unix epoch, so every instance agrees) that fall in [from, to].
-func (l line) departures(stopID string, from, to time.Time) []transit.Departure {
+// from the Unix epoch, so every instance agrees) that fall in q's window.
+func (l line) departures(q transit.Query) []transit.Departure {
+	end := q.Now.Add(q.Window)
 	var out []transit.Departure
 	epoch := time.Unix(0, 0)
 	// Start one headway early so a late-running predicted departure whose
 	// schedule is already past can still appear.
-	first := int64((from.Sub(epoch) - l.offset - l.headway) / l.headway)
+	first := int64((q.Now.Sub(epoch) - l.offset - l.headway) / l.headway)
 	for k := first; ; k++ {
-		sched := epoch.Add(l.offset + l.headway*time.Duration(k)).In(from.Location())
+		sched := epoch.Add(l.offset + l.headway*time.Duration(k)).In(q.Now.Location())
 		d := transit.Departure{
 			Line:      l.Line,
 			Headsign:  l.headsign,
-			StopID:    stopID,
+			StopID:    q.StopID,
 			Scheduled: sched,
 			Status:    transit.StatusScheduled,
 		}
@@ -141,11 +138,10 @@ func (l line) departures(stopID string, from, to time.Time) []transit.Departure 
 			pred := sched.Add(time.Minute)
 			d.Predicted = &pred
 		}
-		t := d.Time()
-		if t.After(to) && sched.After(to) {
+		if d.Time().After(end) && sched.After(end) {
 			break
 		}
-		if !t.Before(from) && !t.After(to) {
+		if q.Contains(d.Time()) {
 			out = append(out, d)
 		}
 	}

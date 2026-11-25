@@ -169,7 +169,11 @@ func TC002(rows []transit.Row, now time.Time, opts Options) *awtrix.Layout {
 // departs next. Rows without a headsign come last, so a trip whose
 // destination is unknown does not take that place.
 func Visible(rows []transit.Row, opts Options) []transit.Row {
-	idx := visible(rows, opts.WithDefaults())
+	return pick(rows, visible(rows, opts.WithDefaults()))
+}
+
+// pick returns the rows at the indexes idx.
+func pick(rows []transit.Row, idx []int) []transit.Row {
 	out := make([]transit.Row, len(idx))
 	for i, j := range idx {
 		out[i] = rows[j]
@@ -238,11 +242,7 @@ func Views(rows []transit.Row, now time.Time, opts Options) []RowView {
 		out[i] = RowView{Row: r, Name: opts.Label(r.Headsign)}
 	}
 	idx := visible(rows, opts)
-	shown := make([]transit.Row, len(idx))
-	for i, j := range idx {
-		shown[i] = rows[j]
-	}
-	shown = opts.prepare(shown)
+	shown := opts.prepare(pick(rows, idx))
 	for i, j := range idx {
 		v := &out[j]
 		v.Shown = true

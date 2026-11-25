@@ -21,9 +21,9 @@ version may break configuration.
 ### Changed
 
 - For programs that import `pkg/transit`: `transit.Metered`,
-  `transit.Quota` and `transit.ModeForRouteType` are new. `Query.Limit` and
-  `Stop.Modes`, which the service never used, are removed, and
-  `SortAndLimit` is now `SortByTime`. Providers return
+  `transit.Quota`, `transit.ModeForRouteType` and `Query.Contains` are new.
+  `Query.Limit` and `Stop.Modes`, which the service never used, are removed,
+  and `SortAndLimit` is now `SortByTime`. Providers return
   `transit.ErrUnknownStop` instead of an error of their own.
 
 ### Fixed
@@ -38,6 +38,8 @@ version may break configuration.
   the `departure` layout.
 - Errors about a `base_url` or `token_url` that is not http(s) no longer
   print it, since it can hold credentials.
+- `stops search` lists `metrolisboa` stations of the same name in a stable
+  order.
 - The notes for `sf-bart` name the labels table correctly,
   `[boards.clock.labels]`.
 

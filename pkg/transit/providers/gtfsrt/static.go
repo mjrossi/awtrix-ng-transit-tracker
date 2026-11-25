@@ -2,6 +2,7 @@ package gtfsrt
 
 import (
 	"archive/zip"
+	"cmp"
 	"encoding/csv"
 	"errors"
 	"fmt"
@@ -44,12 +45,8 @@ func parseStatic(r io.ReaderAt, size int64) (*static, error) {
 	in := interner{}
 
 	err = readTable(zr, "routes.txt", func(r row) {
-		id := r.get("route_id")
-		short := r.get("route_short_name")
-		if short == "" {
-			short = r.get("route_long_name")
-		}
-		id = in.get(id)
+		id := in.get(r.get("route_id"))
+		short := cmp.Or(r.get("route_short_name"), r.get("route_long_name"))
 		s.routes[id] = transit.Line{ID: id, ShortName: strings.Clone(short), Color: transit.NormalizeColor(r.get("route_color")), Mode: modeFor(r.get("route_type"))}
 	})
 	if err != nil {

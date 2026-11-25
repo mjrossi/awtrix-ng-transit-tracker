@@ -117,7 +117,8 @@ func (c *Client) Host() string { return strings.ToLower(c.base.Host) }
 // behind a proxy.
 func (c *Client) ID() string { return c.Host() + strings.TrimRight(c.base.Path, "/") }
 
-// maxReply bounds a decoded answer; a full app list is a few kilobytes.
+// maxReply bounds what is read of an answer; a full app list is a few
+// kilobytes.
 const maxReply = 1 << 20
 
 // do sends a request and decodes the answer into out, unless it is nil.
@@ -149,7 +150,7 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte, out a
 		return nil
 	}
 	if resp.StatusCode < 300 {
-		_, _ = io.Copy(io.Discard, resp.Body)
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxReply))
 		return nil
 	}
 	return decodeError(resp)

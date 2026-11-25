@@ -114,12 +114,8 @@ func New(cfg Config, client *http.Client) (*Provider, error) {
 	if cfg.ClientID == "" || cfg.ClientSecret == "" {
 		return nil, errors.New("client_id and client_secret are required; see https://api.metrolisboa.pt/store/")
 	}
-	if cfg.BaseURL == "" {
-		cfg.BaseURL = DefaultBaseURL
-	}
-	if cfg.TokenURL == "" {
-		cfg.TokenURL = DefaultTokenURL
-	}
+	cfg.BaseURL = cmp.Or(cfg.BaseURL, DefaultBaseURL)
+	cfg.TokenURL = cmp.Or(cfg.TokenURL, DefaultTokenURL)
 	base, err := upstream.HTTPURL("base_url", cfg.BaseURL)
 	if err != nil {
 		return nil, err
@@ -131,15 +127,12 @@ func New(cfg Config, client *http.Client) (*Provider, error) {
 	if err != nil {
 		return nil, err
 	}
-	if client == nil {
-		client = &http.Client{Timeout: 20 * time.Second}
-	}
 	p := &Provider{
 		base:        base,
 		tokenURL:    cfg.TokenURL,
 		id:          cfg.ClientID,
 		secret:      cfg.ClientSecret,
-		http:        upstream.KeepHeadersOnHost(client, "Authorization"),
+		http:        upstream.KeepHeadersOnHost(upstream.ClientOrDefault(client), "Authorization"),
 		lisbon:      lisbon,
 		clock:       time.Now,
 		lineEntries: map[string]*upstream.Cache[[]entry]{},
@@ -225,14 +218,8 @@ func (p *Provider) Departures(ctx context.Context, q transit.Query) ([]transit.D
 	// headsigns fall back to destination codes.
 	dests, _ := p.dests.Get(ctx, q.Now)
 
-	end := q.Now.Add(q.Window)
-	// Terminals report the same train on more than one platform entry, so
-	// departures are keyed by train and destination. A train ID alone is not
-	// enough: trains turn around and pass again in the other direction.
-	type trainKey struct{ line, train, dest string }
-	seen := map[trainKey]int{}
+	found := trainSet{index: map[trainKey]int{}}
 	var (
-		out      []transit.Departure
 		problems []error
 		loaded   int
 	)
@@ -255,36 +242,50 @@ func (p *Provider) Departures(ctx context.Context, q transit.Query) ([]transit.D
 				continue
 			}
 			headsign := cmp.Or(dests[e.Destino], e.Destino)
-			for _, tr := range p.trains(e, q.Now, end) {
-				t := tr.at
-				d := transit.Departure{
+			for _, tr := range p.trains(e, q) {
+				found.add(trainKey{lineName, tr.id, e.Destino}, transit.Departure{
 					Line:      line,
 					Headsign:  headsign,
 					StopID:    q.StopID,
-					Scheduled: t,
-					Predicted: &t,
+					Scheduled: tr.at,
+					Predicted: &tr.at,
 					Status:    transit.StatusScheduled,
-				}
-				k := trainKey{lineName, tr.id, e.Destino}
-				if i, dup := seen[k]; dup {
-					if t.Before(out[i].Time()) {
-						out[i] = d
-					}
-					continue
-				}
-				seen[k] = len(out)
-				out = append(out, d)
+				})
 			}
 		}
 	}
 	if loaded == 0 && len(problems) > 0 {
 		return nil, errors.Join(problems...)
 	}
-	transit.SortByTime(out)
+	transit.SortByTime(found.deps)
 	if len(problems) > 0 {
-		return out, &transit.PartialError{Err: errors.Join(problems...)}
+		return found.deps, &transit.PartialError{Err: errors.Join(problems...)}
 	}
-	return out, nil
+	return found.deps, nil
+}
+
+// trainKey identifies a train at a station. A train ID alone is not enough:
+// trains turn around and pass again in the other direction.
+type trainKey struct{ line, train, dest string }
+
+// trainSet holds one departure per train, since terminals report the same
+// train on more than one platform entry.
+type trainSet struct {
+	deps []transit.Departure
+	// index locates each train in deps.
+	index map[trainKey]int
+}
+
+// add adds d, or keeps the earlier of the two if k is already known.
+func (s *trainSet) add(k trainKey, d transit.Departure) {
+	i, dup := s.index[k]
+	switch {
+	case !dup:
+		s.index[k] = len(s.deps)
+		s.deps = append(s.deps, d)
+	case d.Time().Before(s.deps[i].Time()):
+		s.deps[i] = d
+	}
 }
 
 type train struct {
@@ -292,11 +293,11 @@ type train struct {
 	at time.Time
 }
 
-// trains lists the trains in e that take passengers and arrive in
-// [now, end], or none when e's timestamp is too far from now.
-func (p *Provider) trains(e entry, now, end time.Time) []train {
+// trains lists the trains in e that take passengers and arrive in q's
+// window, or none when e's timestamp is too far from q.Now.
+func (p *Provider) trains(e entry, q transit.Query) []train {
 	stamp, err := time.ParseInLocation("20060102150405", e.Hora, p.lisbon)
-	if err != nil || now.Sub(stamp).Abs() > maxAge {
+	if err != nil || q.Now.Sub(stamp).Abs() > maxAge {
 		return nil
 	}
 	all := []struct {
@@ -310,11 +311,10 @@ func (p *Provider) trains(e entry, now, end time.Time) []train {
 		if tr.id == "" || !tr.secs.ok || (i == 0 && e.SairServico != 0) {
 			continue
 		}
-		t := stamp.Add(time.Duration(tr.secs.n) * time.Second).In(now.Location())
-		if t.Before(now) || t.After(end) {
-			continue
+		t := stamp.Add(time.Duration(tr.secs.n) * time.Second).In(q.Now.Location())
+		if q.Contains(t) {
+			out = append(out, train{id: tr.id, at: t})
 		}
-		out = append(out, train{id: tr.id, at: t})
 	}
 	return out
 }
@@ -389,60 +389,85 @@ func (p *Provider) SearchStops(ctx context.Context, search string) ([]transit.St
 			out = append(out, transit.Stop{ID: id, Name: s.name})
 		}
 	}
-	slices.SortFunc(out, func(a, b transit.Stop) int { return strings.Compare(a.Name, b.Name) })
+	slices.SortFunc(out, func(a, b transit.Stop) int {
+		return cmp.Or(strings.Compare(a.Name, b.Name), strings.Compare(a.ID, b.ID))
+	})
 	return out, nil
 }
 
-// get calls an API path and decodes its resposta into v. The API reports
-// errors in the body ("codigo") with HTTP 200, so both are checked.
+// get calls an API path and decodes its resposta into v.
 func (p *Provider) get(ctx context.Context, path string, v any) error {
-	for attempt := 0; ; attempt++ {
-		token, err := p.accessToken(ctx)
-		if err != nil {
-			return err
-		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.base.JoinPath(path).String(), nil)
-		if err != nil {
-			return err
-		}
-		req.Header.Set("Authorization", "Bearer "+token)
-		req.Header.Set("Accept", "application/json")
-		resp, err := p.http.Do(req)
-		if err != nil {
-			return fmt.Errorf("%s: %w", Name, err)
-		}
-		body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
-		resp.Body.Close()
-		if err != nil {
-			return fmt.Errorf("%s: read %s: %w", Name, path, err)
-		}
-		if resp.StatusCode == http.StatusUnauthorized && attempt == 0 {
-			// The token was revoked or expired early; get a new one once.
-			p.mu.Lock()
-			p.token = ""
-			p.mu.Unlock()
-			continue
-		}
-		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("%s: GET %s: %s", Name, path, resp.Status)
-		}
-		var wire struct {
-			Codigo   string          `json:"codigo"`
-			Resposta json.RawMessage `json:"resposta"`
-		}
-		if err := json.Unmarshal(body, &wire); err != nil {
-			return fmt.Errorf("%s: decode %s: %w", Name, path, err)
-		}
-		if wire.Codigo != "200" {
-			var msg string
-			_ = json.Unmarshal(wire.Resposta, &msg)
-			return fmt.Errorf("%s: GET %s: codigo %s: %s", Name, path, wire.Codigo, msg)
-		}
-		if err := json.Unmarshal(wire.Resposta, v); err != nil {
-			return fmt.Errorf("%s: decode %s: %w", Name, path, err)
-		}
-		return nil
+	body, err := p.request(ctx, path)
+	if se, ok := errors.AsType[*statusError](err); ok && se.code == http.StatusUnauthorized {
+		// The token was revoked or expired early; get a new one once.
+		p.mu.Lock()
+		p.token = ""
+		p.mu.Unlock()
+		body, err = p.request(ctx, path)
 	}
+	if err != nil {
+		return err
+	}
+	return decodeReply(path, body, v)
+}
+
+// statusError is an HTTP status other than 200.
+type statusError struct {
+	path   string
+	code   int
+	status string
+}
+
+func (e *statusError) Error() string { return fmt.Sprintf("%s: GET %s: %s", Name, e.path, e.status) }
+
+// request returns the body of an API path.
+func (p *Provider) request(ctx context.Context, path string) ([]byte, error) {
+	token, err := p.accessToken(ctx)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.base.JoinPath(path).String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", upstream.UserAgent)
+	resp, err := p.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", Name, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		upstream.Drain(resp.Body)
+		return nil, &statusError{path: path, code: resp.StatusCode, status: resp.Status}
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
+	if err != nil {
+		return nil, fmt.Errorf("%s: read %s: %w", Name, path, err)
+	}
+	return body, nil
+}
+
+// decodeReply decodes a reply's resposta into v. The API reports errors in
+// the body ("codigo") with HTTP 200.
+func decodeReply(path string, body []byte, v any) error {
+	var wire struct {
+		Codigo   string          `json:"codigo"`
+		Resposta json.RawMessage `json:"resposta"`
+	}
+	if err := json.Unmarshal(body, &wire); err != nil {
+		return fmt.Errorf("%s: decode %s: %w", Name, path, err)
+	}
+	if wire.Codigo != "200" {
+		var msg string
+		_ = json.Unmarshal(wire.Resposta, &msg)
+		return fmt.Errorf("%s: GET %s: codigo %s: %s", Name, path, wire.Codigo, msg)
+	}
+	if err := json.Unmarshal(wire.Resposta, v); err != nil {
+		return fmt.Errorf("%s: decode %s: %w", Name, path, err)
+	}
+	return nil
 }
 
 // accessToken returns a cached client-credentials token, fetching a new
@@ -464,13 +489,14 @@ func (p *Provider) accessToken(ctx context.Context) (string, error) {
 	}
 	req.SetBasicAuth(p.id, p.secret)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("User-Agent", upstream.UserAgent)
 	resp, err := p.http.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("%s: token: %w", Name, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		_, _ = io.Copy(io.Discard, resp.Body)
+		upstream.Drain(resp.Body)
 		return "", fmt.Errorf("%s: token: %s (check client_id and client_secret)", Name, resp.Status)
 	}
 	var tok struct {

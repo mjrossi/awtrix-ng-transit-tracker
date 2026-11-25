@@ -1,5 +1,5 @@
 // Package upstream holds what providers share for reading upstream APIs: a
-// cache for loaded data, URL validation and redirect handling.
+// cache for loaded data, URL validation, and HTTP client and redirect handling.
 package upstream
 
 import (

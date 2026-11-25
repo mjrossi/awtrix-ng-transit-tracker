@@ -1,7 +1,7 @@
 package upstream
 
 import (
-	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 )
@@ -28,7 +28,7 @@ func KeepHeadersOnHost(client *http.Client, headers ...string) *http.Client {
 			return check(req, via)
 		}
 		if len(via) >= maxRedirects {
-			return errors.New("stopped after 10 redirects")
+			return fmt.Errorf("stopped after %d redirects", maxRedirects)
 		}
 		return nil
 	}

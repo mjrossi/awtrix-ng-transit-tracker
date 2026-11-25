@@ -2,7 +2,11 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,8 +21,24 @@ import (
 
 func noEnv(string) (string, bool) { return "", false }
 
-// validateConfig runs `config validate` on src and returns what it prints.
-func validateConfig(t *testing.T, src string) (string, error) {
+// demoConfig is a whole configuration that needs no network to preview.
+const demoConfig = `[clock]
+url = "http://clock.local"
+[providers.demo]
+[[providers.demo.lines]]
+id = "azul"
+headsign = "Reboleira"
+headway = "6m"
+[[boards]]
+name = "metro"
+[[boards.stops]]
+provider = "demo"
+stop = "s1"
+`
+
+// runCLI runs the command line args, with src as its configuration file, and
+// returns what it prints.
+func runCLI(t *testing.T, src string, args ...string) (string, error) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "config.toml")
 	if err := os.WriteFile(path, []byte(src), 0o600); err != nil {
@@ -27,8 +47,91 @@ func validateConfig(t *testing.T, src string) (string, error) {
 	cmd := newRootCommand()
 	var out bytes.Buffer
 	cmd.Writer = &out
-	err := cmd.Run(t.Context(), []string{"urbanist-timetable", "--config", path, "config", "validate"})
+	err := cmd.Run(t.Context(), append([]string{"urbanist-timetable", "--config", path}, args...))
 	return out.String(), err
+}
+
+// validateConfig runs `config validate` on src and returns what it prints.
+func validateConfig(t *testing.T, src string) (string, error) {
+	t.Helper()
+	return runCLI(t, src, "config", "validate")
+}
+
+func TestSystemsCommands(t *testing.T) {
+	tests := map[string]struct {
+		args []string
+		want []string
+	}{
+		"list": {[]string{"systems"}, []string{"sf-bart", "Show how to configure one"}},
+		"show": {[]string{"systems", "show", "sf-bart"}, []string{"[providers.sf-bart]\nsystem = \"sf-bart\"\n", "# Example stop: "}},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			out, err := runCLI(t, demoConfig, tt.args...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, want := range tt.want {
+				if !strings.Contains(out, want) {
+					t.Errorf("output %q, want %q", out, want)
+				}
+			}
+		})
+	}
+	if _, err := runCLI(t, demoConfig, "systems", "show", "nowhere"); err == nil || !strings.Contains(err.Error(), `unknown system "nowhere"`) {
+		t.Errorf("err = %v, want unknown system", err)
+	}
+}
+
+func TestStopsSearchPrintsMatches(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `[{"id":"010001","long_name":"Cais do Sodré"},{"id":"010002","long_name":"Rossio"}]`)
+	}))
+	defer srv.Close()
+	src := demoConfig + fmt.Sprintf("[providers.carrismetropolitana]\nbase_url = %q\n", srv.URL)
+	tests := map[string]struct{ search, want string }{
+		"match":    {"cais", "010001     Cais do Sodré\n"},
+		"no match": {"nowhere", "no stops found\n"},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			out, err := runCLI(t, src, "stops", "search", "carrismetropolitana", tt.search)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if out != tt.want {
+				t.Errorf("output %q, want %q", out, tt.want)
+			}
+		})
+	}
+	if _, err := runCLI(t, src, "stops", "search", "demo", "x"); err == nil || !strings.Contains(err.Error(), "cannot search stops") {
+		t.Errorf("err = %v, want the provider to lack search", err)
+	}
+}
+
+func TestPreviewPrintsRowsAndPayload(t *testing.T) {
+	out, err := runCLI(t, demoConfig, "preview")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"# metro (departure layout)", "Reboleira", `"layout": {`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output %q, want %q", out, want)
+		}
+	}
+
+	out, err = runCLI(t, demoConfig, "preview", "--json", "--board", "metro")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var app map[string]any
+	if err := json.Unmarshal([]byte(out), &app); err != nil {
+		t.Errorf("--json printed more than a payload: %v", err)
+	}
+
+	if _, err := runCLI(t, demoConfig, "preview", "--board", "bus"); err == nil || !strings.Contains(err.Error(), `no board named "bus"`) {
+		t.Errorf("err = %v, want no such board", err)
+	}
 }
 
 // A bare host must identify its clock too.

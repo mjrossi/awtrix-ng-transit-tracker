@@ -453,6 +453,43 @@ func TestSearchStops(t *testing.T) {
 	}
 }
 
+func TestSearchStopsOrdersEqualNamesByID(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /token", func(w http.ResponseWriter, r *http.Request) {
+		if r.UserAgent() != "urbanist-timetable" {
+			t.Errorf("token request: User-Agent = %q", r.UserAgent())
+		}
+		fmt.Fprint(w, `{"access_token":"t","expires_in":3600}`)
+	})
+	mux.HandleFunc("GET /infoEstacao/todos", func(w http.ResponseWriter, r *http.Request) {
+		if r.UserAgent() != "urbanist-timetable" {
+			t.Errorf("API request: User-Agent = %q", r.UserAgent())
+		}
+		var rows []string
+		for i := range 10 {
+			rows = append(rows, fmt.Sprintf(`{"stop_id":"S%d","stop_name":"Rato","linha":"[Amarela]"}`, i))
+		}
+		fmt.Fprintf(w, `{"codigo":"200","resposta":[%s]}`, strings.Join(rows, ","))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	p, err := metrolisboa.New(metrolisboa.Config{ClientID: "key", ClientSecret: "secret", BaseURL: srv.URL, TokenURL: srv.URL + "/token"}, srv.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := p.SearchStops(t.Context(), "rato")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var want []transit.Stop
+	for i := range 10 {
+		want = append(want, transit.Stop{ID: fmt.Sprintf("S%d", i), Name: "Rato"})
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("stops (-want +got):\n%s", diff)
+	}
+}
+
 func TestNewRequiresCredentials(t *testing.T) {
 	if _, err := metrolisboa.New(metrolisboa.Config{}, nil); err == nil {
 		t.Error("New accepted empty credentials")
