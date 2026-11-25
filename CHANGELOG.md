@@ -9,6 +9,8 @@ version may break configuration.
 
 ### Changed
 
+- For programs that import `pkg/`: the module needs Go 1.26, down from
+  1.27.3.
 - For programs that import `pkg/`: `Registry`, `Options`, `Factory`,
   `RegisterConfig` and `ErrUnknownProvider` move from `transit` to the new
   `registry` package; `NewRegistry` is `registry.New`, and `Registry.New`

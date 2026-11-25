@@ -35,6 +35,19 @@ jobs:
       - name: Validate example config
         run: go run ./cmd/urbanist-timetable --config config.example.toml config validate
 
+  # Importers may use the oldest Go that go.mod allows, not mise's version.
+  oldest-go:
+    runs-on: ubuntu-latest
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - run: go build ./...
+      - run: go test ./...
+
   docker:
     runs-on: ubuntu-latest
     steps:
