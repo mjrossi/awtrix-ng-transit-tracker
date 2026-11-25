@@ -139,7 +139,7 @@ func New(cfg Config, client *http.Client) (*Provider, error) {
 		tokenURL:    cfg.TokenURL,
 		id:          cfg.ClientID,
 		secret:      cfg.ClientSecret,
-		http:        client,
+		http:        upstream.KeepHeadersOnHost(client, "Authorization"),
 		lisbon:      lisbon,
 		clock:       time.Now,
 		lineEntries: map[string]*upstream.Cache[[]entry]{},

@@ -10,9 +10,10 @@ import (
 const maxRedirects = 10
 
 // KeepHeadersOnHost returns a copy of client that sends the named headers,
-// such as one holding an API key, only to the host first asked: net/http drops
-// Authorization on a redirect to another host, but not custom headers. Such a
-// redirect is still followed, without Referer, whose URL can hold a key too.
+// such as one holding an API key, only to the host first asked, and never over
+// http after https. net/http drops only Authorization and cookies, and not for
+// a subdomain or a change of scheme. The redirect is still followed, without
+// Referer, whose URL can hold a key too.
 func KeepHeadersOnHost(client *http.Client, headers ...string) *http.Client {
 	c := *client
 	check := client.CheckRedirect

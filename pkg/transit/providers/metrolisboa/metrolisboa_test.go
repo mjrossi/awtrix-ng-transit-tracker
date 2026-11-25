@@ -472,6 +472,59 @@ func TestNewRejectsBadURL(t *testing.T) {
 	}
 }
 
+type roundTripper func(*http.Request) (*http.Response, error)
+
+func (f roundTripper) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// net/http drops Authorization only on a redirect to an unrelated domain.
+func TestRedirectsDoNotCarryCredentials(t *testing.T) {
+	tests := map[string]struct {
+		redirect string // the request path redirected
+		to       string
+	}{
+		"token over http":            {"/data/infoEstacao/todos", "http://api.example/elsewhere"},
+		"token to a subdomain":       {"/data/infoEstacao/todos", "https://x.api.example/elsewhere"},
+		"secret over http":           {"/token", "http://api.example/elsewhere"},
+		"secret to another hostname": {"/token", "https://x.api.example/elsewhere"},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			var followed, leaked bool
+			client := &http.Client{Transport: roundTripper(func(r *http.Request) (*http.Response, error) {
+				w := httptest.NewRecorder()
+				switch r.URL.Path {
+				case tt.redirect:
+					w.Header().Set("Location", tt.to)
+					// 307 repeats a POST as a POST.
+					w.WriteHeader(http.StatusTemporaryRedirect)
+				case "/elsewhere":
+					followed = true
+					leaked = leaked || r.Header.Get("Authorization") != ""
+					w.WriteHeader(http.StatusUnauthorized)
+				case "/token":
+					_, _ = w.WriteString(`{"access_token":"token-1","expires_in":3600}`)
+				}
+				resp := w.Result()
+				resp.Request = r
+				return resp, nil
+			})}
+			p, err := metrolisboa.New(metrolisboa.Config{
+				ClientID: "key", ClientSecret: "secret",
+				BaseURL: "https://api.example/data", TokenURL: "https://api.example/token",
+			}, client)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := p.Departures(t.Context(), transit.Query{StopID: "BC", Now: recorded, Window: time.Hour}); err == nil {
+				t.Error("no error")
+			}
+			if !followed || leaked {
+				t.Errorf("redirect followed = %v, credentials sent = %v; want it followed without them", followed, leaked)
+			}
+		})
+	}
+}
+
 // A failed destination list is retried soon rather than after a day, so
 // headsigns are not left as destination codes.
 func TestRetriesFailedDestinations(t *testing.T) {

@@ -30,6 +30,8 @@ version may break configuration.
 
 - `gtfsrt` no longer sends its `headers`, or the address it was redirected
   from, when a feed redirects to another host. Either could hold an API key.
+- `metrolisboa` no longer sends its credentials when redirected to a
+  subdomain or from https to http.
 - `gtfsrt` and `metrolisboa` boards with `poll_interval = "15s"` read fresh
   data on every poll, instead of often repeating the previous poll's.
 - A trip without a destination no longer takes the place of a named one on
