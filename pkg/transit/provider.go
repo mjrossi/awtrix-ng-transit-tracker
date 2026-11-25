@@ -18,33 +18,35 @@ type Query struct {
 	Now time.Time
 	// Window is how far ahead of Now to look.
 	Window time.Duration
-	// Limit caps the number of departures returned. Zero means no limit.
-	Limit int
+}
+
+// Contains reports whether t is in [Now, Now+Window].
+func (q Query) Contains(t time.Time) bool {
+	return !t.Before(q.Now) && !t.After(q.Now.Add(q.Window))
 }
 
 // Provider returns departures from one data source.
 //
 // Implementations must return departures for q.StopID only, sorted by
-// Departure.Time ascending, with every Time in [q.Now, q.Now+q.Window], at
-// most q.Limit of them, and must return promptly with ctx.Err() once ctx is
-// done. Implementations must be safe for concurrent use, because boards
-// that name the same provider share one instance and poll it from their own
-// goroutines. The transittest package checks these rules. A provider that can
-// still answer despite a problem returns its departures with a
-// *PartialError.
+// Departure.Time ascending, with every Time in [q.Now, q.Now+q.Window], and
+// must return promptly with ctx.Err() once ctx is done. Implementations must
+// be safe for concurrent use, because boards that name the same provider
+// share one instance and poll it from their own goroutines. The transittest
+// package checks these rules. A provider that can still answer despite a
+// problem returns its departures with a *PartialError, and one that can tell
+// a stop does not exist returns ErrUnknownStop.
 type Provider interface {
 	Departures(ctx context.Context, q Query) ([]Departure, error)
 }
 
-// SortAndLimit sorts deps by Departure.Time, keeping ties in input order,
-// and returns at most limit of them (zero means no limit), as the Provider
-// contract requires. It sorts deps in place.
-func SortAndLimit(deps []Departure, limit int) []Departure {
+// ErrUnknownStop is returned, wrapped, for a stop ID the source does not
+// know.
+var ErrUnknownStop = errors.New("unknown stop")
+
+// SortByTime sorts deps in place by Departure.Time, keeping ties in input
+// order, as the Provider contract requires.
+func SortByTime(deps []Departure) {
 	slices.SortStableFunc(deps, func(a, b Departure) int { return a.Time().Compare(b.Time()) })
-	if limit > 0 && len(deps) > limit {
-		return deps[:limit]
-	}
-	return deps
 }
 
 // PartialError reports a problem that did not stop a provider from
@@ -62,8 +64,6 @@ func (e *PartialError) Unwrap() error { return e.Err }
 type Stop struct {
 	ID   string
 	Name string
-	// Modes served at the stop, if the provider knows them.
-	Modes []Mode
 }
 
 // StopSearcher is implemented by providers that can look up stops by name.
@@ -71,6 +71,27 @@ type Stop struct {
 // supplies stop IDs.
 type StopSearcher interface {
 	SearchStops(ctx context.Context, search string) ([]Stop, error)
+}
+
+// Metered is implemented by providers whose upstream API has a monthly
+// request quota, so the configuration can be checked against it.
+type Metered interface {
+	Quota() Quota
+}
+
+// Quota describes a provider's monthly request quota.
+type Quota struct {
+	// Account identifies what the quota belongs to, such as an API key,
+	// without revealing it. Providers with the same account share one quota.
+	Account string
+	// Limit is the configured number of upstream requests allowed a month,
+	// or zero if the configuration does not set it.
+	Limit int
+	// DefaultLimit applies when no provider with the account sets Limit.
+	DefaultLimit int
+	// RefreshInterval is the shortest time between two successful upstream
+	// requests for one stop.
+	RefreshInterval time.Duration
 }
 
 // Options decodes a provider's configuration block into v.

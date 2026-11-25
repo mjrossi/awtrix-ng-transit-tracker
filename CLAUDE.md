@@ -27,7 +27,8 @@ Part of the Urbanist family with *The Urbanist Lexicon* (mjrossi.com) and
 - **Everything past a provider sees only `transit.Departure`.** The
   scheduler, renderer and clock client never import a provider package.
 - **Providers must pass `transittest.Run`** against recorded responses in
-  their `testdata/`. Tests never call live APIs.
+  their `testdata/`, or hand-written ones where the source's terms restrict
+  redistribution. Tests never call live APIs.
 - **Providers are safe for concurrent use.** Boards naming the same
   provider block share one instance across goroutines.
 - **Filtering happens in the core** (`transit.Filter`), not in providers.

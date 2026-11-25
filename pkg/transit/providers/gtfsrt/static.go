@@ -2,10 +2,12 @@ package gtfsrt
 
 import (
 	"archive/zip"
+	"cmp"
 	"encoding/csv"
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/mjrossi/urbanist-timetable/pkg/transit"
@@ -43,12 +45,8 @@ func parseStatic(r io.ReaderAt, size int64) (*static, error) {
 	in := interner{}
 
 	err = readTable(zr, "routes.txt", func(r row) {
-		id := r.get("route_id")
-		short := r.get("route_short_name")
-		if short == "" {
-			short = r.get("route_long_name")
-		}
-		id = in.get(id)
+		id := in.get(r.get("route_id"))
+		short := cmp.Or(r.get("route_short_name"), r.get("route_long_name"))
 		s.routes[id] = transit.Line{ID: id, ShortName: strings.Clone(short), Color: transit.NormalizeColor(r.get("route_color")), Mode: modeFor(r.get("route_type"))}
 	})
 	if err != nil {
@@ -69,28 +67,13 @@ func parseStatic(r io.ReaderAt, size int64) (*static, error) {
 	return s, nil
 }
 
-// modeFor maps a GTFS route_type, basic or extended, to a mode.
+// modeFor maps a GTFS route_type, as text, to a mode.
 func modeFor(routeType string) transit.Mode {
-	var t int
-	if _, err := fmt.Sscan(routeType, &t); err != nil {
+	t, err := strconv.Atoi(strings.TrimSpace(routeType))
+	if err != nil {
 		return transit.ModeOther
 	}
-	switch {
-	case t == 0, t == 5, t >= 900 && t < 1000:
-		return transit.ModeTram
-	case t == 1, t == 12, t >= 400 && t < 500:
-		return transit.ModeMetro
-	case t == 2, t >= 100 && t < 200:
-		return transit.ModeRail
-	case t == 3, t == 11, t >= 200 && t < 300, t >= 700 && t < 800:
-		return transit.ModeBus
-	case t == 4, t >= 1000 && t < 1100, t >= 1200 && t < 1300:
-		return transit.ModeFerry
-	case t == 6, t == 7, t >= 1300 && t < 1500:
-		return transit.ModeCableway
-	default:
-		return transit.ModeOther
-	}
+	return transit.ModeForRouteType(t)
 }
 
 // interner returns one shared copy of each distinct string. Strings read

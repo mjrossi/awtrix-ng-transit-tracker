@@ -66,11 +66,7 @@ func boardFor(cfg *config.Config, b config.Board, provs map[string]transit.Provi
 	return sb, nil
 }
 
-func newRunners(cfg *config.Config, out scheduler.Output, log *slog.Logger, now func() time.Time) ([]*scheduler.Runner, error) {
-	provs, err := buildProviders(cfg)
-	if err != nil {
-		return nil, err
-	}
+func newRunners(cfg *config.Config, provs map[string]transit.Provider, out scheduler.Output, log *slog.Logger, now func() time.Time) ([]*scheduler.Runner, error) {
 	runners := make([]*scheduler.Runner, 0, len(cfg.Boards))
 	for _, b := range cfg.Boards {
 		sb, err := boardFor(cfg, b, provs)

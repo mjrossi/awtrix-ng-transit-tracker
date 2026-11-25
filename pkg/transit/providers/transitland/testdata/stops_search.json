@@ -1,0 +1,24 @@
+{
+ "stops": [
+  {
+   "stop_id": "HC",
+   "stop_name": "Harbor Central",
+   "onestop_id": "s-example-hc",
+   "feed_version": {
+    "feed": {
+     "onestop_id": "f-example-harbor"
+    }
+   }
+  },
+  {
+   "stop_id": "HP",
+   "stop_name": "Harbor Park",
+   "onestop_id": "s-example-hp",
+   "feed_version": {
+    "feed": {
+     "onestop_id": "f-example-harbor"
+    }
+   }
+  }
+ ]
+}

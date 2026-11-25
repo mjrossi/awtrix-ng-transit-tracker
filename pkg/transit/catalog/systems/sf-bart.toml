@@ -4,13 +4,13 @@ country = "US"
 modes = ["metro"]
 provider = "gtfsrt"
 status = "community"
-verified = "2026-11-23"
+verified = "2026-11-25"
 sample_stop = "EMBR"
 info_url = "https://www.bart.gov/schedules/developers"
 data_license = "BART Developer License Agreement"
 notes = """
 Station IDs are four letters, such as "EMBR". Destinations are long
-("SFO / SF / Antioch"); shorten them with [boards.labels]."""
+("SFO / SF / Antioch"); shorten them with [boards.clock.labels]."""
 
 [options]
 static_url = "https://www.bart.gov/dev/schedules/google_transit.zip"

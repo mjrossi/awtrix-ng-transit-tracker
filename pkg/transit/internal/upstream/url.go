@@ -1,9 +1,16 @@
 package upstream
 
-import "net/url"
+import (
+	"fmt"
+	"net/url"
+)
 
-// HTTPURL parses raw and reports whether it is an absolute http(s) URL.
-func HTTPURL(raw string) (*url.URL, bool) {
+// HTTPURL parses raw, the value of option, as an absolute http(s) URL. Its
+// error names the option but never quotes raw, which can hold credentials.
+func HTTPURL(option, raw string) (*url.URL, error) {
 	u, err := url.Parse(raw)
-	return u, err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return nil, fmt.Errorf("%s must be an http(s) URL", option)
+	}
+	return u, nil
 }

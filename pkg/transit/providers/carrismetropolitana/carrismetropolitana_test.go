@@ -130,7 +130,7 @@ func TestDepartures(t *testing.T) {
 func TestUnknownStop(t *testing.T) {
 	p := newProvider(t, newServer(t))
 	_, err := p.Departures(t.Context(), transit.Query{StopID: "999999", Now: recorded, Window: time.Hour})
-	if !errors.Is(err, carrismetropolitana.ErrUnknownStop) {
+	if !errors.Is(err, transit.ErrUnknownStop) {
 		t.Fatalf("got %v, want ErrUnknownStop", err)
 	}
 }
@@ -281,9 +281,10 @@ func TestSearchStops(t *testing.T) {
 }
 
 func TestNewRejectsBadURL(t *testing.T) {
-	for _, u := range []string{"ftp://x", "not a url", "http://"} {
-		if _, err := carrismetropolitana.New(carrismetropolitana.Config{BaseURL: u}, nil); err == nil || !strings.Contains(err.Error(), "base_url") {
-			t.Errorf("New(%q) = %v, want base_url error", u, err)
+	for _, u := range []string{"ftp://user:hunter2@x", "not a url", "http://"} {
+		_, err := carrismetropolitana.New(carrismetropolitana.Config{BaseURL: u}, nil)
+		if err == nil || !strings.Contains(err.Error(), "base_url") || strings.Contains(err.Error(), "hunter2") {
+			t.Errorf("New(%q) = %v, want a base_url error without credentials", u, err)
 		}
 	}
 }

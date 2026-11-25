@@ -202,7 +202,7 @@ func TestStaleTimestampsDropped(t *testing.T) {
 func TestUnknownStation(t *testing.T) {
 	p := newProvider(t, newFakeAPI(t))
 	_, err := p.Departures(t.Context(), transit.Query{StopID: "ZZ", Now: recorded, Window: time.Hour})
-	if !errors.Is(err, metrolisboa.ErrUnknownStop) {
+	if !errors.Is(err, transit.ErrUnknownStop) {
 		t.Fatalf("got %v, want ErrUnknownStop", err)
 	}
 }
@@ -453,12 +453,112 @@ func TestSearchStops(t *testing.T) {
 	}
 }
 
+func TestSearchStopsOrdersEqualNamesByID(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /token", func(w http.ResponseWriter, r *http.Request) {
+		if r.UserAgent() != "urbanist-timetable" {
+			t.Errorf("token request: User-Agent = %q", r.UserAgent())
+		}
+		fmt.Fprint(w, `{"access_token":"t","expires_in":3600}`)
+	})
+	mux.HandleFunc("GET /infoEstacao/todos", func(w http.ResponseWriter, r *http.Request) {
+		if r.UserAgent() != "urbanist-timetable" {
+			t.Errorf("API request: User-Agent = %q", r.UserAgent())
+		}
+		var rows []string
+		for i := range 10 {
+			rows = append(rows, fmt.Sprintf(`{"stop_id":"S%d","stop_name":"Rato","linha":"[Amarela]"}`, i))
+		}
+		fmt.Fprintf(w, `{"codigo":"200","resposta":[%s]}`, strings.Join(rows, ","))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	p, err := metrolisboa.New(metrolisboa.Config{ClientID: "key", ClientSecret: "secret", BaseURL: srv.URL, TokenURL: srv.URL + "/token"}, srv.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := p.SearchStops(t.Context(), "rato")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var want []transit.Stop
+	for i := range 10 {
+		want = append(want, transit.Stop{ID: fmt.Sprintf("S%d", i), Name: "Rato"})
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("stops (-want +got):\n%s", diff)
+	}
+}
+
 func TestNewRequiresCredentials(t *testing.T) {
 	if _, err := metrolisboa.New(metrolisboa.Config{}, nil); err == nil {
 		t.Error("New accepted empty credentials")
 	}
-	if _, err := metrolisboa.New(metrolisboa.Config{ClientID: "a", ClientSecret: "b", BaseURL: "ftp://x"}, nil); err == nil {
-		t.Error("New accepted a non-http base_url")
+}
+
+func TestNewRejectsBadURL(t *testing.T) {
+	const bad = "ftp://user:hunter2@x"
+	for option, cfg := range map[string]metrolisboa.Config{
+		"base_url":  {ClientID: "a", ClientSecret: "b", BaseURL: bad},
+		"token_url": {ClientID: "a", ClientSecret: "b", TokenURL: bad},
+	} {
+		_, err := metrolisboa.New(cfg, nil)
+		if err == nil || !strings.Contains(err.Error(), option) || strings.Contains(err.Error(), "hunter2") {
+			t.Errorf("New = %v, want a %s error without credentials", err, option)
+		}
+	}
+}
+
+type roundTripper func(*http.Request) (*http.Response, error)
+
+func (f roundTripper) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// net/http drops Authorization only on a redirect to an unrelated domain.
+func TestRedirectsDoNotCarryCredentials(t *testing.T) {
+	tests := map[string]struct {
+		redirect string // the request path redirected
+		to       string
+	}{
+		"token over http":            {"/data/infoEstacao/todos", "http://api.example/elsewhere"},
+		"token to a subdomain":       {"/data/infoEstacao/todos", "https://x.api.example/elsewhere"},
+		"secret over http":           {"/token", "http://api.example/elsewhere"},
+		"secret to another hostname": {"/token", "https://x.api.example/elsewhere"},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			var followed, leaked bool
+			client := &http.Client{Transport: roundTripper(func(r *http.Request) (*http.Response, error) {
+				w := httptest.NewRecorder()
+				switch r.URL.Path {
+				case tt.redirect:
+					w.Header().Set("Location", tt.to)
+					// 307 repeats a POST as a POST.
+					w.WriteHeader(http.StatusTemporaryRedirect)
+				case "/elsewhere":
+					followed = true
+					leaked = leaked || r.Header.Get("Authorization") != ""
+					w.WriteHeader(http.StatusUnauthorized)
+				case "/token":
+					_, _ = w.WriteString(`{"access_token":"token-1","expires_in":3600}`)
+				}
+				resp := w.Result()
+				resp.Request = r
+				return resp, nil
+			})}
+			p, err := metrolisboa.New(metrolisboa.Config{
+				ClientID: "key", ClientSecret: "secret",
+				BaseURL: "https://api.example/data", TokenURL: "https://api.example/token",
+			}, client)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := p.Departures(t.Context(), transit.Query{StopID: "BC", Now: recorded, Window: time.Hour}); err == nil {
+				t.Error("no error")
+			}
+			if !followed || leaked {
+				t.Errorf("redirect followed = %v, credentials sent = %v; want it followed without them", followed, leaked)
+			}
+		})
 	}
 }
 

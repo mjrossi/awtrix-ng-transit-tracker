@@ -22,7 +22,8 @@ table. A board's `layout` is one of:
 
 - **`rows`**: two rows, one per line and direction, for stops where seeing
   several routes at once matters more. The soonest rows are shown, ordered
-  by line and headsign so they do not swap places between pushes.
+  by line and headsign so they do not swap places between pushes. Rows
+  without a headsign come last.
 
   ```
   ▌Sta Apolónia      4

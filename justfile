@@ -65,5 +65,5 @@ docker-run config="config.toml":
     @# Docker creates a directory at a missing bind-mount source.
     @test -f {{config}} || { echo "{{config}} not found: cp config.example.toml {{config}}" >&2; exit 1; }
     docker run --rm -v "$(realpath {{config}}):/config/config.toml:ro" \
-        -e AWTRIX_PASSWORD -e LISBON_METRO_CLIENT_ID -e LISBON_METRO_CLIENT_SECRET \
+        -e AWTRIX_PASSWORD -e TRANSITLAND_API_KEY -e LISBON_METRO_CLIENT_ID -e LISBON_METRO_CLIENT_SECRET \
         {{image}}

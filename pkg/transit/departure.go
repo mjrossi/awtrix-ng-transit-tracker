@@ -38,6 +38,26 @@ func ParseMode(s string) (Mode, error) {
 	}
 }
 
+// ModeForRouteType maps a GTFS route_type, basic or extended, to a mode.
+func ModeForRouteType(t int) Mode {
+	switch {
+	case t == 0, t == 5, t >= 900 && t < 1000:
+		return ModeTram
+	case t == 1, t == 12, t >= 400 && t < 500:
+		return ModeMetro
+	case t == 2, t >= 100 && t < 200:
+		return ModeRail
+	case t == 3, t == 11, t >= 200 && t < 300, t >= 700 && t < 800:
+		return ModeBus
+	case t == 4, t >= 1000 && t < 1100, t >= 1200 && t < 1300:
+		return ModeFerry
+	case t == 6, t == 7, t >= 1300 && t < 1500:
+		return ModeCableway
+	default:
+		return ModeOther
+	}
+}
+
 // Status says whether a departure runs as planned.
 type Status string
 

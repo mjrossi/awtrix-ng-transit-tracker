@@ -14,5 +14,9 @@
 # LISBON_METRO_CLIENT_ID = ""
 # LISBON_METRO_CLIENT_SECRET = ""
 
+# Transitland API key from https://www.transit.land/, as named in
+# config.example.toml.
+# TRANSITLAND_API_KEY = ""
+
 # AWTRIX NG clock credentials, if authEnabled is on.
 # AWTRIX_PASSWORD = ""

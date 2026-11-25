@@ -1,5 +1,5 @@
 // Package upstream holds what providers share for reading upstream APIs: a
-// cache for loaded data and URL validation.
+// cache for loaded data, URL validation, and HTTP client and redirect handling.
 package upstream
 
 import (
@@ -9,7 +9,13 @@ import (
 	"time"
 )
 
-// Policy sets when a Cache loads again.
+// slack is how early a Get can come and still load again. Tickers are not
+// exact, and without it a poll due just as the data expires but delivered a
+// moment early would put the load off by a whole poll interval.
+const slack = time.Second
+
+// Policy sets when a Cache loads again. TTL and Retry end a second early, so
+// that polls spaced exactly that far apart load every time.
 type Policy struct {
 	// TTL is how long a successful load stays fresh.
 	TTL time.Duration
@@ -39,7 +45,7 @@ type Policy struct {
 // expired, so a clock stepped back cannot keep data fresh indefinitely.
 type Cache[T any] struct {
 	policy Policy
-	load   func(context.Context) (T, error)
+	load   func(context.Context, time.Time) (T, error)
 	// onWait, when set by tests, runs as a caller starts waiting for a load.
 	onWait func()
 
@@ -65,6 +71,12 @@ type call[T any] struct {
 // NewCache returns an empty cache that fills itself with load. It panics if
 // p sets Background without a Timeout.
 func NewCache[T any](p Policy, load func(context.Context) (T, error)) *Cache[T] {
+	return NewCacheAt(p, func(ctx context.Context, _ time.Time) (T, error) { return load(ctx) })
+}
+
+// NewCacheAt is NewCache for a load that needs the time of the Get that
+// started it.
+func NewCacheAt[T any](p Policy, load func(context.Context, time.Time) (T, error)) *Cache[T] {
 	if p.Background && p.Timeout <= 0 {
 		panic("upstream: Policy.Background requires a Timeout")
 	}
@@ -141,7 +153,7 @@ func (c *Cache[T]) run(ctx context.Context, now time.Time, cl *call[T]) {
 		ctx, cancel = context.WithTimeout(ctx, c.policy.Timeout)
 		defer cancel()
 	}
-	val, err := c.load(ctx)
+	val, err := c.load(ctx, now)
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -161,5 +173,5 @@ func (c *Cache[T]) run(ctx context.Context, now time.Time, cl *call[T]) {
 
 func within(now, since time.Time, d time.Duration) bool {
 	age := now.Sub(since)
-	return age > -d && age < d
+	return age > -d && age < d-slack
 }

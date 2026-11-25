@@ -33,7 +33,7 @@ It listens on no ports.
 
 | Package | Owns | Imports (project) |
 |---|---|---|
-| `pkg/transit` | `Departure`, `Line`, `Provider`, `Query`, `PartialError`, `Filter`, `Group`, `Registry`, `MatchesSearch` | none |
+| `pkg/transit` | `Departure`, `Line`, `Provider`, `Query`, `PartialError`, `ErrUnknownStop`, `Metered`, `Quota`, `Filter`, `Group`, `Registry`, `MatchesSearch`, `ModeForRouteType` | none |
 | `pkg/transit/transittest` | the provider contract suite | `transit` |
 | `pkg/transit/providers/<name>` | one data source each | `transit` only |
 | `pkg/transit/providers` | the built-in registry | every provider |
@@ -42,7 +42,7 @@ It listens on no ports.
 | `internal/render` | departure rows → TC002 `awtrix.Layout` | `transit`, `awtrix` |
 | `internal/scheduler` | polling, backoff, last-good cache, active and quiet hours, `Snapshot`, the `Output` interface | `transit` |
 | `internal/clockout` | the clock `Output`: snapshot → TC002 app → push or expire; cleanup of removed boards | `scheduler`, `render`, `awtrix` |
-| `internal/config` | TOML decoding, `${NAME}` expansion, validation, provider resolution | `transit`, `catalog`, `render`, `awtrix` |
+| `internal/config` | TOML decoding, `${NAME}` expansion, validation, provider resolution, monthly request estimates | `transit`, `catalog`, `render`, `awtrix` |
 | `cmd/urbanist-timetable` | CLI commands and wiring (`wire.go`) | everything |
 
 Rules, from [CLAUDE.md](../CLAUDE.md):
@@ -82,14 +82,33 @@ Rules, from [CLAUDE.md](../CLAUDE.md):
   | `metrolisboa` | OAuth token | until 1 min before expiry | refetched on 401 once |
   | `carrismetropolitana` | lines | 24 h | keep last, retry in 15 min |
   | `carrismetropolitana` | stop list (search only) | process lifetime | not cached |
+  | `transitland` | each stop's departures, for the widest window asked for | `refresh_interval` (5 min) | failure cached for 10 s, so boards share it; the scheduler backs off |
 
   Every row except the token and stop list uses `upstream.Cache`
   (`pkg/transit/internal/upstream`), which is single-flight: one download
-  per resource at a time, and other callers wait for it. Once a `gtfsrt`
+  per resource at a time, and other callers wait for it. Times end a second
+  early there, so a poll due exactly then loads even if its tick is early. Once a `gtfsrt`
   schedule exists, its daily refresh runs in a background goroutine
   detached from the poll's context, and callers keep using the previous
   schedule. Concurrent token fetches are harmless, so they are not
   deduplicated.
+- `transitland` caches departures, not just reference data, because every
+  request counts against a monthly quota. It fetches one `refresh_interval`
+  beyond the window and windows the cached result at each poll's
+  `Query.Now`, so boards keep their own poll interval. Providers with a
+  quota implement `transit.Metered`; `Config.QuotaUses` estimates
+  their requests and adds up the blocks with the same `Quota.Account`;
+  `config validate` and `run` warn above the quota. An answer from the cache
+  looks fresh to the scheduler, so `refresh_interval` is at most 10 minutes.
+  A prediction shown as live is at most that plus one `poll_interval` old,
+  since the next fetch waits for a poll. A failed fetch is
+  only an error, and the scheduler reuses its own last good data.
+  Transitland filters by scheduled time, so to keep late
+  vehicles the provider asks from 30 minutes back, in the agency's zone, and
+  an hour more at both ends, because service days' clocks differ by an hour
+  around a daylight saving change. It learns the zone's offset from answers
+  with a scheduled departure, so requests before the first use `next`,
+  without the lookback.
 - The process stops on `SIGINT` or `SIGTERM`: the root context is canceled,
   runners return, and a canceled fetch counts as neither a success nor a
   failure.

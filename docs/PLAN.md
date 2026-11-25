@@ -48,7 +48,8 @@ past a provider sees only `transit.Departure`. In order:
    Urbanist Atlas's plans for API keys and rate limits. Needs its own
    design first: agencies license their feeds differently (Lisbon's are
    CC BY 4.0; others restrict redistribution), and an always-on public
-   service has running costs.
+   service has running costs. Transitland's free plans are
+   non-commercial and per-user quotas, so they cannot back it.
 
 ## Data sources: agencies are data, adapters are code
 
@@ -59,7 +60,7 @@ with the number of agencies.
 | Provider | Agencies | Code per agency | Notes |
 |---|---|---|---|
 | `gtfsrt` (generic) | Thousands: anything with static GTFS + GTFS-RT `TripUpdates` | None: a TOML entry | The default path. Feeds are listed in the [Mobility Database](https://mobilitydatabase.org/). |
-| `transitland` | Same feeds, merged into JSON by [Transitland](https://www.transit.land/) | None | Skipped: the free plan is 10,000 queries a month, too few for an always-on clock, and the generic provider covers the same feeds. |
+| `transitland` | Thousands, merged into JSON by [Transitland](https://www.transit.land/) | None: a TOML entry with a feed Onestop ID | Done. The fallback where an agency's own feeds are awkward, and the way to show timetabled trips today. Every request counts against a monthly quota (10,000 free, 50,000 Hobbyist/Academic), so each stop is fetched once per `refresh_interval` and boards count down from that. The quota belongs to the API key, so blocks sharing a key are added up. |
 | Custom adapters | One each | A few hundred lines | Only for agencies without usable GTFS-RT `TripUpdates`. |
 
 **Rule for custom adapters** (goes into `CONTRIBUTING.md`): an agency gets
@@ -100,7 +101,8 @@ providers). Each widens who the project works for.
   and calendar handling (`calendar.txt`, `calendar_dates.txt`, times past
   24:00, `frequencies.txt`). The file is large (37 MB uncompressed for the
   NYC subway, 1.1 GB for HSL), so index only the stops in the
-  configuration while streaming it.
+  configuration while streaming it. Until then, `transitland` shows
+  timetabled trips for the agencies it covers.
 - **MQTT output.** Pushed apps live in the clock's RAM, so after a reboot
   a board is missing until the next poll (up to a minute). AWTRIX NG's
   retained `availability` topic would allow an immediate re-push. MQTT

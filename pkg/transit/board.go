@@ -66,7 +66,7 @@ type Row struct {
 // are returned (zero means no cap).
 func Group(deps []Departure, maxRows, perRow int) []Row {
 	sorted := slices.Clone(deps)
-	slices.SortStableFunc(sorted, func(a, b Departure) int { return a.Time().Compare(b.Time()) })
+	SortByTime(sorted)
 
 	type key struct{ line, headsign string }
 	index := map[key]int{}

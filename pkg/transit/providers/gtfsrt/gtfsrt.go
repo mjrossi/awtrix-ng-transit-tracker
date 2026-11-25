@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
@@ -83,16 +84,19 @@ func New(cfg Config, client *http.Client) (*Provider, error) {
 		return nil, errors.New("realtime_urls: at least one GTFS-RT TripUpdates URL is required")
 	}
 	for i, u := range cfg.RealtimeURLs {
-		if _, ok := upstream.HTTPURL(u); !ok {
-			return nil, fmt.Errorf("realtime_urls[%d] must be an http(s) URL", i)
+		if _, err := upstream.HTTPURL(fmt.Sprintf("realtime_urls[%d]", i), u); err != nil {
+			return nil, err
 		}
 	}
-	if _, ok := upstream.HTTPURL(cfg.StaticURL); cfg.StaticURL != "" && !ok {
-		return nil, errors.New("static_url must be an http(s) URL")
+	if cfg.StaticURL != "" {
+		if _, err := upstream.HTTPURL("static_url", cfg.StaticURL); err != nil {
+			return nil, err
+		}
 	}
 	if client == nil {
 		client = &http.Client{}
 	}
+	client = upstream.KeepHeadersOnHost(client, slices.Collect(maps.Keys(cfg.Headers))...)
 	p := &Provider{cfg: cfg, http: client, clock: time.Now, feeds: map[string]*upstream.Cache[feed]{}}
 	if cfg.StaticURL != "" {
 		// A large schedule can take minutes to download, longer than a
@@ -134,13 +138,14 @@ func (p *Provider) Departures(ctx context.Context, q transit.Query) ([]transit.D
 		servedByFailed bool
 	)
 	for _, u := range p.cfg.RealtimeURLs {
-		f, last, err := p.feedFor(ctx, u, q.Now)
+		// On failure, f is the last feed that decoded, or empty if none has.
+		f, err := p.feeds[u].Get(ctx, q.Now)
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
 			problems = append(problems, err)
-			servedByFailed = servedByFailed || last.serves(st, q.StopID)
+			servedByFailed = servedByFailed || f.serves(st, q.StopID)
 			continue
 		}
 		loaded++
@@ -151,7 +156,7 @@ func (p *Provider) Departures(ctx context.Context, q transit.Query) ([]transit.D
 		return nil, errors.Join(problems...)
 	}
 
-	out = transit.SortAndLimit(out, q.Limit)
+	transit.SortByTime(out)
 	if staticErr != nil {
 		problems = append(problems, staticErr)
 	}
@@ -162,7 +167,6 @@ func (p *Provider) Departures(ctx context.Context, q transit.Query) ([]transit.D
 }
 
 func departures(st *static, f feed, q transit.Query) []transit.Departure {
-	end := q.Now.Add(q.Window)
 	var out []transit.Departure
 	for _, tu := range f.trips {
 		if tu.relation == tripDeleted {
@@ -188,7 +192,7 @@ func departures(st *static, f feed, q transit.Query) []transit.Departure {
 				continue
 			}
 			t := time.Unix(ev.time, 0).In(q.Now.Location())
-			if t.Before(q.Now) || t.After(end) {
+			if !q.Contains(t) {
 				continue
 			}
 			out = append(out, transit.Departure{
@@ -323,17 +327,6 @@ func (p *Provider) downloadStatic(ctx context.Context) (*static, error) {
 	return parseStatic(f, size)
 }
 
-// feedFor returns the decoded feed at u, fetching it at most once per
-// feedTTL however many boards ask. On failure it returns the error and the
-// last feed that decoded, which is empty if none has.
-func (p *Provider) feedFor(ctx context.Context, u string, now time.Time) (f, last feed, err error) {
-	last, err = p.feeds[u].Get(ctx, now)
-	if err != nil {
-		return feed{}, last, err
-	}
-	return last, last, nil
-}
-
 func (p *Provider) fetchFeed(ctx context.Context, u string) (feed, error) {
 	b, err := p.fetch(ctx, u, maxFeedBody)
 	if err != nil {
@@ -362,7 +355,7 @@ func (p *Provider) fetchTo(ctx context.Context, u string, w io.Writer, limit int
 	if err != nil {
 		return 0, fmt.Errorf("%s: GET %s: invalid request", Name, shown)
 	}
-	req.Header.Set("User-Agent", "urbanist-timetable")
+	req.Header.Set("User-Agent", upstream.UserAgent)
 	for k, v := range p.cfg.Headers {
 		req.Header.Set(k, v)
 	}
@@ -376,7 +369,7 @@ func (p *Provider) fetchTo(ctx context.Context, u string, w io.Writer, limit int
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		_, _ = io.Copy(io.Discard, resp.Body)
+		upstream.Drain(resp.Body)
 		return 0, fmt.Errorf("%s: GET %s: %s", Name, shown, resp.Status)
 	}
 	n, err := io.Copy(w, io.LimitReader(resp.Body, limit+1))

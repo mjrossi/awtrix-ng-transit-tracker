@@ -7,6 +7,7 @@ import (
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/providers/demo"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/providers/gtfsrt"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/providers/metrolisboa"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit/providers/transitland"
 )
 
 // Registry returns a registry with every built-in provider.
@@ -16,5 +17,6 @@ func Registry() *transit.Registry {
 	demo.Register(r)
 	gtfsrt.Register(r)
 	metrolisboa.Register(r)
+	transitland.Register(r)
 	return r
 }

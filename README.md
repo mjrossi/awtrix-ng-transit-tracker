@@ -24,7 +24,8 @@ screen instead.
 > **Status:** early, and running on a real TC002. Supported today:
 > any agency publishing GTFS-Realtime, with six
 > [ready-made systems](#systems) checked against their live feeds, plus
-> dedicated providers for Metro de Lisboa and Carris Metropolitana. Only
+> dedicated providers for Metro de Lisboa and Carris Metropolitana, and
+> [Transitland](https://www.transit.land/) for thousands more. Only
 > the 52 × 16 TC002 is supported; other displays are on the roadmap in
 > [`docs/PLAN.md`](./docs/PLAN.md).
 >
@@ -256,6 +257,7 @@ Other settings in the block override the system's.
 | `carrismetropolitana` | Carris Metropolitana buses, Lisbon metropolitan area | None | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), © Carris Metropolitana |
 | `metrolisboa` | Metro de Lisboa, all four lines | Free OAuth client from the [API Store](https://api.metrolisboa.pt/store/) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), © Metropolitano de Lisboa |
 | `gtfsrt` | Any agency with GTFS and GTFS-Realtime TripUpdates, configured by URL (several per config with `type = "gtfsrt"`) | Depends on the agency | The agency's |
+| `transitland` | Thousands of agencies through [Transitland](https://www.transit.land/), schedule and realtime merged | Free API key; requests count against a monthly quota | The agency's; Transitland's terms apply |
 | `demo` | Generated departures for testing the display | None | — |
 
 Find an agency's feeds in the [Mobility Database](https://mobilitydatabase.org/),
@@ -270,6 +272,52 @@ realtime_urls = ["https://example.org/tripupdates.pb"]
 
 The `gtfsrt` provider shows only departures with realtime predictions;
 trips the feed does not list yet are missing until it does.
+
+### Transitland
+
+Prefer an agency's own feeds where you can: they have no quota. Where that
+is awkward (no realtime feed, a feed behind a key, or a schedule zip too
+large for your NAS), `transitland` serves the agency from one API, with
+timetabled trips shown even when realtime has none.
+
+```toml
+[providers.mbta]
+type = "transitland"
+api_key = "${TRANSITLAND_API_KEY}"
+feed = "f-drt-mbta"        # the feed's Onestop ID; stops are then GTFS stop IDs
+refresh_interval = "2m"    # default 5m
+monthly_quota = 50000      # your plan's REST quota; default 10000 (free plan)
+```
+
+Every request counts against your plan's monthly quota (10,000 on the free
+plan, 50,000 on Hobbyist/Academic, which is free for non-commercial use).
+Each stop is fetched once per `refresh_interval` (1 to 10 minutes), and
+boards still count minutes down between fetches. Boards on one stop share
+its requests. Requests a month are about
+
+    31 × stops × active hours a day × 60 ÷ refresh minutes
+
+so one stop polled all day at 5 minutes is about 8,900, and two stops for
+16 hours a day at 2 minutes about 29,800. `config validate` prints this
+estimate, taking `active_hours` and `quiet_hours` into account, and warns
+when it exceeds `monthly_quota`; `run` logs it at startup. Blocks with the
+same key share its quota, so they are added up against the smallest
+`monthly_quota` any of them sets. Stop searches, previews and
+retries count too, but are not in the estimate. `lines` matches short names
+or Transitland route Onestop IDs, not GTFS route IDs. Vehicles up to 30
+minutes late are shown, except that until a stop's first answer with a
+timetabled departure, at startup or after 12 hours without one, those already
+past their scheduled time are missed.
+Between fetches predictions do not change: a vehicle leaves the board at its
+last predicted time and, if it was delayed further, returns at the next fetch,
+so a shorter `refresh_interval` follows delays more closely. Trips added in
+realtime can lack a destination, as the MBTA's do. They are listed after the
+others, so the `departure` layout shows one only when no named destination
+is left, and a `headsigns` filter drops them. Find a feed's Onestop ID on its Transitland page.
+Some agency feeds answer nothing because Transitland serves the agency from a
+regional feed instead: BART's `f-9q9-bart` does, in favor of
+`f-sf~bay~area~rg`. Search without `feed` to see which feed has a stop. Data via
+Transitland.
 
 ## How it behaves
 

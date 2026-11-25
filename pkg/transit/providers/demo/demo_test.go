@@ -26,7 +26,7 @@ func newProvider(t *testing.T) *demo.Provider {
 func TestContract(t *testing.T) {
 	transittest.Run(t, newProvider(t), []transittest.Case{
 		{Name: "two lines", Query: transit.Query{StopID: "baixa-chiado", Now: now, Window: 30 * time.Minute}},
-		{Name: "line limited to other stops", Query: transit.Query{StopID: "rossio", Now: now, Window: 30 * time.Minute, Limit: 3}},
+		{Name: "line limited to other stops", Query: transit.Query{StopID: "rossio", Now: now, Window: 30 * time.Minute}},
 		{Name: "zero window", Query: transit.Query{StopID: "rossio", Now: time.Date(2026, 11, 22, 8, 2, 30, 0, time.UTC)}, WantEmpty: true},
 	})
 }

@@ -8,6 +8,7 @@
 package carrismetropolitana
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -43,9 +44,6 @@ const (
 	maxBody = 32 << 20
 )
 
-// ErrUnknownStop is returned when the API does not know a stop ID.
-var ErrUnknownStop = errors.New("unknown stop")
-
 // Config is the provider's configuration block.
 type Config struct {
 	// BaseURL overrides the API address, for tests or a mirror.
@@ -71,18 +69,11 @@ func Register(r *transit.Registry) {
 
 // New returns a provider. A nil client gets a default with a timeout.
 func New(cfg Config, client *http.Client) (*Provider, error) {
-	base := cfg.BaseURL
-	if base == "" {
-		base = DefaultBaseURL
+	u, err := upstream.HTTPURL("base_url", cmp.Or(cfg.BaseURL, DefaultBaseURL))
+	if err != nil {
+		return nil, err
 	}
-	u, ok := upstream.HTTPURL(base)
-	if !ok {
-		return nil, fmt.Errorf("base_url %q must be an http(s) URL", base)
-	}
-	if client == nil {
-		client = &http.Client{Timeout: 20 * time.Second}
-	}
-	p := &Provider{base: u, http: client}
+	p := &Provider{base: u, http: upstream.ClientOrDefault(client)}
 	p.lines = upstream.NewCache(upstream.Policy{TTL: linesTTL, Retry: linesRetry}, p.fetchLines)
 	return p, nil
 }
@@ -111,12 +102,11 @@ func (p *Provider) Departures(ctx context.Context, q transit.Query) ([]transit.D
 	var arrivals []arrival
 	if err := p.get(ctx, "arrivals/by_stop/"+url.PathEscape(q.StopID), &arrivals); err != nil {
 		if errors.Is(err, errNotFound) {
-			return nil, fmt.Errorf("%w %q", ErrUnknownStop, q.StopID)
+			return nil, fmt.Errorf("%w %q", transit.ErrUnknownStop, q.StopID)
 		}
 		return nil, err
 	}
 
-	end := q.Now.Add(q.Window)
 	out := make([]transit.Departure, 0, len(arrivals))
 	for _, a := range arrivals {
 		// An observed arrival means the bus has already been at the stop.
@@ -134,12 +124,13 @@ func (p *Provider) Departures(ctx context.Context, q transit.Query) ([]transit.D
 			t := time.Unix(*a.EstimatedUnix, 0).In(q.Now.Location())
 			d.Predicted = &t
 		}
-		if t := d.Time(); t.Before(q.Now) || t.After(end) {
+		if !q.Contains(d.Time()) {
 			continue
 		}
 		out = append(out, d)
 	}
-	return transit.SortAndLimit(out, q.Limit), nil
+	transit.SortByTime(out)
+	return out, nil
 }
 
 // feedPrefix matches the "[A2L1N]" namespace the live API puts in front of
@@ -166,11 +157,7 @@ func (p *Provider) fetchLines(ctx context.Context) (map[string]transit.Line, err
 	}
 	lines := make(map[string]transit.Line, len(wire))
 	for _, l := range wire {
-		short := l.ShortName
-		if short == "" {
-			short = l.ID
-		}
-		lines[l.ID] = transit.Line{ID: l.ID, ShortName: short, Color: transit.NormalizeColor(l.Color), Mode: transit.ModeBus}
+		lines[l.ID] = transit.Line{ID: l.ID, ShortName: cmp.Or(l.ShortName, l.ID), Color: transit.NormalizeColor(l.Color), Mode: transit.ModeBus}
 	}
 	return lines, nil
 }
@@ -214,7 +201,7 @@ func (p *Provider) allStops(ctx context.Context) ([]transit.Stop, error) {
 	}
 	stops := make([]transit.Stop, 0, len(wire))
 	for _, s := range wire {
-		stops = append(stops, transit.Stop{ID: s.ID, Name: s.LongName, Modes: []transit.Mode{transit.ModeBus}})
+		stops = append(stops, transit.Stop{ID: s.ID, Name: s.LongName})
 	}
 	slices.SortFunc(stops, func(a, b transit.Stop) int { return strings.Compare(a.ID, b.ID) })
 	p.mu.Lock()
@@ -232,7 +219,7 @@ func (p *Provider) get(ctx context.Context, path string, v any) error {
 		return err
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "urbanist-timetable")
+	req.Header.Set("User-Agent", upstream.UserAgent)
 	resp, err := p.http.Do(req)
 	if err != nil {
 		return fmt.Errorf("%s: %w", Name, err)
@@ -240,10 +227,10 @@ func (p *Provider) get(ctx context.Context, path string, v any) error {
 	defer resp.Body.Close()
 	switch {
 	case resp.StatusCode == http.StatusNotFound:
-		_, _ = io.Copy(io.Discard, resp.Body)
+		upstream.Drain(resp.Body)
 		return errNotFound
 	case resp.StatusCode != http.StatusOK:
-		_, _ = io.Copy(io.Discard, resp.Body)
+		upstream.Drain(resp.Body)
 		return fmt.Errorf("%s: GET %s: %s", Name, path, resp.Status)
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, maxBody)).Decode(v); err != nil {

@@ -7,6 +7,42 @@ version may break configuration.
 
 ## [Unreleased]
 
+### Added
+
+- `transitland` provider: thousands of agencies through the Transitland
+  API, with timetabled trips shown alongside realtime ones. Needs a free
+  API key. Each stop is fetched once per `refresh_interval` (5 minutes by
+  default) to stay within the plan's monthly quota.
+- `config validate` prints the estimated requests a month for each
+  Transitland key, adding up blocks that share one, and warns when they
+  exceed the smallest `monthly_quota` those blocks set; `run` logs the same
+  at startup.
+
+### Changed
+
+- For programs that import `pkg/transit`: `transit.Metered`,
+  `transit.Quota`, `transit.ModeForRouteType` and `Query.Contains` are new.
+  `Query.Limit` and `Stop.Modes`, which the service never used, are removed,
+  and `SortAndLimit` is now `SortByTime`. Providers return
+  `transit.ErrUnknownStop` instead of an error of their own.
+
+### Fixed
+
+- `gtfsrt` no longer sends its `headers`, or the address it was redirected
+  from, when a feed redirects to another host. Either could hold an API key.
+- `metrolisboa` no longer sends its credentials when redirected to a
+  subdomain or from https to http.
+- `gtfsrt` and `metrolisboa` boards with `poll_interval = "15s"` read fresh
+  data on every poll, instead of often repeating the previous poll's.
+- A trip without a destination no longer takes the place of a named one on
+  the `departure` layout.
+- Errors about a `base_url` or `token_url` that is not http(s) no longer
+  print it, since it can hold credentials.
+- `stops search` lists `metrolisboa` stations of the same name in a stable
+  order.
+- The notes for `sf-bart` name the labels table correctly,
+  `[boards.clock.labels]`.
+
 ## [0.4.0] - 2026-11-25
 
 ### Changed

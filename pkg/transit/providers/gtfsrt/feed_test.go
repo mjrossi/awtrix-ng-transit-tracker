@@ -28,6 +28,12 @@ func bytesField(num int, parts ...[]byte) []byte {
 	return append(out, body...)
 }
 
+func TestDecodeRejectsBadHeader(t *testing.T) {
+	if _, err := decodeFeed(bytesField(1, []byte{0x0b})); err == nil {
+		t.Error("decoded a feed with a malformed header")
+	}
+}
+
 func TestDecodeHandBuilt(t *testing.T) {
 	negDelay := int64(-90)
 	msg := append(
@@ -50,7 +56,7 @@ func TestDecodeHandBuilt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := feed{timestamp: 1700000000, trips: []tripUpdate{{
+	want := feed{trips: []tripUpdate{{
 		tripID: "t1", routeID: "R", relation: tripCanceled,
 		stops: []stopTimeUpdate{{stopID: "S1N", relation: stopSkipped, arrival: event{time: 1700000300, hasTime: true, delay: -90}}},
 	}}}

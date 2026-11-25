@@ -32,6 +32,7 @@ Feed and API contents. They are decoded defensively:
 | GTFS-Realtime feed | 64 MB; hand-written protobuf decoder that skips unknown fields and rejects malformed lengths |
 | Carris Metropolitana JSON | 32 MB |
 | Metro de Lisboa JSON | 4 MB; token response 64 KB |
+| Transitland JSON | 16 MB |
 | Clock API replies (app list, device state) | 1 MB decoded |
 | Clock error bodies | 64 KB |
 
@@ -50,6 +51,12 @@ interpreted.
     (`config.ProviderOptions.Decode`), because values hold expanded
     secrets by then;
   - `gtfsrt` names URLs without credentials or query strings (`redact`);
+  - `transitland` sends its key in the `apikey` header, never the URL, so
+    request errors cannot carry it;
+  - the `transitland` key, `gtfsrt` `headers` and `metrolisboa` credentials
+    go only to the host first asked: on a redirect to another host, or from
+    https to http, they and `Referer` are dropped
+    (`upstream.KeepHeadersOnHost`);
   - the clock URL may embed basic-auth credentials; logs show only its host
     (`Client.Host`), the state file its host and path (`Client.ID`), and
     URL parse errors drop the raw URL.

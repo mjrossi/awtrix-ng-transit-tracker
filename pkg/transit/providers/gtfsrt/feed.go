@@ -7,14 +7,13 @@ import (
 )
 
 // This file decodes the parts of a GTFS-Realtime FeedMessage that departure
-// boards need, straight from the protobuf wire format: header timestamp and
-// TripUpdates. Unknown fields, including agency extensions, are skipped.
+// boards need, its TripUpdates, straight from the protobuf wire format.
+// Unknown fields, including agency extensions, are skipped.
 // Field numbers follow gtfs-realtime.proto:
 // https://gtfs.org/documentation/realtime/proto/
 
 // Trip schedule relationships (TripDescriptor.ScheduleRelationship).
 const (
-	tripScheduled  = 0
 	tripAdded      = 1
 	tripCanceled   = 3
 	tripDuplicated = 6
@@ -30,8 +29,7 @@ const (
 )
 
 type feed struct {
-	timestamp int64
-	trips     []tripUpdate
+	trips []tripUpdate
 }
 
 type tripUpdate struct {
@@ -56,15 +54,12 @@ type event struct {
 
 func decodeFeed(b []byte) (feed, error) {
 	var f feed
-	err := fields(b, func(num, wt int, v uint64, data []byte) error {
+	err := fields(b, func(num, wt int, _ uint64, data []byte) error {
 		switch {
 		case num == 1 && wt == wireBytes: // header
-			return fields(data, func(num, wt int, v uint64, _ []byte) error {
-				if num == 3 && wt == wireVarint {
-					f.timestamp = int64(v)
-				}
-				return nil
-			})
+			// Nothing in it is needed, but a malformed one means the body
+			// is not a feed.
+			return fields(data, func(int, int, uint64, []byte) error { return nil })
 		case num == 2 && wt == wireBytes: // entity
 			var (
 				tu      tripUpdate

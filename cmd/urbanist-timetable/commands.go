@@ -8,7 +8,6 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -36,51 +35,82 @@ func runCommand() *cli.Command {
 				Sources: cli.EnvVars("TIMETABLE_STATE"),
 			},
 		},
-		Action: func(ctx context.Context, c *cli.Command) error {
-			log, err := newLogger(c)
-			if err != nil {
-				return err
-			}
-			cfg, err := config.Load(c.String("config"))
-			if err != nil {
-				return err
-			}
-			clock, err := newClock(cfg)
-			if err != nil {
-				return err
-			}
-			runners, err := newRunners(cfg, newClockOutput(cfg, clock), log, nil)
-			if err != nil {
-				return err
-			}
-			log.InfoContext(ctx, "starting",
-				slog.String("version", version),
-				slog.Int("boards", len(runners)),
-				slog.String("clock", clock.Host()),
-				slog.Any("quiet_hours", cfg.QuietHours))
-			for _, b := range cfg.Boards {
-				stops := make([]string, len(b.Stops))
-				for i, s := range b.Stops {
-					stops[i] = s.Provider + ":" + s.Stop
-				}
-				log.InfoContext(ctx, "board configured",
-					slog.String("board", b.Name),
-					slog.Any("stops", stops),
-					slog.Any("active_hours", b.ActiveHours),
-					slog.Duration("poll_interval", b.PollInterval.D()),
-					slog.Duration("lifetime", b.Clock.Lifetime.D()))
-			}
-			var wg sync.WaitGroup
-			if path := c.String("state"); path != "" {
-				wg.Go(func() { newCleanup(cfg, path, clock, log).Run(ctx) })
-			} else {
-				log.InfoContext(ctx, "no state file; boards removed from the config keep their place on the clock")
-			}
-			err = scheduler.RunAll(ctx, runners)
-			wg.Wait()
-			log.InfoContext(ctx, "stopped")
-			return err
-		},
+		Action: runBoards,
+	}
+}
+
+// setup returns the logger and configuration named by the global flags.
+func setup(c *cli.Command) (*slog.Logger, *config.Config, error) {
+	log, err := newLogger(c)
+	if err != nil {
+		return nil, nil, err
+	}
+	cfg, err := config.Load(c.String("config"))
+	if err != nil {
+		return nil, nil, err
+	}
+	return log, cfg, nil
+}
+
+func runBoards(ctx context.Context, c *cli.Command) error {
+	log, cfg, err := setup(c)
+	if err != nil {
+		return err
+	}
+	clock, err := newClock(cfg)
+	if err != nil {
+		return err
+	}
+	provs, err := buildProviders(cfg)
+	if err != nil {
+		return err
+	}
+	runners, err := newRunners(cfg, provs, newClockOutput(cfg, clock), log, nil)
+	if err != nil {
+		return err
+	}
+	logStartup(ctx, log, cfg, clock.Host())
+	logQuotaUses(ctx, log, cfg.QuotaUses(provs))
+	var wg sync.WaitGroup
+	if path := c.String("state"); path != "" {
+		wg.Go(func() { newCleanup(cfg, path, clock, log).Run(ctx) })
+	} else {
+		log.InfoContext(ctx, "no state file; boards removed from the config keep their place on the clock")
+	}
+	err = scheduler.RunAll(ctx, runners)
+	wg.Wait()
+	log.InfoContext(ctx, "stopped")
+	return err
+}
+
+func logStartup(ctx context.Context, log *slog.Logger, cfg *config.Config, clockHost string) {
+	log.InfoContext(ctx, "starting",
+		slog.String("version", version),
+		slog.Int("boards", len(cfg.Boards)),
+		slog.String("clock", clockHost),
+		slog.Any("quiet_hours", cfg.QuietHours))
+	for _, b := range cfg.Boards {
+		stops := make([]string, len(b.Stops))
+		for i, s := range b.Stops {
+			stops[i] = s.Provider + ":" + s.Stop
+		}
+		log.InfoContext(ctx, "board configured",
+			slog.String("board", b.Name),
+			slog.Any("stops", stops),
+			slog.Any("active_hours", b.ActiveHours),
+			slog.Duration("poll_interval", b.PollInterval.D()),
+			slog.Duration("lifetime", b.Clock.Lifetime.D()))
+	}
+}
+
+func logQuotaUses(ctx context.Context, log *slog.Logger, uses []config.QuotaUse) {
+	for _, u := range uses {
+		attrs := []any{slog.Any("providers", u.Providers), slog.Int("requests_per_month", u.Requests), slog.Int("monthly_quota", u.Quota)}
+		if u.Over() {
+			log.WarnContext(ctx, "estimated requests exceed the provider's monthly quota; raise refresh_interval or narrow active_hours", attrs...)
+		} else {
+			log.InfoContext(ctx, "estimated provider requests", attrs...)
+		}
 	}
 }
 
@@ -93,51 +123,54 @@ func previewCommand() *cli.Command {
 			&cli.BoolFlag{Name: "push", Usage: "also push the payload to the clock"},
 			&cli.BoolFlag{Name: "json", Usage: "print only the JSON payload"},
 		},
-		Action: func(ctx context.Context, c *cli.Command) error {
-			log, err := newLogger(c)
-			if err != nil {
-				return err
-			}
-			cfg, err := config.Load(c.String("config"))
-			if err != nil {
-				return err
-			}
-			if name := c.String("board"); name != "" {
-				cfg.Boards = filterBoards(cfg.Boards, name)
-				if len(cfg.Boards) == 0 {
-					return fmt.Errorf("no board named %q", name)
-				}
-			}
-			var pusher clockout.Pusher
-			if c.Bool("push") {
-				if pusher, err = newClock(cfg); err != nil {
-					return err
-				}
-			}
-			out := newClockOutput(cfg, pusher)
-			runners, err := newRunners(cfg, out, log, nil)
-			if err != nil {
-				return err
-			}
-			instant := time.Now()
-			for i, r := range runners {
-				b := cfg.Boards[i]
-				snap, ok := r.Snapshot(ctx, instant.In(b.Location()))
-				if !ok {
-					return fmt.Errorf("board %s: every source failed", b.Name)
-				}
-				if err := writePreview(os.Stdout, b, out, snap, c.Bool("json")); err != nil {
-					return err
-				}
-				if c.Bool("push") {
-					if err := out.Publish(ctx, snap); err != nil {
-						return err
-					}
-				}
-			}
-			return nil
-		},
+		Action: preview,
 	}
+}
+
+func preview(ctx context.Context, c *cli.Command) error {
+	log, cfg, err := setup(c)
+	if err != nil {
+		return err
+	}
+	if name := c.String("board"); name != "" {
+		cfg.Boards = filterBoards(cfg.Boards, name)
+		if len(cfg.Boards) == 0 {
+			return fmt.Errorf("no board named %q", name)
+		}
+	}
+	push := c.Bool("push")
+	var pusher clockout.Pusher
+	if push {
+		if pusher, err = newClock(cfg); err != nil {
+			return err
+		}
+	}
+	out := newClockOutput(cfg, pusher)
+	provs, err := buildProviders(cfg)
+	if err != nil {
+		return err
+	}
+	runners, err := newRunners(cfg, provs, out, log, nil)
+	if err != nil {
+		return err
+	}
+	instant := time.Now()
+	for i, r := range runners {
+		b := cfg.Boards[i]
+		snap, ok := r.Snapshot(ctx, instant.In(b.Location()))
+		if !ok {
+			return fmt.Errorf("board %s: every source failed", b.Name)
+		}
+		if err := writePreview(c.Root().Writer, b, out, snap, c.Bool("json")); err != nil {
+			return err
+		}
+		if push {
+			if err := out.Publish(ctx, snap); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // writePreview prints a board's rows, unless jsonOnly, then the payload the
@@ -167,16 +200,32 @@ func configCommand() *cli.Command {
 				if err != nil {
 					return err
 				}
-				if _, err := buildProviders(cfg); err != nil {
+				provs, err := buildProviders(cfg)
+				if err != nil {
 					return err
 				}
 				if _, err := newClock(cfg); err != nil {
 					return err
 				}
-				fmt.Printf("%s: OK (%d boards)\n", c.String("config"), len(cfg.Boards))
+				w := c.Root().Writer
+				fmt.Fprintf(w, "%s: OK (%d boards)\n", c.String("config"), len(cfg.Boards))
+				writeQuotaUses(w, cfg.QuotaUses(provs))
 				return nil
 			},
 		}},
+	}
+}
+
+// writeQuotaUses prints the estimate for each quota. Going over is a
+// warning, not an error: the configuration is valid, and the estimate is
+// approximate.
+func writeQuotaUses(w io.Writer, uses []config.QuotaUse) {
+	for _, u := range uses {
+		names := "providers." + strings.Join(u.Providers, ", providers.")
+		fmt.Fprintf(w, "%s: about %d requests a month, quota %d\n", names, u.Requests, u.Quota)
+		if u.Over() {
+			fmt.Fprintf(w, "warning: %s would exceed the monthly quota; raise refresh_interval or narrow active_hours\n", names)
+		}
 	}
 }
 
@@ -184,7 +233,8 @@ func systemsCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "systems",
 		Usage: "list ready-made transit systems, or show how to configure one",
-		Action: func(_ context.Context, _ *cli.Command) error {
+		Action: func(_ context.Context, c *cli.Command) error {
+			w := c.Root().Writer
 			all, err := catalog.All()
 			if err != nil {
 				return err
@@ -194,9 +244,9 @@ func systemsCommand() *cli.Command {
 				if len(s.RequiredOptions) > 0 {
 					needs = "  (needs " + strings.Join(s.RequiredOptions, ", ") + ")"
 				}
-				fmt.Printf("%-28s %-22s %-24s %s%s\n", s.ID, s.Name, s.City, strings.Join(s.Modes, ", "), needs)
+				fmt.Fprintf(w, "%-28s %-22s %-24s %s%s\n", s.ID, s.Name, s.City, strings.Join(s.Modes, ", "), needs)
 			}
-			fmt.Println("\nShow how to configure one: urbanist-timetable systems show <id>")
+			fmt.Fprintln(w, "\nShow how to configure one: urbanist-timetable systems show <id>")
 			return nil
 		},
 		Commands: []*cli.Command{{
@@ -209,19 +259,20 @@ func systemsCommand() *cli.Command {
 				if !ok {
 					return fmt.Errorf("unknown system %q; run `urbanist-timetable systems`", id)
 				}
-				fmt.Printf("# %s, %s (%s)\n", s.Name, s.City, s.Country)
-				fmt.Printf("# Status: %s, last verified %s. Data: %s.\n", s.Status, s.Verified, s.DataLicense)
-				fmt.Printf("# More: %s\n", s.InfoURL)
+				w := c.Root().Writer
+				fmt.Fprintf(w, "# %s, %s (%s)\n", s.Name, s.City, s.Country)
+				fmt.Fprintf(w, "# Status: %s, last verified %s. Data: %s.\n", s.Status, s.Verified, s.DataLicense)
+				fmt.Fprintf(w, "# More: %s\n", s.InfoURL)
 				for line := range strings.SplitSeq(strings.TrimSpace(s.Notes), "\n") {
-					fmt.Printf("# %s\n", line)
+					fmt.Fprintf(w, "# %s\n", line)
 				}
-				fmt.Printf("\n[providers.%s]\nsystem = %q\n", s.ID, s.ID)
+				fmt.Fprintf(w, "\n[providers.%s]\nsystem = %q\n", s.ID, s.ID)
 				for _, k := range s.RequiredOptions {
 					env := strings.ToUpper(strings.ReplaceAll(s.ID+"_"+k, "-", "_"))
-					fmt.Printf("%s = \"${%s}\"\n", k, env)
+					fmt.Fprintf(w, "%s = \"${%s}\"\n", k, env)
 				}
-				fmt.Printf("\n# Find stop IDs: urbanist-timetable stops search %s <words...>\n", s.ID)
-				fmt.Printf("# Example stop: %s\n", s.SampleStop)
+				fmt.Fprintf(w, "\n# Find stop IDs: urbanist-timetable stops search %s <words...>\n", s.ID)
+				fmt.Fprintf(w, "# Example stop: %s\n", s.SampleStop)
 				return nil
 			},
 		}},
@@ -254,11 +305,12 @@ func stopsCommand() *cli.Command {
 				if err != nil {
 					return err
 				}
+				w := c.Root().Writer
 				if len(stops) == 0 {
-					fmt.Println("no stops found")
+					fmt.Fprintln(w, "no stops found")
 				}
 				for _, s := range stops {
-					fmt.Printf("%-10s %s\n", s.ID, s.Name)
+					fmt.Fprintf(w, "%-10s %s\n", s.ID, s.Name)
 				}
 				return nil
 			},
