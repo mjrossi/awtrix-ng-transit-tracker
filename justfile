@@ -49,9 +49,14 @@ golden:
 catalog-check:
     go test -count=1 -v ./pkg/transit/catalog -run TestLive -live -timeout 10m
 
+# build the example importer, a module of its own, from public packages only
+[group('verify')]
+example:
+    cd examples/departures && go vet ./... && go build -o /dev/null .
+
 # everything CI runs
 [group('verify')]
-ci: lint test
+ci: lint test example
     go run ./cmd/urbanist-timetable --config config.example.toml config validate
 
 # build the Docker image

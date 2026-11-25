@@ -38,7 +38,7 @@ func TestSystemsBuild(t *testing.T) {
 			for _, k := range s.RequiredOptions {
 				user[k] = "dummy"
 			}
-			if _, err := reg.New(s.Provider, catalog.Options(s.Merge(user))); err != nil {
+			if _, err := reg.Build(s.Provider, catalog.Options(s.Merge(user))); err != nil {
 				t.Errorf("build: %v", err)
 			}
 		})
@@ -86,7 +86,7 @@ func TestLive(t *testing.T) {
 				}
 				user[k] = v
 			}
-			p, err := reg.New(s.Provider, catalog.Options(s.Merge(user)))
+			p, err := reg.Build(s.Provider, catalog.Options(s.Merge(user)))
 			if err != nil {
 				t.Fatal(err)
 			}

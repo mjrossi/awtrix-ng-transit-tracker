@@ -2,14 +2,15 @@
 
 Urbanist Timetable is a small Go tool that shows public transit
 departures in a terminal and on an AWTRIX NG pixel clock (Ulanzi TC002,
-52 × 16). It runs in Docker, for example on a NAS, and is meant to be usable by anyone, in any
-city. It belongs to the Urbanist family, alongside *The Urbanist Lexicon*
+52 × 16). The clock service runs in Docker, for example on a NAS. Its
+packages under `pkg/` can be imported by other Go programs. It is meant to
+be usable by anyone, in any city. It belongs to the Urbanist family, alongside *The Urbanist Lexicon*
 and *Urbanist Atlas*.
 
 ## Goals
 
-- Show the next departures for one or more stops on the clock, with the
-  line's color, direction and minutes to departure.
+- Show the next departures for one or more stops, in a terminal or on the
+  clock, with the line's color, direction and minutes to departure.
 - Work for any mode: metro first, then bus, tram, rail and ferry, without
   changing the core.
 - Support many agencies without maintaining code for each one.
@@ -26,11 +27,12 @@ and *Urbanist Atlas*.
 
 ## Direction
 
-One release follows, described in the
-[design](./superpowers/specs/2026-11-25-clock-cli-library-design.md):
-**v0.7.0, a library.** `pkg/` gets a core free of configuration code,
-examples, and a lower Go requirement, so other Go programs can use the
-providers.
+The terminal tool, the clock and the library are in place, as the
+[design](./superpowers/specs/2026-11-25-clock-cli-library-design.md)
+planned. No release is planned; the next work comes from "Later", and a
+version is cut when there is a reason to. Of the items there,
+schedule-only departures in `gtfsrt` would help the terminal most, since
+many agencies' stops look empty until a vehicle is near.
 
 ## Data sources: agencies are data, adapters are code
 
@@ -118,6 +120,19 @@ providers). Each widens who the project works for.
   32 × 8 AWTRIX NG clocks such as the Ulanzi TC001, probably the more
   common device, cannot show boards. Needs its own design: a scrolling
   destination with the next time, or the badge and times only.
+
+## Known issues
+
+Small, and deferred:
+
+- After a 304 from a feed server, a failure to update the cached schedule's
+  modification time reports a valid schedule as partial.
+- An explicit `--config` path that does not exist is treated as having no
+  provider block, instead of as a missing file.
+- `departures` aligns columns by character count, so combining accents and
+  wide characters (such as CJK) misalign.
+- CI's `oldest-go` job does not build `examples/departures`.
+- `transittest`'s example shows its test as an unused closure.
 
 ## Open questions
 

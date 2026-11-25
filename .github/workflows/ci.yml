@@ -32,8 +32,26 @@ jobs:
       - uses: jdx/mise-action@v4
       - run: just lint
       - run: just test
+      - run: just example
       - name: Validate example config
         run: go run ./cmd/urbanist-timetable --config config.example.toml config validate
+
+  # Importers may use the oldest Go that go.mod allows, not mise's version.
+  oldest-go:
+    runs-on: ubuntu-latest
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@v7
+      # The go line, not the toolchain line, which setup-go would prefer.
+      - id: version
+        run: echo "go=$(awk '$1 == "go" {print $2}' go.mod)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ steps.version.outputs.go }}
+      - run: go version
+      - run: go build ./...
+      - run: go test ./...
 
   docker:
     runs-on: ubuntu-latest

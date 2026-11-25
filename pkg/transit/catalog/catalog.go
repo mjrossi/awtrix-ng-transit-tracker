@@ -5,7 +5,9 @@
 //	[providers.nyc]
 //	system = "nyc-subway"
 //
-// Each system is one TOML file in systems/, named by its ID.
+// Each system is one TOML file in systems/, named by its ID. Resolve turns
+// a provider block, with or without a system, into a provider type and its
+// options; providers.Open does that and builds the provider.
 package catalog
 
 import (

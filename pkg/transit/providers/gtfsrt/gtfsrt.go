@@ -26,6 +26,7 @@ import (
 
 	"github.com/mjrossi/urbanist-timetable/pkg/transit"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/internal/upstream"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit/registry"
 )
 
 // Name is the provider type in configuration.
@@ -74,8 +75,8 @@ type Provider struct {
 }
 
 // Register adds the provider to r, built with opts.
-func Register(r *transit.Registry, opts ...Option) {
-	transit.RegisterConfig(r, Name, func(cfg Config) (*Provider, error) { return New(cfg, nil, opts...) })
+func Register(r *registry.Registry, opts ...Option) {
+	registry.RegisterConfig(r, Name, func(cfg Config) (*Provider, error) { return New(cfg, nil, opts...) })
 }
 
 // New validates cfg and returns a provider. A nil client gets a default;

@@ -45,8 +45,8 @@ A provider must:
 3. Pass `transittest.Run` against recorded responses in its `testdata/`, or
    hand-written ones where the source's terms restrict redistribution.
    Tests must not call the live API.
-4. Decode its options strictly through `transit.Options` (registering with
-   `transit.RegisterConfig` does this for a config struct), and read secrets
+4. Decode its options strictly through `registry.Options` (registering with
+   `registry.RegisterConfig` does this for a config struct), and read secrets
    from configuration (where `${NAME}` references the environment), never
    from hard-coded values.
 5. Keep secrets out of error messages: they reach the logs, so name URLs

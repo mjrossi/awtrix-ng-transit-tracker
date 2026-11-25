@@ -10,6 +10,7 @@ import (
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/providers/gtfsrt"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/providers/metrolisboa"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/providers/transitland"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit/registry"
 )
 
 type options struct {
@@ -26,12 +27,12 @@ func WithScheduleCache(dir string) Option {
 }
 
 // Registry returns a registry with every built-in provider.
-func Registry(opts ...Option) *transit.Registry {
+func Registry(opts ...Option) *registry.Registry {
 	var o options
 	for _, opt := range opts {
 		opt(&o)
 	}
-	r := transit.NewRegistry()
+	r := registry.New()
 	carrismetropolitana.Register(r)
 	demo.Register(r)
 	gtfsrt.Register(r, gtfsrt.WithCacheDir(o.scheduleCache))
@@ -48,5 +49,5 @@ func Open(name string, settings map[string]any, opts ...Option) (transit.Provide
 	if err != nil {
 		return nil, err
 	}
-	return Registry(opts...).New(typ, o)
+	return Registry(opts...).Build(typ, o)
 }

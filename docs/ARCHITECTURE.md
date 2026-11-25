@@ -1,6 +1,6 @@
 # Architecture
 
-How the service is built today. The roadmap is in [PLAN.md](./PLAN.md), the
+How the code is built today. The roadmap is in [PLAN.md](./PLAN.md), the
 TC002 design rules are in [rendering.md](./rendering.md), and the security
 model is in [SECURITY.md](../SECURITY.md).
 
@@ -17,7 +17,15 @@ each tick, per board (internal/scheduler.Runner):
 
 clock output (internal/clockout):
   Snapshot.Rows (transit.Filter ──▶ transit.Group) ──▶ render.TC002 ──▶ awtrix PushApp ──▶ clock
+
+departures command (cmd, departures.go), once or every --interval:
+  openSource: one [providers.NAME] block (config.LoadProvider), else a catalog system, else a type
+  for each stop:  Provider.Departures ──▶ transit.Filter ──▶ termout (transit.Group) ──▶ stdout
 ```
+
+The `departures` command does not use the scheduler: it has no boards, no
+last-good cache and no backoff. A stop that fails is a warning while
+another stop answers, and an error when all fail.
 
 The scheduler knows nothing about displays. It produces a `Snapshot` per
 board and hands it to a `scheduler.Output`. A snapshot keeps each stop's
@@ -26,16 +34,18 @@ cached departures unfiltered, together with its health (`FetchedAt`,
 data. `Snapshot.Rows(now)` filters and groups them, and drops the
 predictions of a failing source, which are as old as its last good fetch.
 
-The service makes outgoing requests only: to transit APIs and to the clock.
-It listens on no ports.
+The program makes outgoing requests only: to transit APIs and to the clock.
+It listens on no ports. Besides the state file, it writes only GTFS
+schedules to the cache directory (`--cache-dir`).
 
 ## Packages and what they may import
 
 | Package | Owns | Imports (project) |
 |---|---|---|
-| `pkg/transit` | `Departure`, `Line`, `Provider`, `Query`, `PartialError`, `ErrUnknownStop`, `Metered`, `Quota`, `Filter`, `Group`, `Registry`, `MatchesSearch`, `ModeForRouteType` | none |
+| `pkg/transit` | `Departure`, `Line`, `Provider`, `Query`, `PartialError`, `ErrUnknownStop`, `StopNamer`, `Metered`, `Quota`, `Filter`, `Group`, `MatchesSearch`, `ModeForRouteType` | none |
+| `pkg/transit/registry` | building providers by name from configuration: `Registry`, `Options`, `RegisterConfig` | `transit` |
 | `pkg/transit/transittest` | the provider contract suite | `transit` |
-| `pkg/transit/providers/<name>` | one data source each | `transit` only |
+| `pkg/transit/providers/<name>` | one data source each | `transit`, `registry` |
 | `pkg/transit/providers` | the built-in registry, and `Open` | every provider, `catalog` |
 | `pkg/transit/catalog` | embedded system entries (`systems/*.toml`), and resolving a provider block (`Resolve`, `Options`) | none |
 | `pkg/awtrix` | typed AWTRIX NG HTTP client and payload types | none |

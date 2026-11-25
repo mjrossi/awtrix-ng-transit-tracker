@@ -24,7 +24,7 @@ func buildProviders(cfg *config.Config, opts ...providers.Option) (map[string]tr
 		if err != nil {
 			return nil, fmt.Errorf("providers.%s: %w", name, err)
 		}
-		p, err := reg.New(typ, opts)
+		p, err := reg.Build(typ, opts)
 		if err != nil {
 			return nil, fmt.Errorf("providers.%s: %w", name, err)
 		}

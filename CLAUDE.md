@@ -46,7 +46,8 @@ Part of the Urbanist family with *The Urbanist Lexicon* (mjrossi.com) and
   `stops search`, `systems`, `config validate`, `clock run`,
   `clock preview`. No business logic.
 - `pkg/transit/` — the importable core: model, `Provider`, `Filter`,
-  `Group`, `Registry`.
+  `Group`.
+- `pkg/transit/registry/` — building providers by name from configuration.
 - `pkg/transit/transittest/` — the provider contract suite.
 - `pkg/transit/catalog/` — ready-made systems, one TOML file each in
   `systems/`. `just catalog-check` verifies them live; update `verified`
@@ -67,7 +68,9 @@ Part of the Urbanist family with *The Urbanist Lexicon* (mjrossi.com) and
 ## Tooling
 
 mise pins Go, just and golangci-lint: `mise install`, then `just` lists
-the commands. `just ci` runs what CI runs. After an intended layout
+the commands. The `go` line in `go.mod` is the oldest Go that importers may
+use, and CI's `oldest-go` job builds with it; mise pins the newer version
+used for development. `just ci` runs what CI runs. After an intended layout
 change, `just golden` rewrites the renderer's golden files; review the
 diff.
 

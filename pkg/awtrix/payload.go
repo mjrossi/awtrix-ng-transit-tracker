@@ -1,7 +1,7 @@
 // Package awtrix is a typed client for the AWTRIX NG HTTP API.
 //
-// It covers what this project needs: pushing and removing apps, including
-// the TC002-only layout key. Field names follow the AWTRIX NG payload
+// It covers pushing and expiring custom apps, including the TC002-only
+// layout key, and forgetting them along with their place in the rotation. Field names follow the AWTRIX NG payload
 // reference (docs/reference/payload.md and docs/guides/layouts.md in the
 // firmware repository). AWTRIX NG rejects unknown keys, so every field here
 // is omitted when empty rather than sent as a zero value.

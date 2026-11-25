@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/mjrossi/urbanist-timetable/pkg/transit"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit/registry"
 )
 
 // Name is the provider's name in configuration.
@@ -56,8 +57,8 @@ type Provider struct {
 }
 
 // Register adds the demo provider to r.
-func Register(r *transit.Registry) {
-	transit.RegisterConfig(r, Name, New)
+func Register(r *registry.Registry) {
+	registry.RegisterConfig(r, Name, New)
 }
 
 // New validates cfg and returns a provider.

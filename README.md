@@ -24,7 +24,8 @@ schedule-only times are dimmed. Add a board per direction and the clock
 rotates through them. A `rows` layout fits two lines or directions on one
 screen instead, and a `grid` layout the next departure of up to four lines.
 
-> **Status:** early, and running on a real TC002. Supported today:
+> **Status:** early, and running on a real TC002. Supported today, in the
+> terminal and on the clock:
 > any agency publishing GTFS-Realtime, with six
 > [ready-made systems](#systems) checked against their live feeds, plus
 > dedicated providers for Metro de Lisboa and Carris Metropolitana, and
@@ -459,6 +460,39 @@ searches, previews and retries count too, but are not in the estimate.
   filesystem, mount a tmpfs at `/tmp`; otherwise downloads fall back to
   memory, which needs about as much RAM as the zip is large.
 
+## Use it from Go
+
+The packages under `pkg/` are importable and need Go 1.26. They use only
+the standard library, except `catalog`, which reads TOML, and `providers`,
+which uses `catalog`.
+
+| Package | For |
+|---|---|
+| `pkg/transit` | The departure model, the `Provider` interface, `Filter` and `Group` |
+| `pkg/transit/providers` | `Open`: a provider from a system or type name |
+| `pkg/transit/providers/gtfsrt` | Any agency with GTFS and GTFS-Realtime, from its URLs |
+| `pkg/transit/catalog` | The ready-made systems |
+| `pkg/transit/transittest` | The contract suite for a provider of your own |
+| `pkg/awtrix` | A typed client for AWTRIX NG clocks |
+
+```go
+p, err := providers.Open("bart", map[string]any{"system": "sf-bart"})
+if err != nil {
+	return err
+}
+now := time.Now()
+deps, err := p.Departures(ctx, transit.Query{StopID: "EMBR", Now: now, Window: time.Hour})
+if err != nil {
+	return err
+}
+for _, row := range transit.Group(deps, 0, 3) {
+	fmt.Println(row.Line.ShortName, row.Headsign, row.Departures[0].MinutesUntil(now))
+}
+```
+
+[`examples/departures`](./examples/departures) is a complete program. Before
+1.0, a minor version may break the API.
+
 ## Development
 
 ```bash
@@ -474,6 +508,7 @@ just ci          # lint, test, validate the example config
 | `just test` / `just lint` / `just fmt` | Tests with the race detector; lint; format |
 | `just golden` | Rewrites the renderer's golden files after an intended layout change |
 | `just catalog-check` | Checks every catalog system against its live feeds |
+| `just example` | Builds the example importer, a module of its own |
 | `just docker-build` / `just docker-run [config]` | Builds the image; runs it against `config.toml` |
 
 Secrets for local runs go in `mise.local.toml` (gitignored); copy

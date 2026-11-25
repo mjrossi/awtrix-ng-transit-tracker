@@ -8,8 +8,10 @@ rather than in a public issue.
 
 ## Model
 
-Urbanist Timetable runs on a home network, usually in Docker on a NAS. It
-reads one configuration file, calls transit APIs and the clock, and listens
+Urbanist Timetable runs in two ways: as a service for the clock on a home
+network, usually in Docker on a NAS, and as a command in a user's terminal.
+Either way it reads at most one configuration file, calls transit APIs and,
+for the clock, the clock itself, caches GTFS schedules on disk, and listens
 on no ports.
 
 ### What it trusts
@@ -17,6 +19,8 @@ on no ports.
 - **The configuration file and its environment.** Whoever can edit
   `config.toml` or set the container's environment chooses which URLs the
   service fetches and where it pushes. The file is mounted read-only.
+- **Command-line arguments**, such as `--realtime` and `--static` URLs,
+  which the user typing them chooses.
 - **The configured feed URLs**, including the catalog's embedded ones, to
   be the agencies they claim to be. Some agencies serve feeds over plain
   HTTP (the New York subway's schedule zip, for example), which offers no
@@ -36,7 +40,9 @@ Feed and API contents. They are decoded defensively:
 | Clock API replies (app list, device state) | 1 MB decoded |
 | Clock error bodies | 64 KB |
 
-Every request has a timeout. Line colors are normalized to `#RRGGBB`
+Text from feeds and servers, including error messages, is printed to the
+terminal without control or format characters, so it cannot drive the
+terminal. Every request has a timeout. Line colors are normalized to `#RRGGBB`
 before they reach the clock, and text is sent as JSON strings, never
 interpreted.
 
