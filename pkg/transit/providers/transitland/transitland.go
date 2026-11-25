@@ -4,9 +4,9 @@
 //
 // Every request counts against a fixed monthly quota (10,000 on the free
 // plan, 50,000 on the Hobbyist/Academic plan), so the provider fetches each
-// stop and window once per refresh interval and answers polls in between
-// from that response. Boards still tick at their own poll interval, so
-// minutes count down between fetches.
+// stop once per refresh interval and answers polls in between from that
+// response. Boards still tick at their own poll interval, so minutes count
+// down between fetches.
 package transitland
 
 import (
@@ -49,14 +49,10 @@ const (
 	// DefaultMonthlyQuota is the free plan's REST quota.
 	DefaultMonthlyQuota = 10_000
 
-	// retryInterval spaces out requests after a failure. It must be short: a
-	// retry answered with the remembered failure doubles the caller's backoff,
-	// and a board goes blank if that outlasts its max_stale.
-	retryInterval = time.Minute
-	// pollJitter is how early a poll can arrive and still count as due.
-	// Tickers are not exact, and a poll a moment too early would put the
-	// fetch off by a whole poll interval.
-	pollJitter = time.Second
+	// failureShared lets boards on one stop share a failed request. It must
+	// end before the scheduler's first retry, two poll intervals later, or
+	// that retry gets the remembered failure and backs off further.
+	failureShared = 10 * time.Second
 
 	// lateLookback is how late a vehicle can always run and still be shown.
 	lateLookback = 30 * time.Minute
@@ -105,9 +101,9 @@ type Provider struct {
 	quota int
 
 	mu sync.Mutex
-	// stops holds one cache per stop and window, so boards polling the same
-	// stop share each request.
-	stops map[stopWindow]*upstream.Cache[timetable]
+	// stops holds one cache per stop key, so boards polling the same stop
+	// share each request.
+	stops map[string]stopCache
 	// offsets holds each stop key's service-day offset.
 	offsets map[string]serviceOffset
 }
@@ -122,16 +118,15 @@ type serviceOffset struct {
 // timetable is one fetched answer for a stop.
 type timetable struct {
 	deps []transit.Departure
-	// unknown records that the stop does not exist, so a mistyped stop is
-	// not asked for on every poll.
-	unknown bool
 	// until is the last departure of a list cut off at departureLimit, or
 	// zero when the answer is complete.
 	until time.Time
 }
 
-type stopWindow struct {
-	key    string
+// stopCache caches a stop's answers for window, the widest asked for, which
+// cover the narrower ones.
+type stopCache struct {
+	*upstream.Cache[timetable]
 	window time.Duration
 }
 
@@ -192,27 +187,21 @@ func New(cfg Config, client *http.Client) (*Provider, error) {
 		feed:    strings.TrimSpace(cfg.Feed),
 		refresh: refresh,
 		quota:   cfg.MonthlyQuota,
-		stops:   map[stopWindow]*upstream.Cache[timetable]{},
+		stops:   map[string]stopCache{},
 		offsets: map[string]serviceOffset{},
 	}, nil
 }
 
-// RefreshInterval implements transit.Metered.
-func (p *Provider) RefreshInterval() time.Duration { return p.refresh }
-
-// MonthlyQuota implements transit.Metered.
-func (p *Provider) MonthlyQuota() (quota int, configured bool) {
-	if p.quota == 0 {
-		return DefaultMonthlyQuota, false
-	}
-	return p.quota, true
-}
-
-// QuotaAccount implements transit.Metered. Quotas belong to API keys, so it
-// identifies the key without revealing it.
-func (p *Provider) QuotaAccount() string {
+// Quota implements transit.Metered. Quotas belong to API keys, so Account
+// identifies the key.
+func (p *Provider) Quota() transit.Quota {
 	sum := sha256.Sum256([]byte(p.base.String() + "\x00" + p.key))
-	return Name + ":" + hex.EncodeToString(sum[:])
+	return transit.Quota{
+		Account:         Name + ":" + hex.EncodeToString(sum[:]),
+		Limit:           p.quota,
+		DefaultLimit:    DefaultMonthlyQuota,
+		RefreshInterval: p.refresh,
+	}
 }
 
 // Departures implements transit.Provider.
@@ -224,9 +213,6 @@ func (p *Provider) Departures(ctx context.Context, q transit.Query) ([]transit.D
 	tt, err := p.cacheFor(q).Get(ctx, q.Now)
 	if err != nil {
 		return nil, err
-	}
-	if tt.unknown {
-		return nil, fmt.Errorf("%w %q", transit.ErrUnknownStop, p.stopKey(q.StopID))
 	}
 	end := q.Now.Add(q.Window)
 	out := make([]transit.Departure, 0, len(tt.deps))
@@ -254,24 +240,23 @@ func (p *Provider) Departures(ctx context.Context, q transit.Query) ([]transit.D
 	return out, &transit.PartialError{Err: err}
 }
 
-func (p *Provider) cacheFor(q transit.Query) *upstream.Cache[timetable] {
-	k := stopWindow{key: p.stopKey(q.StopID), window: q.Window}
+func (p *Provider) cacheFor(q transit.Query) stopCache {
+	key := p.stopKey(q.StopID)
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	c, ok := p.stops[k]
-	if !ok {
-		// Fetching one refresh interval past the window keeps the end of
-		// the window filled until the next fetch.
-		span := q.Window + p.refresh
-		c = upstream.NewCacheAt(upstream.Policy{
-			TTL:               p.refresh - pollJitter,
-			Retry:             retryInterval - pollJitter,
-			RetryOnlyWithData: true,
-		}, func(ctx context.Context, now time.Time) (timetable, error) {
-			return p.fetch(ctx, k.key, now, span)
-		})
-		p.stops[k] = c
+	if c, ok := p.stops[key]; ok && c.window >= q.Window {
+		return c
 	}
+	// Fetching one refresh interval past the window keeps the end of the
+	// window filled until the next fetch.
+	span := q.Window + p.refresh
+	c := stopCache{
+		Cache: upstream.NewCacheAt(upstream.Policy{TTL: p.refresh, Retry: failureShared}, func(ctx context.Context, now time.Time) (timetable, error) {
+			return p.fetch(ctx, key, now, span)
+		}),
+		window: q.Window,
+	}
+	p.stops[key] = c
 	return c
 }
 
@@ -345,7 +330,7 @@ func (p *Provider) fetch(ctx context.Context, key string, now time.Time, span ti
 	}
 	// The API answers an unknown stop with 200 and no stops.
 	if len(resp.Stops) == 0 {
-		return timetable{unknown: true}, nil
+		return timetable{}, fmt.Errorf("%w %q", transit.ErrUnknownStop, key)
 	}
 	lists := resp.lists()
 	p.learnOffset(key, lists, now)

@@ -80,13 +80,13 @@ headway = "5m"
 			refresh: 5 * time.Minute,
 			want:    36 * 31,
 		},
-		"different windows fetch separately": {
+		"different windows share a stop": {
 			boards: []string{
 				board("a", `active_hours = "07:00-09:00"`, "tl:s1"),
 				board("b", "active_hours = \"07:00-09:00\"\nwindow = \"30m\"", "tl:s1"),
 			},
 			refresh: 5 * time.Minute,
-			want:    2 * 24 * 31,
+			want:    24 * 31,
 		},
 		"each active span rounds up": {
 			boards: []string{

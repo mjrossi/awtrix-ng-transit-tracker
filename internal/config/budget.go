@@ -20,9 +20,6 @@ type QuotaUse struct {
 	// Quota is the smallest the blocks configure, or the smallest default if
 	// none does.
 	Quota int
-
-	// configured records that Quota is not a default.
-	configured bool
 }
 
 // Over reports whether the estimate exceeds the quota.
@@ -32,55 +29,59 @@ func (u QuotaUse) Over() bool { return u.Requests > u.Quota }
 // in provs, keyed by block name, draw on. It is sorted by block name.
 func (c *Config) QuotaUses(provs map[string]transit.Provider) []QuotaUse {
 	refresh := map[string]time.Duration{}
-	metered := map[string]transit.Metered{}
+	quotas := map[string]transit.Quota{}
 	for name, p := range provs {
 		if m, ok := p.(transit.Metered); ok {
-			refresh[name], metered[name] = m.RefreshInterval(), m
+			quotas[name] = m.Quota()
+			refresh[name] = quotas[name].RefreshInterval
 		}
 	}
 	est := c.EstimateRequests(refresh)
+	var accounts []string
+	blocks := map[string][]string{}
+	for _, name := range slices.Sorted(maps.Keys(quotas)) {
+		a := quotas[name].Account
+		if blocks[a] == nil {
+			accounts = append(accounts, a)
+		}
+		blocks[a] = append(blocks[a], name)
+	}
 	var out []QuotaUse
-	index := map[string]int{}
-	for _, name := range slices.Sorted(maps.Keys(metered)) {
-		account := metered[name].QuotaAccount()
-		quota, configured := metered[name].MonthlyQuota()
-		i, ok := index[account]
-		if !ok {
-			i = len(out)
-			index[account] = i
-			out = append(out, QuotaUse{Quota: quota, configured: configured})
+	for _, a := range accounts {
+		u := QuotaUse{Providers: blocks[a]}
+		var limits, defaults []int
+		for _, name := range blocks[a] {
+			u.Requests += est[name]
+			defaults = append(defaults, quotas[name].DefaultLimit)
+			if l := quotas[name].Limit; l > 0 {
+				limits = append(limits, l)
+			}
 		}
-		u := &out[i]
-		u.Providers = append(u.Providers, name)
-		u.Requests += est[name]
-		switch {
-		case configured && !u.configured:
-			u.Quota, u.configured = quota, true
-		case configured == u.configured:
-			u.Quota = min(u.Quota, quota)
+		if len(limits) == 0 {
+			limits = defaults
 		}
+		u.Quota = slices.Min(limits)
+		out = append(out, u)
 	}
 	return out
 }
 
 // EstimateRequests estimates the upstream requests a month made by each
 // provider block named in refresh, which maps a block to the shortest time
-// between its requests for one stop. Boards that poll the same stop with
-// the same window share requests: a poll makes one once the refresh interval
-// has passed since the last. Failed fetches that are retried, searches and
-// previews are not counted.
+// between its requests for one stop. Boards that poll the same stop share
+// requests: a poll makes one once the refresh interval has passed since the
+// last. Failed fetches that are retried, searches and previews are not
+// counted, nor is the one request repeated when boards with different windows
+// start.
 func (c *Config) EstimateRequests(refresh map[string]time.Duration) map[string]int {
-	type source struct {
-		provider, stop string
-		window         time.Duration
-	}
+	type source struct{ provider, stop string }
 	boards := map[source][]Board{}
 	for _, b := range c.Boards {
 		for _, s := range b.Stops {
 			if _, ok := refresh[s.Provider]; !ok {
 				continue
 			}
-			k := source{s.Provider, s.Stop, b.Window.D()}
+			k := source{s.Provider, s.Stop}
 			boards[k] = append(boards[k], b)
 		}
 	}

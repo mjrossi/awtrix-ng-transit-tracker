@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"github.com/mjrossi/urbanist-timetable/pkg/transit"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/providers/transitland"
@@ -172,7 +173,7 @@ func TestRequest(t *testing.T) {
 			}
 			// The window plus one refresh interval, so the end of the window
 			// stays filled until the next fetch.
-			wantNext := (time.Hour + p.RefreshInterval()) / time.Second
+			wantNext := (time.Hour + p.Quota().RefreshInterval) / time.Second
 			want := url.Values{"next": {strconv.Itoa(int(wantNext))}, "limit": {"1000"}, "use_service_window": {"false"}}
 			if diff := cmp.Diff(want, r.URL.Query()); diff != "" {
 				t.Errorf("query (-want +got):\n%s", diff)
@@ -205,9 +206,11 @@ func TestRefreshInterval(t *testing.T) {
 		{4*time.Minute + 58*time.Second, time.Hour, 1},
 		// A ticker can deliver the poll due now slightly early.
 		{5*time.Minute - time.Millisecond, time.Hour, 2},
-		// A board with another window gets its own request.
-		{5 * time.Minute, 30 * time.Minute, 3},
-		{6 * time.Minute, 30 * time.Minute, 3},
+		// The answer covers narrower windows; a wider one needs a request.
+		{6 * time.Minute, 30 * time.Minute, 2},
+		{7 * time.Minute, 90 * time.Minute, 3},
+		{8 * time.Minute, time.Hour, 3},
+		{8 * time.Minute, 30 * time.Minute, 3},
 	}
 	for _, st := range steps {
 		poll(st.after, st.window)
@@ -279,10 +282,9 @@ func TestNew(t *testing.T) {
 		cfg         transitland.Config
 		wantErr     string
 		wantRefresh time.Duration
-		wantQuota   int
 	}{
-		"defaults":      {cfg: transitland.Config{APIKey: "k"}, wantRefresh: 5 * time.Minute, wantQuota: 10_000},
-		"hobbyist":      {cfg: transitland.Config{APIKey: "k", RefreshInterval: "2m", MonthlyQuota: 50_000}, wantRefresh: 2 * time.Minute, wantQuota: 50_000},
+		"defaults":      {cfg: transitland.Config{APIKey: "k"}, wantRefresh: 5 * time.Minute},
+		"hobbyist":      {cfg: transitland.Config{APIKey: "k", RefreshInterval: "2m", MonthlyQuota: 50_000}, wantRefresh: 2 * time.Minute},
 		"no key":        {cfg: transitland.Config{}, wantErr: "api_key"},
 		"blank key":     {cfg: transitland.Config{APIKey: "  "}, wantErr: "api_key"},
 		"too fast":      {cfg: transitland.Config{APIKey: "k", RefreshInterval: "30s"}, wantErr: "at least 1m"},
@@ -292,7 +294,7 @@ func TestNew(t *testing.T) {
 		"neg quota":     {cfg: transitland.Config{APIKey: "k", MonthlyQuota: -1}, wantErr: "monthly_quota"},
 		"bad base url":  {cfg: transitland.Config{APIKey: "k", BaseURL: "ftp://x"}, wantErr: "base_url"},
 		"base secret":   {cfg: transitland.Config{APIKey: "k", BaseURL: "ftp://user:hunter2@x"}, wantErr: "base_url"},
-		"explicit base": {cfg: transitland.Config{APIKey: "k", BaseURL: "https://mirror.example/rest"}, wantRefresh: 5 * time.Minute, wantQuota: 10_000},
+		"explicit base": {cfg: transitland.Config{APIKey: "k", BaseURL: "https://mirror.example/rest"}, wantRefresh: 5 * time.Minute},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -310,12 +312,9 @@ func TestNew(t *testing.T) {
 				t.Fatal(err)
 			}
 			var m transit.Metered = p
-			quota, configured := m.MonthlyQuota()
-			if m.RefreshInterval() != tt.wantRefresh || quota != tt.wantQuota {
-				t.Errorf("refresh %s quota %d, want %s and %d", m.RefreshInterval(), quota, tt.wantRefresh, tt.wantQuota)
-			}
-			if want := tt.cfg.MonthlyQuota != 0; configured != want {
-				t.Errorf("quota configured = %v, want %v", configured, want)
+			want := transit.Quota{Limit: tt.cfg.MonthlyQuota, DefaultLimit: 10_000, RefreshInterval: tt.wantRefresh}
+			if diff := cmp.Diff(want, m.Quota(), cmpopts.IgnoreFields(transit.Quota{}, "Account")); diff != "" {
+				t.Errorf("quota (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -369,7 +368,7 @@ func TestQuotaAccount(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return p.QuotaAccount()
+		return p.Quota().Account
 	}
 	want := account("k", "")
 	if got := account("k", transitland.DefaultBaseURL+"/"); got != want {
@@ -398,8 +397,10 @@ func TestFailedRefresh(t *testing.T) {
 		calls int32
 	}{
 		{10 * time.Minute, 2},
-		{10*time.Minute + 58*time.Second, 2},
-		{11*time.Minute - time.Millisecond, 3},
+		// Another board's poll shares the failure; the scheduler's first
+		// retry does not.
+		{10*time.Minute + 5*time.Second, 2},
+		{10*time.Minute + 30*time.Second, 3},
 	}
 	for _, st := range steps {
 		deps, err := poll(st.after)
@@ -417,32 +418,33 @@ func TestFailedRefresh(t *testing.T) {
 	}
 }
 
-func TestFailureWithNoDataIsRetriedAtOnce(t *testing.T) {
-	s := newServer(t)
-	s.status.Store(http.StatusBadGateway)
-	p := newProvider(t, s, transitland.Config{Feed: feed})
-	for want := int32(1); want <= 2; want++ {
-		if _, err := p.Departures(t.Context(), query("HC", time.Hour)); err == nil {
-			t.Fatal("no error")
-		}
-		if got := s.calls.Load(); got != want {
-			t.Fatalf("%d requests after %d polls", got, want)
-		}
+func TestFailureWithNoDataIsShared(t *testing.T) {
+	tests := map[string]struct {
+		status int
+		stop   string
+	}{
+		"outage":       {http.StatusBadGateway, "HC"},
+		"unknown stop": {0, "NOPE"},
 	}
-}
-
-func TestUnknownStopIsCached(t *testing.T) {
-	s := newServer(t)
-	p := newProvider(t, s, transitland.Config{Feed: feed, RefreshInterval: "10m"})
-	for after := time.Duration(0); after < 10*time.Minute; after += time.Minute {
-		q := query("NOPE", time.Hour)
-		q.Now = now.Add(after)
-		if _, err := p.Departures(t.Context(), q); !errors.Is(err, transit.ErrUnknownStop) {
-			t.Fatalf("after %s: err = %v", after, err)
-		}
-	}
-	if got := s.calls.Load(); got != 1 {
-		t.Errorf("%d requests for a mistyped stop, want 1", got)
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			s := newServer(t)
+			s.status.Store(int32(tt.status))
+			p := newProvider(t, s, transitland.Config{Feed: feed})
+			for _, st := range []struct {
+				after time.Duration
+				calls int32
+			}{{0, 1}, {5 * time.Second, 1}, {30 * time.Second, 2}} {
+				q := query(tt.stop, time.Hour)
+				q.Now = now.Add(st.after)
+				if _, err := p.Departures(t.Context(), q); err == nil {
+					t.Fatal("no error")
+				}
+				if got := s.calls.Load(); got != st.calls {
+					t.Fatalf("after %s: %d requests, want %d", st.after, got, st.calls)
+				}
+			}
+		})
 	}
 }
 
@@ -910,7 +912,7 @@ func TestOffsetFromServiceDay(t *testing.T) {
 				last = r.URL.Query()
 				_, _ = fmt.Fprintf(w, `{"stops":[{"departures":[{"service_date":%q,"departure":{"scheduled":%q,"scheduled_utc":"2026-11-25T16:30:00Z"},"trip":{"trip_id":"t","route":{"route_id":"1"}}}]}]}`, tt.date, tt.scheduled)
 			})
-			for _, after := range []time.Duration{0, p.RefreshInterval()} {
+			for _, after := range []time.Duration{0, p.Quota().RefreshInterval} {
 				q := query("f-x:1", time.Hour)
 				q.Now = now.Add(after)
 				if _, err := p.Departures(t.Context(), q); err != nil {

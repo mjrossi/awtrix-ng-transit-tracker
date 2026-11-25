@@ -33,7 +33,7 @@ It listens on no ports.
 
 | Package | Owns | Imports (project) |
 |---|---|---|
-| `pkg/transit` | `Departure`, `Line`, `Provider`, `Query`, `PartialError`, `ErrUnknownStop`, `Metered`, `Filter`, `Group`, `Registry`, `MatchesSearch`, `ModeForRouteType` | none |
+| `pkg/transit` | `Departure`, `Line`, `Provider`, `Query`, `PartialError`, `ErrUnknownStop`, `Metered`, `Quota`, `Filter`, `Group`, `Registry`, `MatchesSearch`, `ModeForRouteType` | none |
 | `pkg/transit/transittest` | the provider contract suite | `transit` |
 | `pkg/transit/providers/<name>` | one data source each | `transit` only |
 | `pkg/transit/providers` | the built-in registry | every provider |
@@ -82,11 +82,12 @@ Rules, from [CLAUDE.md](../CLAUDE.md):
   | `metrolisboa` | OAuth token | until 1 min before expiry | refetched on 401 once |
   | `carrismetropolitana` | lines | 24 h | keep last, retry in 15 min |
   | `carrismetropolitana` | stop list (search only) | process lifetime | not cached |
-  | `transitland` | each stop's departures, per window | `refresh_interval` (5 min) | failure cached for 1 min; with no data yet, retry next poll; an unknown stop counts as an answer |
+  | `transitland` | each stop's departures, for the widest window asked for | `refresh_interval` (5 min) | failure cached for 10 s, so boards share it; the scheduler backs off |
 
   Every row except the token and stop list uses `upstream.Cache`
   (`pkg/transit/internal/upstream`), which is single-flight: one download
-  per resource at a time, and other callers wait for it. Once a `gtfsrt`
+  per resource at a time, and other callers wait for it. Times end a second
+  early there, so a poll due exactly then loads even if its tick is early. Once a `gtfsrt`
   schedule exists, its daily refresh runs in a background goroutine
   detached from the poll's context, and callers keep using the previous
   schedule. Concurrent token fetches are harmless, so they are not
@@ -96,7 +97,7 @@ Rules, from [CLAUDE.md](../CLAUDE.md):
   beyond the window and windows the cached result at each poll's
   `Query.Now`, so boards keep their own poll interval. Providers with a
   quota implement `transit.Metered`; `Config.QuotaUses` estimates
-  their requests and adds up the blocks with the same `QuotaAccount`;
+  their requests and adds up the blocks with the same `Quota.Account`;
   `config validate` and `run` warn above the quota. An answer from the cache
   looks fresh to the scheduler, so `refresh_interval` is at most 10 minutes.
   A prediction shown as live is at most that plus one `poll_interval` old,

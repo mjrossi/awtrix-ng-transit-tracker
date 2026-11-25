@@ -20,14 +20,16 @@ version may break configuration.
 
 ### Changed
 
-- For programs that import `pkg/transit`: `transit.Metered` and
-  `transit.ModeForRouteType` are new. `Query.Limit` and `Stop.Modes`,
-  which the service never used, are removed, and `SortAndLimit` is now
-  `SortByTime`. Providers return `transit.ErrUnknownStop` instead of an
-  error of their own.
+- For programs that import `pkg/transit`: `transit.Metered`,
+  `transit.Quota` and `transit.ModeForRouteType` are new. `Query.Limit` and
+  `Stop.Modes`, which the service never used, are removed, and
+  `SortAndLimit` is now `SortByTime`. Providers return
+  `transit.ErrUnknownStop` instead of an error of their own.
 
 ### Fixed
 
+- `gtfsrt` and `metrolisboa` boards with `poll_interval = "15s"` read fresh
+  data on every poll, instead of often repeating the previous poll's.
 - A trip without a destination no longer takes the place of a named one on
   the `departure` layout.
 - Errors about a `base_url` or `token_url` that is not http(s) no longer

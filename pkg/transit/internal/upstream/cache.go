@@ -9,7 +9,13 @@ import (
 	"time"
 )
 
-// Policy sets when a Cache loads again.
+// slack is how early a Get can come and still load again. Tickers are not
+// exact, and without it a poll due just as the data expires but delivered a
+// moment early would put the load off by a whole poll interval.
+const slack = time.Second
+
+// Policy sets when a Cache loads again. TTL and Retry end a second early, so
+// that polls spaced exactly that far apart load every time.
 type Policy struct {
 	// TTL is how long a successful load stays fresh.
 	TTL time.Duration
@@ -167,5 +173,5 @@ func (c *Cache[T]) run(ctx context.Context, now time.Time, cl *call[T]) {
 
 func within(now, since time.Time, d time.Duration) bool {
 	age := now.Sub(since)
-	return age > -d && age < d
+	return age > -d && age < d-slack
 }

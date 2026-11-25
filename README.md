@@ -292,8 +292,8 @@ monthly_quota = 50000      # your plan's REST quota; default 10000 (free plan)
 Every request counts against your plan's monthly quota (10,000 on the free
 plan, 50,000 on Hobbyist/Academic, which is free for non-commercial use).
 Each stop is fetched once per `refresh_interval` (1 to 10 minutes), and
-boards still count minutes down between fetches. Boards with different
-`window`s on one stop fetch separately. Requests a month are about
+boards still count minutes down between fetches. Boards on one stop share
+its requests. Requests a month are about
 
     31 × stops × active hours a day × 60 ÷ refresh minutes
 

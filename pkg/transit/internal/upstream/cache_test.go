@@ -49,6 +49,13 @@ func TestCacheSequence(t *testing.T) {
 			{0, ok("a"), got{"a", ""}},
 			{9 * time.Minute, nil, got{"a", ""}},
 		}},
+		{"a moment early counts as due", policy, []step{
+			{0, ok("a"), got{"a", ""}},
+			{10*time.Minute - 1001*time.Millisecond, nil, got{"a", ""}},
+			{10*time.Minute - time.Second, fail("boom"), got{"a", "boom"}},
+			{13*time.Minute - 2001*time.Millisecond, nil, got{"a", "boom"}},
+			{13*time.Minute - 2*time.Second, ok("b"), got{"b", ""}},
+		}},
 		{"expiry", policy, []step{
 			{0, ok("a"), got{"a", ""}},
 			{10 * time.Minute, ok("b"), got{"b", ""}},
