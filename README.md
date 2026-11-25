@@ -461,8 +461,9 @@ searches, previews and retries count too, but are not in the estimate.
 
 ## Use it from Go
 
-The packages under `pkg/` are importable, need Go 1.26, and use only the
-standard library apart from `catalog`, which reads TOML.
+The packages under `pkg/` are importable and need Go 1.26. They use only
+the standard library, except `catalog`, which reads TOML, and `providers`,
+which uses `catalog`.
 
 | Package | For |
 |---|---|
