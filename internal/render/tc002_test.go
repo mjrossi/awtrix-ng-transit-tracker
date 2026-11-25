@@ -287,6 +287,33 @@ func TestViews(t *testing.T) {
 	}
 }
 
+// Trips added in realtime can lack a headsign; they must not replace the
+// named destination on the departure layout.
+func TestRowsWithoutHeadsignComeLast(t *testing.T) {
+	blank, named := row(azul, "", 1), row(azul, "Reboleira", 4)
+	tests := map[string]struct {
+		rows []transit.Row
+		opts render.Options
+		want []string
+	}{
+		"departure":            {rows: []transit.Row{blank, named}, want: []string{"Reboleira"}},
+		"rows":                 {rows: []transit.Row{blank, named}, opts: render.Options{Layout: render.LayoutRows}, want: []string{"Reboleira", ""}},
+		"earlier line":         {rows: []transit.Row{row(azul, "", 1), row(verde, "Telheiras", 4)}, want: []string{"Telheiras"}},
+		"nothing else to show": {rows: []transit.Row{blank}, want: []string{""}},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			var got []string
+			for _, r := range render.Visible(tt.rows, tt.opts) {
+				got = append(got, r.Headsign)
+			}
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("headsigns (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 // An unfiltered stop served in both directions keeps one destination on
 // the departure layout, whichever direction departs next.
 func TestDepartureLayoutKeepsOneRow(t *testing.T) {

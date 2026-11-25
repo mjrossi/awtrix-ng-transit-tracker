@@ -122,10 +122,10 @@ func New(cfg Config, client *http.Client) (*Provider, error) {
 	}
 	base, ok := upstream.HTTPURL(cfg.BaseURL)
 	if !ok {
-		return nil, fmt.Errorf("base_url %q must be an http(s) URL", cfg.BaseURL)
+		return nil, errors.New("base_url must be an http(s) URL")
 	}
 	if _, ok := upstream.HTTPURL(cfg.TokenURL); !ok {
-		return nil, fmt.Errorf("token_url %q must be an http(s) URL", cfg.TokenURL)
+		return nil, errors.New("token_url must be an http(s) URL")
 	}
 	lisbon, err := time.LoadLocation("Europe/Lisbon")
 	if err != nil {

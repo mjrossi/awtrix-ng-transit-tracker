@@ -166,7 +166,8 @@ func TC002(rows []transit.Row, now time.Time, opts Options) *awtrix.Layout {
 // swap places between pushes while the same ones are on screen. The
 // departure layout shows the first such row, so a stop served in both
 // directions keeps one destination instead of flipping to whichever
-// departs next.
+// departs next. Rows without a headsign come last, so a trip whose
+// destination is unknown does not take that place.
 func Visible(rows []transit.Row, opts Options) []transit.Row {
 	idx := visible(rows, opts.WithDefaults())
 	out := make([]transit.Row, len(idx))
@@ -188,6 +189,12 @@ func visible(rows []transit.Row, opts Options) []int {
 	}
 	slices.SortStableFunc(idx, func(a, b int) int {
 		ra, rb := rows[a], rows[b]
+		if (ra.Headsign == "") != (rb.Headsign == "") {
+			if ra.Headsign == "" {
+				return 1
+			}
+			return -1
+		}
 		return cmp.Or(cmp.Compare(ra.Line.ShortName, rb.Line.ShortName), cmp.Compare(ra.Headsign, rb.Headsign))
 	})
 	if opts.Layout != LayoutRows {

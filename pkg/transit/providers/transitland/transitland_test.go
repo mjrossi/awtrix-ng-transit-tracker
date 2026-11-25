@@ -202,8 +202,9 @@ func TestRefreshInterval(t *testing.T) {
 	}{
 		{0, time.Hour, 1},
 		{time.Minute, time.Hour, 1},
-		{4*time.Minute + 59*time.Second, time.Hour, 1},
-		{5 * time.Minute, time.Hour, 2},
+		{4*time.Minute + 58*time.Second, time.Hour, 1},
+		// A ticker can deliver the poll due now slightly early.
+		{5*time.Minute - time.Millisecond, time.Hour, 2},
 		// A board with another window gets its own request.
 		{5 * time.Minute, 30 * time.Minute, 3},
 		{6 * time.Minute, 30 * time.Minute, 3},
@@ -304,6 +305,7 @@ func TestNew(t *testing.T) {
 		"bad duration":  {cfg: transitland.Config{APIKey: "k", RefreshInterval: "5"}, wantErr: "refresh_interval"},
 		"neg quota":     {cfg: transitland.Config{APIKey: "k", MonthlyQuota: -1}, wantErr: "monthly_quota"},
 		"bad base url":  {cfg: transitland.Config{APIKey: "k", BaseURL: "ftp://x"}, wantErr: "base_url"},
+		"base secret":   {cfg: transitland.Config{APIKey: "k", BaseURL: "ftp://user:hunter2@x"}, wantErr: "base_url"},
 		"explicit base": {cfg: transitland.Config{APIKey: "k", BaseURL: "https://mirror.example/rest"}, wantRefresh: 5 * time.Minute, wantQuota: 10_000},
 	}
 	for name, tt := range tests {
@@ -312,6 +314,9 @@ func TestNew(t *testing.T) {
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 					t.Fatalf("err = %v, want it to mention %q", err, tt.wantErr)
+				}
+				if strings.Contains(err.Error(), "hunter2") {
+					t.Errorf("err = %v leaks credentials", err)
 				}
 				return
 			}
@@ -407,8 +412,8 @@ func TestFailedRefresh(t *testing.T) {
 		calls int32
 	}{
 		{10 * time.Minute, 2},
-		{10*time.Minute + 59*time.Second, 2},
-		{11 * time.Minute, 3},
+		{10*time.Minute + 58*time.Second, 2},
+		{11*time.Minute - time.Millisecond, 3},
 	}
 	for _, st := range steps {
 		deps, err := poll(st.after)
@@ -423,6 +428,20 @@ func TestFailedRefresh(t *testing.T) {
 	s.status.Store(0)
 	if _, err := poll(12 * time.Minute); err != nil {
 		t.Fatalf("after recovery: %v", err)
+	}
+}
+
+func TestFailureWithNoDataIsRetriedAtOnce(t *testing.T) {
+	s := newServer(t)
+	s.status.Store(http.StatusBadGateway)
+	p := newProvider(t, s, transitland.Config{Feed: feed})
+	for want := int32(1); want <= 2; want++ {
+		if _, err := p.Departures(t.Context(), query("HC", time.Hour)); err == nil {
+			t.Fatal("no error")
+		}
+		if got := s.calls.Load(); got != want {
+			t.Fatalf("%d requests after %d polls", got, want)
+		}
 	}
 }
 
@@ -461,6 +480,7 @@ func TestBusyStop(t *testing.T) {
 		wantPartial bool
 	}{
 		"more than 50 departures": {listed: 120, window: 90 * time.Minute, want: 91},
+		"cut off past the window": {listed: 2000, window: 90 * time.Minute, want: 91},
 		"list comes back full":    {listed: 2000, window: 24 * time.Hour, want: 1000, wantPartial: true},
 	}
 	for name, tt := range tests {
@@ -480,6 +500,134 @@ func TestBusyStop(t *testing.T) {
 			}
 			if len(deps) != tt.want {
 				t.Errorf("%d departures, want %d", len(deps), tt.want)
+			}
+		})
+	}
+}
+
+// static answers every request with body.
+func static(t *testing.T, body string) *transitland.Provider {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+	p, err := transitland.New(transitland.Config{APIKey: "k", BaseURL: srv.URL}, srv.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+// platform lists n departures a minute apart from start. Trip IDs begin with
+// id, and added trips have no scheduled time.
+func platform(id string, start time.Time, n int, added bool) string {
+	rows := make([]string, n)
+	for i := range rows {
+		at := start.Add(time.Duration(i) * time.Minute).Format(time.RFC3339)
+		dep := fmt.Sprintf(`{"scheduled_utc":%q}`, at)
+		if added {
+			dep = fmt.Sprintf(`{"estimated_utc":%q}`, at)
+		}
+		rows[i] = fmt.Sprintf(`{"departure":%s,"trip":{"trip_id":"%s%d","route":{"route_id":"1"}}}`, dep, id, i)
+	}
+	return strings.Join(rows, ",")
+}
+
+func TestFullLists(t *testing.T) {
+	children := func(lists ...string) string {
+		for i, l := range lists {
+			lists[i] = `{"departures":[` + l + `]}`
+		}
+		return `{"stops":[{"children":[` + strings.Join(lists, ",") + `]}]}`
+	}
+	// A full list from now ends at 999 minutes, one from an hour on at 1059.
+	early, late := platform("a", now, 1000, false), platform("b", now.Add(time.Hour), 1000, false)
+	const window = 1010 * time.Minute
+	tests := map[string]struct {
+		body        string
+		window      time.Duration
+		want        int
+		wantPartial bool
+		wantErr     bool
+	}{
+		"the first platform ends first":      {body: children(early, late), window: window, want: 1951, wantPartial: true},
+		"the last platform ends first":       {body: children(late, early), window: window, want: 1951, wantPartial: true},
+		"added trips are beyond the limit":   {body: children(platform("a", now, 600, false) + "," + platform("b", now, 600, true)), window: 24 * time.Hour, want: 1200},
+		"the same trip on two platforms":     {body: children(platform("a", now, 3, false), platform("a", now, 3, false)), window: window, want: 3},
+		"cut off before the window, no data": {body: children(platform("a", now.Add(-24*time.Hour), 1000, false)), window: window, wantErr: true},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			deps, err := static(t, tt.body).Departures(t.Context(), query("f-x:1", tt.window))
+			var partial *transit.PartialError
+			if got := errors.As(err, &partial); got != tt.wantPartial {
+				t.Errorf("err = %v, want partial = %v", err, tt.wantPartial)
+			}
+			if got := err != nil && !tt.wantPartial; got != tt.wantErr {
+				t.Errorf("err = %v, want a plain error = %v", err, tt.wantErr)
+			}
+			if len(deps) != tt.want {
+				t.Errorf("%d departures, want %d", len(deps), tt.want)
+			}
+		})
+	}
+}
+
+type roundTripper func(*http.Request) (*http.Response, error)
+
+func (f roundTripper) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestRedirectToAnotherSchemeIsRefused(t *testing.T) {
+	leaked := false
+	client := &http.Client{Transport: roundTripper(func(r *http.Request) (*http.Response, error) {
+		w := httptest.NewRecorder()
+		if r.URL.Scheme == "https" {
+			w.Header().Set("Location", "http://"+r.URL.Host+r.URL.Path)
+			w.WriteHeader(http.StatusFound)
+		} else {
+			leaked = true
+			_, _ = w.WriteString(`{"stops":[{"departures":[]}]}`)
+		}
+		resp := w.Result()
+		resp.Request = r
+		return resp, nil
+	})}
+	p, err := transitland.New(transitland.Config{APIKey: "test-key", BaseURL: "https://api.example"}, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Departures(t.Context(), query("f-x:1", time.Hour)); err == nil || leaked {
+		t.Errorf("err = %v, key sent over http = %v", err, leaked)
+	}
+}
+
+func TestRedirectsWithinTheHost(t *testing.T) {
+	tests := map[string]struct {
+		redirects int
+		wantErr   bool
+	}{
+		"a few":    {redirects: 3},
+		"too many": {redirects: 10, wantErr: true},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			left := tt.redirects
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if left > 0 {
+					left--
+					http.Redirect(w, r, r.URL.Path, http.StatusFound)
+					return
+				}
+				_, _ = w.Write([]byte(`{"stops":[{"departures":[]}]}`))
+			}))
+			t.Cleanup(srv.Close)
+			p, err := transitland.New(transitland.Config{APIKey: "k", BaseURL: srv.URL}, srv.Client())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := p.Departures(t.Context(), query("f-x:1", time.Hour)); (err != nil) != tt.wantErr {
+				t.Errorf("err = %v, want error = %v", err, tt.wantErr)
 			}
 		})
 	}
@@ -515,6 +663,10 @@ func TestConvert(t *testing.T) {
 		return fmt.Sprintf(`{"schedule_relationship":%q,"departure":%s,"trip":{"trip_id":"t","route":{"route_id":"1"%s}}}`, rel, dep, route)
 	}
 	const sched = `{"scheduled_utc":"2026-11-25T16:09:34Z"}`
+	// tripRow has the relationship on the trip alone.
+	tripRow := func(rel string) string {
+		return strings.Replace(row(sched, "STATIC", `,"route_type":3`), `"trip_id":"t"`, fmt.Sprintf(`"trip_id":"t","schedule_relationship":%q`, rel), 1)
+	}
 	at := now.Add(5 * time.Minute)
 	dep := func(mode transit.Mode, st transit.Status, predicted *time.Time) []transit.Departure {
 		return []transit.Departure{{
@@ -529,9 +681,14 @@ func TestConvert(t *testing.T) {
 		"skipped stop":                {row(sched, "SKIPPED", `,"route_type":3`), []transit.Departure{}},
 		"trip ends here":              {strings.Replace(row(sched, "STATIC", ""), "{", `{"pickup_type":1,`, 1), []transit.Departure{}},
 		"listed twice":                {row(sched, "STATIC", `,"route_type":3`) + "," + row(sched, "STATIC", `,"route_type":3`), dep(transit.ModeBus, transit.StatusScheduled, nil)},
+		"listed twice, zero offset":   {row(sched, "STATIC", `,"route_type":3`) + "," + row(strings.Replace(sched, "Z", "+00:00", 1), "STATIC", `,"route_type":3`), dep(transit.ModeBus, transit.StatusScheduled, nil)},
 		"deleted trips are not shown": {row(sched, "DELETED", `,"route_type":3`), []transit.Departure{}},
 		"replacement runs as planned": {row(sched, "REPLACEMENT", `,"route_type":3`), dep(transit.ModeBus, transit.StatusScheduled, nil)},
 		"added trip has no schedule":  {row(`{"scheduled_utc":null,"estimated_utc":"2026-11-25T16:09:34Z"}`, "ADDED", `,"route_type":3`), dep(transit.ModeBus, transit.StatusAdded, &at)},
+		"trip skipped":                {tripRow("SKIPPED"), []transit.Departure{}},
+		"trip deleted":                {tripRow("DELETED"), []transit.Departure{}},
+		"trip canceled":               {tripRow("CANCELED"), dep(transit.ModeBus, transit.StatusCanceled, nil)},
+		"trip added":                  {tripRow("ADDED"), dep(transit.ModeBus, transit.StatusAdded, nil)},
 		"no time at all":              {row(`{}`, "ADDED", `,"route_type":3`), []transit.Departure{}},
 		"missing route type":          {row(sched, "STATIC", ""), dep(transit.ModeOther, transit.StatusScheduled, nil)},
 		"null route type":             {row(sched, "STATIC", `,"route_type":null`), dep(transit.ModeOther, transit.StatusScheduled, nil)},
@@ -570,11 +727,13 @@ type trip struct {
 	id        string
 	scheduled time.Time
 	late      time.Duration
+	// overnight puts the trip on the service day before its calendar date.
+	overnight bool
 }
 
 // timetableServer answers as the Transitland server does: it filters by
-// scheduled time, taking date, start_time and end_time in the agency's zone
-// and starting next at the server's own clock.
+// scheduled time, taking date, start_time and end_time on the clock of each
+// service day, and starting next at the server's own clock.
 type timetableServer struct {
 	*httptest.Server
 	trips []trip
@@ -598,31 +757,50 @@ func (s *timetableServer) serve(w http.ResponseWriter, r *http.Request) {
 	defer s.mu.Unlock()
 	q := r.URL.Query()
 	s.queries = append(s.queries, q)
-	from := s.clock
+	local := s.clock.In(s.zone)
+	date := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, time.UTC)
+	from := time.Duration(local.Hour())*time.Hour + time.Duration(local.Minute())*time.Minute + time.Duration(local.Second())*time.Second
 	next, _ := strconv.Atoi(q.Get("next"))
-	to := from.Add(time.Duration(next) * time.Second)
+	to := from + time.Duration(next)*time.Second
 	if q.Get("start_time") != "" {
-		day, err := time.ParseInLocation(time.DateOnly, q.Get("date"), s.zone)
-		if err != nil {
+		var err error
+		if date, err = time.Parse(time.DateOnly, q.Get("date")); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		at := func(v string) time.Time {
+		at := func(v string) time.Duration {
 			var h, m, sec int
 			_, _ = fmt.Sscanf(v, "%d:%d:%d", &h, &m, &sec)
-			return day.Add(time.Duration(h*3600+m*60+sec) * time.Second)
+			return time.Duration(h*3600+m*60+sec) * time.Second
 		}
 		from, to = at(q.Get("start_time")), at(q.Get("end_time"))
 	}
+	const day = 24 * time.Hour
 	var rows []string
 	for _, tr := range s.trips {
-		if tr.scheduled.Before(from) || tr.scheduled.After(to) {
+		l := tr.scheduled.In(s.zone)
+		service := time.Date(l.Year(), l.Month(), l.Day(), 0, 0, 0, 0, time.UTC)
+		if tr.overnight {
+			service = service.AddDate(0, 0, -1)
+		}
+		noon := time.Date(service.Year(), service.Month(), service.Day(), 12, 0, 0, 0, s.zone)
+		clock := tr.scheduled.Sub(noon.Add(-12 * time.Hour))
+		var listed bool
+		switch service.Sub(date) {
+		case -day:
+			listed = from < 6*time.Hour && clock >= day+from
+		case 0:
+			listed = clock >= from && clock <= to
+		case day:
+			listed = to > day && clock <= to-day
+		}
+		if !listed {
 			continue
 		}
-		local := tr.scheduled.In(s.zone)
+		secs := int(clock / time.Second)
 		rows = append(rows, fmt.Sprintf(
-			`{"service_date":%q,"departure":{"scheduled":%q,"scheduled_utc":%q,"estimated_utc":%q},"trip":{"trip_id":%q,"route":{"route_id":"1","route_type":3}}}`,
-			local.Format(time.DateOnly), local.Format(time.TimeOnly), tr.scheduled.UTC().Format(time.RFC3339),
+			`{"service_date":%q,"departure":{"scheduled":"%02d:%02d:%02d","scheduled_utc":%q,"estimated_utc":%q},"trip":{"trip_id":%q,"route":{"route_id":"1","route_type":3}}}`,
+			service.Format(time.DateOnly), secs/3600, secs/60%60, secs%60, tr.scheduled.UTC().Format(time.RFC3339),
 			tr.scheduled.Add(tr.late).UTC().Format(time.RFC3339), tr.id))
 	}
 	_, _ = w.Write([]byte(`{"stops":[{"departures":[` + strings.Join(rows, ",") + `]}]}`))
@@ -662,12 +840,12 @@ func TestLateTripsStayUntilTheyLeave(t *testing.T) {
 	}{
 		"late at the second fetch": {late: 10 * time.Minute, poll: 5 * time.Minute, want: true},
 		"left by then":             {late: 2 * time.Minute, poll: 5 * time.Minute},
-		"later than the lookback":  {late: time.Hour, poll: 40 * time.Minute},
+		"later than the lookback":  {late: 2 * time.Hour, poll: 100 * time.Minute},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			s := newTimetableServer(t, time.FixedZone("", -8*3600),
-				trip{"late", now.Add(time.Minute), tt.late}, trip{"other", now.Add(50 * time.Minute), 0})
+				trip{id: "late", scheduled: now.Add(time.Minute), late: tt.late}, trip{id: "other", scheduled: now.Add(50 * time.Minute)})
 			p := s.provider(t)
 			s.poll(t, p, now)
 			deps := s.poll(t, p, now.Add(tt.poll))
@@ -687,20 +865,20 @@ func TestLookbackRequest(t *testing.T) {
 	}{
 		"west of UTC": {
 			zone: time.FixedZone("", -8*3600), // the second fetch is at 10:05
-			want: url.Values{"date": {"2026-11-25"}, "start_time": {"09:35:00"}, "end_time": {"11:10:00"}},
+			want: url.Values{"date": {"2026-11-25"}, "start_time": {"08:35:00"}, "end_time": {"12:10:00"}},
 		},
 		"half-hour zone": {
 			zone: time.FixedZone("", 5*3600+1800), // the second fetch is at 23:35
-			want: url.Values{"date": {"2026-11-25"}, "start_time": {"23:05:00"}, "end_time": {"24:40:00"}},
+			want: url.Values{"date": {"2026-11-25"}, "start_time": {"22:05:00"}, "end_time": {"25:40:00"}},
 		},
 		"just after midnight": {
 			zone: time.FixedZone("", 6*3600), // the second fetch is at 00:05 on the 26th
-			want: url.Values{"date": {"2026-11-25"}, "start_time": {"23:35:00"}, "end_time": {"25:10:00"}},
+			want: url.Values{"date": {"2026-11-25"}, "start_time": {"22:35:00"}, "end_time": {"26:10:00"}},
 		},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			s := newTimetableServer(t, tt.zone, trip{"a", at.Add(20 * time.Minute), 0})
+			s := newTimetableServer(t, tt.zone, trip{id: "a", scheduled: at.Add(20 * time.Minute)})
 			p := s.provider(t)
 			s.poll(t, p, at)
 			s.poll(t, p, at.Add(5*time.Minute))
@@ -720,13 +898,95 @@ func TestLookbackRequest(t *testing.T) {
 	}
 }
 
-func TestOldOffsetIsNotUsed(t *testing.T) {
-	s := newTimetableServer(t, time.UTC, trip{"a", now.Add(20 * time.Minute), 0})
-	p := s.provider(t)
-	s.poll(t, p, now)
-	// Daylight saving may have changed since.
-	s.poll(t, p, now.Add(48*time.Hour))
-	if got := s.queries[1]; got.Get("next") == "" {
-		t.Errorf("request %v, want next", got)
+// The night clocks change, the offset learned from the last trips of one
+// service day is an hour wrong for the next.
+func TestClockChange(t *testing.T) {
+	zone, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := map[string]time.Time{
+		"back":    time.Date(2026, 11, 1, 5, 58, 0, 0, time.UTC),
+		"forward": time.Date(2027, 3, 14, 6, 58, 0, 0, time.UTC),
+	}
+	for name, at := range tests {
+		t.Run(name, func(t *testing.T) {
+			second := at.Add(5 * time.Minute)
+			trips := []trip{{id: "overnight", scheduled: at.Add(2 * time.Minute), overnight: true}}
+			for m := 1; m <= 59; m += 2 {
+				trips = append(trips, trip{id: strconv.Itoa(m), scheduled: second.Add(time.Duration(m) * time.Minute)})
+			}
+			s := newTimetableServer(t, zone, trips...)
+			p := s.provider(t)
+			s.poll(t, p, at)
+			if got := len(s.poll(t, p, second)); got != 30 {
+				t.Errorf("%d departures after the change, want 30", got)
+			}
+			if s.queries[1].Get("start_time") == "" {
+				t.Errorf("request %v, want the lookback", s.queries[1])
+			}
+		})
+	}
+}
+
+func TestOffsetAge(t *testing.T) {
+	// Daylight saving may have changed since an old offset was learned.
+	tests := map[string]struct {
+		age      time.Duration
+		wantNext bool
+	}{
+		"12 hours":  {12 * time.Hour, false},
+		"any older": {12*time.Hour + time.Second, true},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			s := newTimetableServer(t, time.UTC, trip{id: "a", scheduled: now.Add(20 * time.Minute)})
+			p := s.provider(t)
+			s.poll(t, p, now)
+			s.poll(t, p, now.Add(tt.age))
+			if got := s.queries[1]; (got.Get("next") != "") != tt.wantNext {
+				t.Errorf("request %v, want next = %v", got, tt.wantNext)
+			}
+		})
+	}
+}
+
+func TestOffsetFromServiceDay(t *testing.T) {
+	tests := map[string]struct {
+		date, scheduled string
+		// wantStart is the second request's start_time, at 16:09:34 UTC less
+		// the lookback and an hour, or empty when the offset cannot be learned.
+		wantStart string
+	}{
+		"same day":            {"2026-11-25", "11:30:00", "09:39:34"},
+		"past 24:00":          {"2026-11-24", "35:30:00", "09:39:34"},
+		"date does not match": {"2026-11-24", "11:30:00", ""},
+		"far ahead":           {"2026-11-26", "11:30:00", ""},
+		"no date":             {"", "11:30:00", ""},
+		"malformed time":      {"2026-11-25", "11:30", ""},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			var last url.Values
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				last = r.URL.Query()
+				_, _ = fmt.Fprintf(w, `{"stops":[{"departures":[{"service_date":%q,"departure":{"scheduled":%q,"scheduled_utc":"2026-11-25T16:30:00Z"},"trip":{"trip_id":"t","route":{"route_id":"1"}}}]}]}`, tt.date, tt.scheduled)
+			}))
+			t.Cleanup(srv.Close)
+			p, err := transitland.New(transitland.Config{APIKey: "k", BaseURL: srv.URL}, srv.Client())
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, after := range []time.Duration{0, p.RefreshInterval()} {
+				q := query("f-x:1", time.Hour)
+				q.Now = now.Add(after)
+				if _, err := p.Departures(t.Context(), q); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if got := last.Get("start_time"); got != tt.wantStart {
+				t.Errorf("start_time %q, want %q (request %v)", got, tt.wantStart, last)
+			}
+		})
 	}
 }

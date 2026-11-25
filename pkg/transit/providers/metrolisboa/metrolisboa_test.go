@@ -457,8 +457,18 @@ func TestNewRequiresCredentials(t *testing.T) {
 	if _, err := metrolisboa.New(metrolisboa.Config{}, nil); err == nil {
 		t.Error("New accepted empty credentials")
 	}
-	if _, err := metrolisboa.New(metrolisboa.Config{ClientID: "a", ClientSecret: "b", BaseURL: "ftp://x"}, nil); err == nil {
-		t.Error("New accepted a non-http base_url")
+}
+
+func TestNewRejectsBadURL(t *testing.T) {
+	const bad = "ftp://user:hunter2@x"
+	for option, cfg := range map[string]metrolisboa.Config{
+		"base_url":  {ClientID: "a", ClientSecret: "b", BaseURL: bad},
+		"token_url": {ClientID: "a", ClientSecret: "b", TokenURL: bad},
+	} {
+		_, err := metrolisboa.New(cfg, nil)
+		if err == nil || !strings.Contains(err.Error(), option) || strings.Contains(err.Error(), "hunter2") {
+			t.Errorf("New = %v, want a %s error without credentials", err, option)
+		}
 	}
 }
 

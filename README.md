@@ -305,9 +305,15 @@ same key share its quota, so they are added up against the smallest
 `monthly_quota` any of them sets. Stop searches, previews and
 retries count too, but are not in the estimate. `lines` matches short names
 or Transitland route Onestop IDs, not GTFS route IDs. Vehicles up to 30
-minutes late stay on the board until they leave, except that a board's first
-fetch, at startup or after 12 hours without one, misses those already past
-their scheduled time. Find a feed's Onestop ID on its Transitland page.
+minutes late are shown, except that until a stop's first answer with a
+timetabled departure, at startup or after 12 hours without one, those already
+past their scheduled time are missed.
+Between fetches predictions do not change: a vehicle leaves the board at its
+last predicted time and, if it was delayed further, returns at the next fetch,
+so a shorter `refresh_interval` follows delays more closely. Trips added in
+realtime can lack a destination, as the MBTA's do. They are listed after the
+others, so the `departure` layout shows one only when no named destination
+is left, and a `headsigns` filter drops them. Find a feed's Onestop ID on its Transitland page.
 Some agency feeds answer nothing because Transitland serves the agency from a
 regional feed instead: BART's `f-9q9-bart` does, in favor of
 `f-sf~bay~area~rg`. Search without `feed` to see which feed has a stop. Data via

@@ -69,7 +69,7 @@ func NewCache[T any](p Policy, load func(context.Context) (T, error)) *Cache[T] 
 }
 
 // NewCacheAt is NewCache for a load that needs the time of the Get that
-// started it, such as to record the value's age.
+// started it.
 func NewCacheAt[T any](p Policy, load func(context.Context, time.Time) (T, error)) *Cache[T] {
 	if p.Background && p.Timeout <= 0 {
 		panic("upstream: Policy.Background requires a Timeout")

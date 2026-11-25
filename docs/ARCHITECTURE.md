@@ -98,13 +98,16 @@ Rules, from [CLAUDE.md](../CLAUDE.md):
   quota implement `transit.Metered`; `config validate` and `run` pass their
   refresh intervals to `Config.EstimateRequests`, add up the blocks with the
   same `QuotaAccount`, and warn above the quota. An answer from the cache
-  looks fresh to the scheduler, so `refresh_interval` is at most 10 minutes,
-  which bounds how old a prediction shown as live can be. A failed fetch is
+  looks fresh to the scheduler, so `refresh_interval` is at most 10 minutes.
+  A prediction shown as live is at most that plus one `poll_interval` old,
+  since the next fetch waits for a poll. A failed fetch is
   only an error, and the scheduler reuses its own last good data.
   Transitland filters by scheduled time, so to keep late
-  vehicles the provider asks from 30 minutes back, in the agency's zone. It
-  learns that zone's offset from each answer, so a first request uses
-  `next`, without the lookback.
+  vehicles the provider asks from 30 minutes back, in the agency's zone, and
+  an hour more at both ends, because service days' clocks differ by an hour
+  around a daylight saving change. It learns the zone's offset from answers
+  with a scheduled departure, so requests before the first use `next`,
+  without the lookback.
 - The process stops on `SIGINT` or `SIGTERM`: the root context is canceled,
   runners return, and a canceled fetch counts as neither a success nor a
   failure.

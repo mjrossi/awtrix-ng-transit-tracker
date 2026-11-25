@@ -74,7 +74,7 @@ func New(cfg Config, client *http.Client) (*Provider, error) {
 	}
 	u, ok := upstream.HTTPURL(base)
 	if !ok {
-		return nil, fmt.Errorf("base_url %q must be an http(s) URL", base)
+		return nil, errors.New("base_url must be an http(s) URL")
 	}
 	if client == nil {
 		client = &http.Client{Timeout: 20 * time.Second}

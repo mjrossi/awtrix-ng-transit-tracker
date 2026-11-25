@@ -200,8 +200,8 @@ func configCommand() *cli.Command {
 }
 
 // writeQuotaUses prints the estimate for each quota. Going over is a
-// warning, not an error: the configuration is valid, and upstream refuses
-// the excess requests.
+// warning, not an error: the configuration is valid, and the estimate is
+// approximate.
 func writeQuotaUses(w io.Writer, uses []quotaUse) {
 	for _, u := range uses {
 		names := "providers." + strings.Join(u.Providers, ", providers.")

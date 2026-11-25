@@ -39,7 +39,8 @@ A provider must:
    It must be safe for concurrent use: boards that name the same provider
    block share one instance.
 2. Register itself in `pkg/transit/providers/providers.go`.
-3. Pass `transittest.Run` against recorded responses in its `testdata/`.
+3. Pass `transittest.Run` against recorded responses in its `testdata/`, or
+   hand-written ones where the source's terms restrict redistribution.
    Tests must not call the live API.
 4. Decode its options strictly through `transit.Options` (registering with
    `transit.RegisterConfig` does this for a config struct), and read secrets

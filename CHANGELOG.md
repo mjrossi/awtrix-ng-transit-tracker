@@ -20,13 +20,18 @@ version may break configuration.
 
 ### Changed
 
-- For programs that import `pkg/transit`: `Query.Limit` and `Stop.Modes`,
+- For programs that import `pkg/transit`: `transit.Metered` and
+  `transit.ModeForRouteType` are new. `Query.Limit` and `Stop.Modes`,
   which the service never used, are removed, and `SortAndLimit` is now
   `SortByTime`. Providers return `transit.ErrUnknownStop` instead of an
   error of their own.
 
 ### Fixed
 
+- A trip without a destination no longer takes the place of a named one on
+  the `departure` layout.
+- Errors about a `base_url` or `token_url` that is not http(s) no longer
+  print it, since it can hold credentials.
 - The notes for `sf-bart` name the labels table correctly,
   `[boards.clock.labels]`.
 

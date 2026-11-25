@@ -41,8 +41,9 @@ const (
 	// MinRefreshInterval stops a typo from spending a month's quota in a
 	// day.
 	MinRefreshInterval = time.Minute
-	// MaxRefreshInterval bounds how old a prediction shown as live can be: a
-	// cached answer counts as a fresh fetch to the scheduler.
+	// MaxRefreshInterval bounds how old a prediction shown as live can be,
+	// together with the board's poll interval: answers do not carry their
+	// age, and the next fetch waits for a poll.
 	MaxRefreshInterval = 10 * time.Minute
 	// DefaultMonthlyQuota is the free plan's REST quota.
 	DefaultMonthlyQuota = 10_000
@@ -51,11 +52,18 @@ const (
 	// retry answered with the remembered failure doubles the caller's backoff,
 	// and a board goes blank if that outlasts its max_stale.
 	retryInterval = time.Minute
+	// pollJitter is how early a poll can arrive and still count as due.
+	// Tickers are not exact, and a poll a moment too early would put the
+	// fetch off by a whole poll interval.
+	pollJitter = time.Second
 
-	// lateLookback is how late a vehicle can run and still be shown.
+	// lateLookback is how late a vehicle can always run and still be shown.
 	lateLookback = 30 * time.Minute
-	// offsetMaxAge limits how far a daylight saving change can make a stop's
-	// offset wrong.
+	// clockChange widens requests at both ends. GTFS times count from noon
+	// minus 12 hours, so around a daylight saving change neighboring service
+	// days, and an offset learned from one, differ by an hour.
+	clockChange = time.Hour
+	// offsetMaxAge limits how long a wrong offset is used.
 	offsetMaxAge = 12 * time.Hour
 
 	// departureLimit caps departures per stop and per child platform. It is
@@ -144,7 +152,7 @@ func New(cfg Config, client *http.Client) (*Provider, error) {
 	base = strings.TrimRight(base, "/")
 	u, ok := upstream.HTTPURL(base)
 	if !ok {
-		return nil, fmt.Errorf("base_url %q must be an http(s) URL", base)
+		return nil, errors.New("base_url must be an http(s) URL")
 	}
 	if u.User != nil || u.RawQuery != "" || u.Fragment != "" {
 		return nil, errors.New("base_url must not have credentials, a query or a fragment")
@@ -260,8 +268,8 @@ func (p *Provider) cacheFor(q transit.Query) *upstream.Cache[timetable] {
 		// the window filled until the next fetch.
 		span := q.Window + p.refresh
 		c = upstream.NewCacheAt(upstream.Policy{
-			TTL:               p.refresh,
-			Retry:             retryInterval,
+			TTL:               p.refresh - pollJitter,
+			Retry:             retryInterval - pollJitter,
 			RetryOnlyWithData: true,
 		}, func(ctx context.Context, now time.Time) (timetable, error) {
 			return p.fetch(ctx, k.key, now, span)
@@ -349,7 +357,7 @@ func (p *Provider) fetch(ctx context.Context, key string, now time.Time, span ti
 }
 
 // departureParams asks for departures in the span from now, and from
-// lateLookback before it once the stop's offset is known. The server filters
+// before it once the stop's offset is known. The server filters
 // by scheduled time, so without the lookback a late vehicle that has not come
 // yet is left out.
 func (p *Provider) departureParams(key string, now time.Time, span time.Duration) url.Values {
@@ -366,11 +374,11 @@ func (p *Provider) departureParams(key string, now time.Time, span time.Duration
 		params.Set("next", strconv.Itoa(int(span/time.Second)))
 		return params
 	}
-	from := now.Add(offset.ahead - lateLookback).UTC()
+	from := now.Add(offset.ahead - lateLookback - clockChange).UTC()
 	start := from.Sub(from.Truncate(24 * time.Hour))
 	params.Set("date", from.Format(time.DateOnly))
 	params.Set("start_time", gtfsTime(start))
-	params.Set("end_time", gtfsTime(start+lateLookback+span))
+	params.Set("end_time", gtfsTime(start+lateLookback+span+2*clockChange))
 	return params
 }
 
@@ -393,7 +401,7 @@ func (p *Provider) learnOffset(key string, lists [][]wireDeparture, now time.Tim
 func newTimetable(lists [][]wireDeparture) timetable {
 	type seen struct {
 		trip string
-		at   time.Time
+		at   int64
 	}
 	dup := map[seen]bool{}
 	var out timetable
@@ -412,7 +420,7 @@ func newTimetable(lists [][]wireDeparture) timetable {
 			if !ok {
 				continue
 			}
-			k := seen{w.Trip.TripID, d.Scheduled}
+			k := seen{w.Trip.TripID, d.Scheduled.UnixNano()}
 			if w.Trip.TripID != "" && dup[k] {
 				continue
 			}
