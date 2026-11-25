@@ -74,7 +74,7 @@ lacks). Expect roughly 10–20 over the life of the project.
 |---|---|---|
 | Carris Metropolitana (regional bus) | Own JSON API, `https://api.carrismetropolitana.pt/v2/arrivals/by_stop/{id}`, no key. Returns the whole service day; `Cache-Control: max-age=20`; unknown stops get 404. Live line IDs carry a `[XXXXX]` feed prefix that `/lines` does not. Data CC BY 4.0 | **Done** (`carrismetropolitana` provider) |
 | Metro de Lisboa | EstadoServicoML API behind a WSO2 gateway; free registration and a client-credentials OAuth token. Wait times have no line field (read per line), errors come as HTTP 200 with `codigo`, some platforms are frozen since 2024, and terminals list trains twice. Data CC BY 4.0 | **Done** (`metrolisboa` provider) |
-| Carris (city bus and tram) | Reported GTFS-RT | Not yet confirmed |
+| Carris (city bus and tram) | GTFS and GTFS-RT vehicle positions on `https://gateway.carris.pt/gateway/gtfs/api/v2.11/GTFS`; its trip updates and alerts paths answer 404. The GTFS has no headsigns. Transitland has the schedule (`f-carris~pt`) but no realtime | **Schedule only**, through `transitland` |
 | CP, Fertagus, ferries | — | Not researched |
 
 ## Where the rest lives
@@ -103,6 +103,14 @@ providers). Each widens who the project works for.
   NYC subway, 1.1 GB for HSL), so index only the stops in the
   configuration while streaming it. Until then, `transitland` shows
   timetabled trips for the agencies it covers.
+- **Pages for busy stops.** The `grid` layout shows four lines; a stop with
+  more needs one board per group of `lines`. AWTRIX NG accepts an array of
+  apps and numbers them, but an array that shrinks, withdrawing a board, the
+  state file and the rotation order all need a design.
+- **Destinations from the last stop.** Carris publishes no headsigns, so its
+  departures have none. `transitland` could look up a trip's last stop once
+  per route pattern. Each is a request against the quota, and may
+  have to be repeated for each new feed version, which Carris has daily.
 - **MQTT output.** Pushed apps live in the clock's RAM, so after a reboot
   a board is missing until the next poll (up to a minute). AWTRIX NG's
   retained `availability` topic would allow an immediate re-push. MQTT

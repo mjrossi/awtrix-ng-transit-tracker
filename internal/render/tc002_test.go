@@ -42,6 +42,9 @@ var (
 	verde = transit.Line{ID: "verde", ShortName: "Verde", Color: "#00A651", Mode: transit.ModeMetro}
 	bus   = transit.Line{ID: "735", ShortName: "735", Color: "#FFCC00", Mode: transit.ModeBus}
 	navy  = transit.Line{ID: "760", ShortName: "760", Color: "#1F3A93", Mode: transit.ModeBus}
+	plain = transit.Line{ID: "x", ShortName: "15E", Mode: transit.ModeTram}
+	// regional's four-character name is too wide to fill in a grid cell.
+	regional = transit.Line{ID: "3703", ShortName: "3703", Color: "#C61D23", Mode: transit.ModeBus}
 )
 
 func canceled(r transit.Row, i int) transit.Row {
@@ -93,6 +96,18 @@ func TestTC002Golden(t *testing.T) {
 			rows: []transit.Row{row(bus, "Cacilhas", 0)},
 			opts: render.Options{Layout: render.LayoutRows},
 		},
+		"grid_four": {
+			rows: []transit.Row{row(bus, "", 5, 24), row(navy, "", 7), row(plain, "", 8), row(verde, "", 12)},
+			opts: render.Options{Layout: render.LayoutGrid},
+		},
+		"grid_two": {
+			rows: []transit.Row{row(bus, "", 5), row(navy, "", 7)},
+			opts: render.Options{Layout: render.LayoutGrid},
+		},
+		"grid_four_char_badge": {
+			rows: []transit.Row{row(regional, "Almada", 14)},
+			opts: render.Options{Layout: render.LayoutGrid},
+		},
 		"empty": {},
 	}
 	for name, tt := range tests {
@@ -130,9 +145,23 @@ func TestTC002Geometry(t *testing.T) {
 		many.Departures[i].Predicted = &p
 	}
 	rows := []transit.Row{many, canceled(row(bus, "B", 1, 2, 3, 4), 0), row(verde, "C", 3)}
-	for _, layout := range []render.Layout{render.LayoutDeparture, render.LayoutRows} {
-		t.Run(string(layout), func(t *testing.T) {
-			l := render.TC002(rows, now, render.Options{Layout: layout, MaxRows: 5})
+	// Every cell has all four of its regions, which is the per-layout limit.
+	var full []transit.Row
+	for i, name := range []string{"732", "736", "744", "783", "727"} {
+		full = append(full, row(transit.Line{ID: name, ShortName: name, Color: "#FFCC00", Mode: transit.ModeBus}, "", 20+i))
+	}
+	tests := map[string]struct {
+		layout render.Layout
+		rows   []transit.Row
+	}{
+		"departure": {render.LayoutDeparture, rows},
+		"rows":      {render.LayoutRows, rows},
+		"grid":      {render.LayoutGrid, rows},
+		"full grid": {render.LayoutGrid, full},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			l := render.TC002(tt.rows, now, render.Options{Layout: tt.layout, MaxRows: 5})
 			if len(l.Regions) > 16 {
 				t.Errorf("%d regions, limit 16", len(l.Regions))
 			}
@@ -273,6 +302,12 @@ func TestViews(t *testing.T) {
 			opts: render.Options{Layout: render.LayoutRows},
 			want: []view{{"Santa Apolónia", true, true}, {"Baixa", true, false}},
 		},
+		{
+			name: "grid lists each line once and never overflows",
+			rows: []transit.Row{row(bus, "Hospital de Santa Maria", 1), row(navy, "Sé", 2), row(bus, "Cacilhas", 3), row(plain, "A", 4), row(verde, "B", 5), row(azul, "C", 6)},
+			opts: render.Options{Layout: render.LayoutGrid},
+			want: []view{{"", true, false}, {"Sé", true, false}, {"A", true, false}, {"B", true, false}, {"C", false, false}},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -333,7 +368,6 @@ func TestDepartureLayoutKeepsOneRow(t *testing.T) {
 }
 
 func TestBadges(t *testing.T) {
-	plain := transit.Line{ID: "x", ShortName: "15E", Mode: transit.ModeTram}
 	worcester := transit.Line{ID: "CR-Worcester", ShortName: "Framingham/Worcester Line", Color: "#80276C", Mode: transit.ModeRail}
 	gondola := transit.Line{ID: "g", ShortName: "Telecabine Lisboa", Color: "#00A651", Mode: transit.ModeCableway}
 	tests := []struct {
@@ -450,6 +484,129 @@ func TestMarksOnlyWithSmallFont(t *testing.T) {
 	}
 	if canceled := rows[0].Departures[1].Status; canceled != transit.StatusCanceled {
 		t.Error("TC002 modified the caller's rows")
+	}
+}
+
+// gridCells returns each cell's badge name and times, in region order. A
+// cell without a name region is listed as "".
+func gridCells(t *testing.T, rows []transit.Row) []string {
+	t.Helper()
+	l := render.TC002(rows, now, render.Options{Layout: render.LayoutGrid})
+	var cells []string
+	index := map[string]int{}
+	for _, r := range l.Regions {
+		cell, _, ok := strings.Cut(r.ID, "-")
+		if !ok || !strings.HasPrefix(cell, "c") {
+			t.Fatalf("region %q is not part of a cell", r.ID)
+		}
+		i, ok := index[cell]
+		if !ok {
+			i = len(cells)
+			index[cell] = i
+			cells = append(cells, "")
+		}
+		if r.Text == nil {
+			continue
+		}
+		if r.Text.Fragments == nil {
+			cells[i] += r.Text.Plain
+		}
+		for _, f := range r.Text.Fragments {
+			cells[i] += " " + f.Text
+		}
+	}
+	return cells
+}
+
+func TestGridCells(t *testing.T) {
+	line := func(name string) transit.Line {
+		return transit.Line{ID: name, ShortName: name, Mode: transit.ModeBus}
+	}
+	tests := []struct {
+		name string
+		rows []transit.Row
+		want []string
+	}{
+		{
+			"one next time per line",
+			[]transit.Row{row(line("727"), "", 5, 16, 26)},
+			[]string{"727 5"},
+		},
+		{
+			"the soonest four, in line order",
+			[]transit.Row{row(line("783"), "", 1), row(line("736"), "", 2), row(line("732"), "", 3), row(line("744"), "", 4), row(line("727"), "", 5)},
+			[]string{"732 3", "736 2", "744 4", "783 1"},
+		},
+		{
+			"a missing headsign does not move a line",
+			[]transit.Row{row(line("727"), "", 1), row(line("738"), "Alto Sto. Amaro", 2)},
+			[]string{"727 1", "738 2"},
+		},
+		{
+			"destinations of one line share a cell",
+			[]transit.Row{row(line("727"), "Restelo", 4), row(line("738"), "", 6), row(line("727"), "Belém", 9)},
+			[]string{"727 4", "738 6"},
+		},
+		{
+			"canceled first trip gives way",
+			[]transit.Row{canceled(row(line("727"), "", 3, 12), 0)},
+			[]string{"727 12"},
+		},
+		{
+			"canceled across destinations gives way",
+			[]transit.Row{canceled(row(line("727"), "Restelo", 3), 0), row(line("727"), "Belém", 9)},
+			[]string{"727 9"},
+		},
+		{
+			"all canceled keeps the first",
+			[]transit.Row{canceled(canceled(row(line("727"), "", 3, 12), 0), 1)},
+			[]string{"727 3"},
+		},
+		{
+			"under a minute is a number",
+			[]transit.Row{row(line("727"), "", 0)},
+			[]string{"727 0"},
+		},
+		{
+			"a time that does not fit is left out",
+			[]transit.Row{row(line("3703"), "", 120)},
+			[]string{"3703"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if diff := cmp.Diff(tt.want, gridCells(t, tt.rows)); diff != "" {
+				t.Errorf("cells (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// A badge that depended on the minutes would change shape between pushes.
+func TestGridBadgeIgnoresMinutes(t *testing.T) {
+	badge := func(mins int) []awtrix.Region {
+		l := render.TC002([]transit.Row{row(regional, "", mins)}, now, render.Options{Layout: render.LayoutGrid})
+		var out []awtrix.Region
+		for _, r := range l.Regions {
+			if strings.HasPrefix(r.ID, "c0-badge") {
+				out = append(out, r)
+			}
+		}
+		return out
+	}
+	if diff := cmp.Diff(badge(10), badge(9)); diff != "" {
+		t.Errorf("badge at 10 and 9 minutes (-10 +9):\n%s", diff)
+	}
+	if got := badge(9); len(got) != 1 || got[0].Text == nil || got[0].Text.Plain != "3703" || got[0].Color != "#C61D23" {
+		t.Errorf("badge = %+v, want 3703 unfilled in its line color", got)
+	}
+}
+
+func TestGridDoesNotModifyRows(t *testing.T) {
+	rows := []transit.Row{row(bus, "A", 1, 9), row(bus, "B", 4)}
+	render.TC002(rows, now, render.Options{Layout: render.LayoutGrid})
+	if diff := cmp.Diff([]transit.Row{row(bus, "A", 1, 9), row(bus, "B", 4)}, rows); diff != "" {
+		t.Errorf("rows changed (-want +got):\n%s", diff)
 	}
 }
 

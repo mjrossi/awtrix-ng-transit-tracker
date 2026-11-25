@@ -78,8 +78,8 @@ type Board struct {
 
 // BoardClock is how a board appears on the clock: the [boards.clock] table.
 type BoardClock struct {
-	// Layout is "departure" (one line and direction, like a platform sign)
-	// or "rows" (one line and direction per row).
+	// Layout is "departure" (one line and direction, like a platform sign),
+	// "rows" (one line and direction per row) or "grid" (up to four lines).
 	Layout  render.Layout `toml:"layout"`
 	MaxRows int           `toml:"max_rows"`
 	// Lifetime is how long the clock keeps the app without a fresh push.

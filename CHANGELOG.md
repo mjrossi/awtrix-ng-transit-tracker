@@ -9,6 +9,10 @@ version may break configuration.
 
 ### Added
 
+- `grid` layout: up to four lines of a busy stop on one board, each with its
+  next departure and no destination.
+- The README covers Transitland in more detail: plans and quotas, agencies
+  known to work, live and scheduled times, and an example.
 - `transitland` provider: thousands of agencies through the Transitland
   API, with timetabled trips shown alongside realtime ones. Needs a free
   API key. Each stop is fetched once per `refresh_interval` (5 minutes by

@@ -30,6 +30,19 @@ table. A board's `layout` is one of:
   ▌Telheiras     1 · 6
   ```
 
+- **`grid`**: up to four lines in two columns, for busy stops. Each cell is
+  one line's badge and its next departure, with no destination, so all of a
+  line's destinations share a cell. Use it where every vehicle goes the same
+  way, or pin the direction with the stop's `headsigns`. The soonest lines
+  are shown, ordered by line. A canceled trip gives way to the next one a
+  rider can catch. Badges have a fixed share of the cell, so a four-character
+  name is drawn in the line color without a fill.
+
+  ```
+  732   5   736   7
+  744  12   783   8
+  ```
+
 Names that still do not fit:
 
 - `[boards.clock.labels]` maps a headsign to a shorter display name. No

@@ -1,0 +1,265 @@
+{
+  "version": 1,
+  "regions": [
+    {
+      "id": "c0-badge",
+      "box": [
+        0,
+        0,
+        11,
+        8
+      ],
+      "text": "15E",
+      "font": "small",
+      "color": "#EAE4D9",
+      "align": "start",
+      "scroll": {
+        "mode": "static"
+      },
+      "textCase": "asTyped"
+    },
+    {
+      "id": "c0-min",
+      "box": [
+        21,
+        0,
+        4,
+        8
+      ],
+      "text": [
+        {
+          "text": "8",
+          "color": "#EAE4D9"
+        }
+      ],
+      "font": "small",
+      "align": "start",
+      "scroll": {
+        "mode": "static"
+      },
+      "textCase": "asTyped"
+    },
+    {
+      "id": "c0-marks",
+      "box": [
+        20,
+        0,
+        6,
+        8
+      ],
+      "draw": [
+        [
+          "pixel",
+          4,
+          0,
+          "#D9955A"
+        ]
+      ]
+    },
+    {
+      "id": "c1-badge",
+      "box": [
+        27,
+        0,
+        13,
+        8
+      ],
+      "draw": [
+        [
+          "rectFill",
+          0,
+          0,
+          13,
+          7,
+          "#FFCC00"
+        ]
+      ]
+    },
+    {
+      "id": "c1-badge-name",
+      "box": [
+        28,
+        0,
+        11,
+        8
+      ],
+      "text": "735",
+      "font": "small",
+      "color": "#000000",
+      "align": "start",
+      "scroll": {
+        "mode": "static"
+      },
+      "textCase": "asTyped"
+    },
+    {
+      "id": "c1-min",
+      "box": [
+        48,
+        0,
+        4,
+        8
+      ],
+      "text": [
+        {
+          "text": "5",
+          "color": "#EAE4D9"
+        }
+      ],
+      "font": "small",
+      "align": "start",
+      "scroll": {
+        "mode": "static"
+      },
+      "textCase": "asTyped"
+    },
+    {
+      "id": "c1-marks",
+      "box": [
+        47,
+        0,
+        5,
+        8
+      ],
+      "draw": [
+        [
+          "pixel",
+          4,
+          0,
+          "#D9955A"
+        ]
+      ]
+    },
+    {
+      "id": "c2-badge",
+      "box": [
+        0,
+        8,
+        13,
+        8
+      ],
+      "draw": [
+        [
+          "rectFill",
+          0,
+          0,
+          13,
+          7,
+          "#1F3A93"
+        ]
+      ]
+    },
+    {
+      "id": "c2-badge-name",
+      "box": [
+        1,
+        8,
+        11,
+        8
+      ],
+      "text": "760",
+      "font": "small",
+      "color": "#EAE4D9",
+      "align": "start",
+      "scroll": {
+        "mode": "static"
+      },
+      "textCase": "asTyped"
+    },
+    {
+      "id": "c2-min",
+      "box": [
+        21,
+        8,
+        4,
+        8
+      ],
+      "text": [
+        {
+          "text": "7",
+          "color": "#EAE4D9"
+        }
+      ],
+      "font": "small",
+      "align": "start",
+      "scroll": {
+        "mode": "static"
+      },
+      "textCase": "asTyped"
+    },
+    {
+      "id": "c2-marks",
+      "box": [
+        20,
+        8,
+        6,
+        8
+      ],
+      "draw": [
+        [
+          "pixel",
+          4,
+          0,
+          "#D9955A"
+        ]
+      ]
+    },
+    {
+      "id": "c3-badge",
+      "box": [
+        27,
+        8,
+        2,
+        8
+      ],
+      "draw": [
+        [
+          "rectFill",
+          0,
+          1,
+          2,
+          6,
+          "#00A651"
+        ]
+      ]
+    },
+    {
+      "id": "c3-min",
+      "box": [
+        44,
+        8,
+        8,
+        8
+      ],
+      "text": [
+        {
+          "text": "12",
+          "color": "#EAE4D9"
+        }
+      ],
+      "font": "small",
+      "align": "start",
+      "scroll": {
+        "mode": "static"
+      },
+      "textCase": "asTyped"
+    },
+    {
+      "id": "c3-marks",
+      "box": [
+        43,
+        8,
+        9,
+        8
+      ],
+      "draw": [
+        [
+          "pixel",
+          8,
+          0,
+          "#D9955A"
+        ]
+      ]
+    }
+  ]
+}

@@ -1,0 +1,153 @@
+{
+  "version": 1,
+  "regions": [
+    {
+      "id": "c0-badge",
+      "box": [
+        0,
+        4,
+        13,
+        8
+      ],
+      "draw": [
+        [
+          "rectFill",
+          0,
+          0,
+          13,
+          7,
+          "#FFCC00"
+        ]
+      ]
+    },
+    {
+      "id": "c0-badge-name",
+      "box": [
+        1,
+        4,
+        11,
+        8
+      ],
+      "text": "735",
+      "font": "small",
+      "color": "#000000",
+      "align": "start",
+      "scroll": {
+        "mode": "static"
+      },
+      "textCase": "asTyped"
+    },
+    {
+      "id": "c0-min",
+      "box": [
+        21,
+        4,
+        4,
+        8
+      ],
+      "text": [
+        {
+          "text": "5",
+          "color": "#EAE4D9"
+        }
+      ],
+      "font": "small",
+      "align": "start",
+      "scroll": {
+        "mode": "static"
+      },
+      "textCase": "asTyped"
+    },
+    {
+      "id": "c0-marks",
+      "box": [
+        20,
+        4,
+        6,
+        8
+      ],
+      "draw": [
+        [
+          "pixel",
+          4,
+          0,
+          "#D9955A"
+        ]
+      ]
+    },
+    {
+      "id": "c1-badge",
+      "box": [
+        27,
+        4,
+        13,
+        8
+      ],
+      "draw": [
+        [
+          "rectFill",
+          0,
+          0,
+          13,
+          7,
+          "#1F3A93"
+        ]
+      ]
+    },
+    {
+      "id": "c1-badge-name",
+      "box": [
+        28,
+        4,
+        11,
+        8
+      ],
+      "text": "760",
+      "font": "small",
+      "color": "#EAE4D9",
+      "align": "start",
+      "scroll": {
+        "mode": "static"
+      },
+      "textCase": "asTyped"
+    },
+    {
+      "id": "c1-min",
+      "box": [
+        48,
+        4,
+        4,
+        8
+      ],
+      "text": [
+        {
+          "text": "7",
+          "color": "#EAE4D9"
+        }
+      ],
+      "font": "small",
+      "align": "start",
+      "scroll": {
+        "mode": "static"
+      },
+      "textCase": "asTyped"
+    },
+    {
+      "id": "c1-marks",
+      "box": [
+        47,
+        4,
+        5,
+        8
+      ],
+      "draw": [
+        [
+          "pixel",
+          4,
+          0,
+          "#D9955A"
+        ]
+      ]
+    }
+  ]
+}

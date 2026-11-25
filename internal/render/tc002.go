@@ -25,6 +25,9 @@ const (
 	LayoutDeparture Layout = "departure"
 	// LayoutRows shows one line and direction per row, two rows at most.
 	LayoutRows Layout = "rows"
+	// LayoutGrid shows up to four lines in two columns, each with its next
+	// departure and no destination.
+	LayoutGrid Layout = "grid"
 )
 
 // Overflow is what a name wider than its box does.
@@ -84,8 +87,10 @@ const (
 // not support. Empty values are valid and take the defaults.
 func (o Options) Validate() error {
 	var errs []error
-	if o.Layout != "" && o.Layout != LayoutDeparture && o.Layout != LayoutRows {
-		errs = append(errs, fmt.Errorf("layout %q must be %q or %q", o.Layout, LayoutDeparture, LayoutRows))
+	switch o.Layout {
+	case "", LayoutDeparture, LayoutRows, LayoutGrid:
+	default:
+		errs = append(errs, fmt.Errorf("layout %q must be %q, %q or %q", o.Layout, LayoutDeparture, LayoutRows, LayoutGrid))
 	}
 	if o.Overflow != "" && o.Overflow != OverflowScroll && o.Overflow != OverflowClip {
 		errs = append(errs, fmt.Errorf("overflow %q must be %q or %q", o.Overflow, OverflowScroll, OverflowClip))
@@ -114,6 +119,13 @@ const (
 	gap       = 2
 	barWidth  = 2
 	maxBadgeW = 17
+	// Grid cells leave gap columns between the two in a row.
+	gridCols  = 2
+	gridCells = gridCols * maxRows
+	cellWidth = (awtrix.TC002Width - gap) / gridCols
+	// cellBadgeW is what a cell's badge may take beside two digits and a
+	// live dot, so it does not change shape with the minutes.
+	cellBadgeW = cellWidth - gap - 2*charWidth
 	// timeGap is the blank columns between two times: the glyph's own
 	// trailing column plus the two-space spacer.
 	timeGap = 1 + 2*spaceWidth
@@ -153,10 +165,14 @@ func TC002(rows []transit.Row, now time.Time, opts Options) *awtrix.Layout {
 		}}}
 	}
 	shown := opts.prepare(Visible(rows, opts))
-	if opts.Layout == LayoutRows {
+	switch opts.Layout {
+	case LayoutRows:
 		return rowsLayout(shown, now, opts)
+	case LayoutGrid:
+		return gridLayout(shown, now, opts)
+	default:
+		return departureLayout(shown[0], now, opts)
 	}
-	return departureLayout(shown[0], now, opts)
 }
 
 // Visible returns the rows a layout shows, in display order. rows should
@@ -167,9 +183,38 @@ func TC002(rows []transit.Row, now time.Time, opts Options) *awtrix.Layout {
 // departure layout shows the first such row, so a stop served in both
 // directions keeps one destination instead of flipping to whichever
 // departs next. Rows without a headsign come last, so a trip whose
-// destination is unknown does not take that place.
+// destination is unknown does not take that place. The grid layout, which
+// shows no destinations, has one row per line, ordered by line.
 func Visible(rows []transit.Row, opts Options) []transit.Row {
-	return pick(rows, visible(rows, opts.WithDefaults()))
+	opts = opts.WithDefaults()
+	rows = opts.arrange(rows)
+	return pick(rows, visible(rows, opts))
+}
+
+// arrange returns the rows the layout chooses from. The grid layout shows no
+// destinations, so a line's destinations would be cells that look the same.
+func (o Options) arrange(rows []transit.Row) []transit.Row {
+	if o.Layout != LayoutGrid {
+		return rows
+	}
+	index := map[string]int{}
+	var out []transit.Row
+	for _, r := range rows {
+		i, ok := index[r.Line.ID]
+		if !ok {
+			index[r.Line.ID] = len(out)
+			r.Departures = slices.Clone(r.Departures)
+			out = append(out, r)
+			continue
+		}
+		m := &out[i]
+		m.Departures = append(m.Departures, r.Departures...)
+		transit.SortByTime(m.Departures)
+		if m.Headsign != r.Headsign {
+			m.Headsign = ""
+		}
+	}
+	return out
 }
 
 // pick returns the rows at the indexes idx.
@@ -181,11 +226,15 @@ func pick(rows []transit.Row, idx []int) []transit.Row {
 	return out
 }
 
-// visible returns the indexes in rows of the rows Visible returns.
+// visible returns the indexes in rows, as arranged, of the rows Visible
+// returns.
 func visible(rows []transit.Row, opts Options) []int {
 	n := len(rows)
-	if opts.Layout == LayoutRows {
+	switch opts.Layout {
+	case LayoutRows:
 		n = min(n, opts.MaxRows)
+	case LayoutGrid:
+		n = min(n, gridCells)
 	}
 	idx := make([]int, n)
 	for i := range idx {
@@ -193,7 +242,7 @@ func visible(rows []transit.Row, opts Options) []int {
 	}
 	slices.SortStableFunc(idx, func(a, b int) int {
 		ra, rb := rows[a], rows[b]
-		if (ra.Headsign == "") != (rb.Headsign == "") {
+		if opts.Layout != LayoutGrid && (ra.Headsign == "") != (rb.Headsign == "") {
 			if ra.Headsign == "" {
 				return 1
 			}
@@ -201,7 +250,7 @@ func visible(rows []transit.Row, opts Options) []int {
 		}
 		return cmp.Or(cmp.Compare(ra.Line.ShortName, rb.Line.ShortName), cmp.Compare(ra.Headsign, rb.Headsign))
 	})
-	if opts.Layout != LayoutRows {
+	if opts.Layout == LayoutDeparture {
 		idx = idx[:min(len(idx), 1)]
 	}
 	return idx
@@ -234,9 +283,10 @@ type RowView struct {
 }
 
 // Views reports, for each of rows in order, whether the layout shows it and
-// whether its name fits.
+// whether its name fits. The grid layout has one view per line.
 func Views(rows []transit.Row, now time.Time, opts Options) []RowView {
 	opts = opts.WithDefaults()
+	rows = opts.arrange(rows)
 	out := make([]RowView, len(rows))
 	for i, r := range rows {
 		out[i] = RowView{Row: r, Name: opts.Label(r.Headsign)}
@@ -246,9 +296,12 @@ func Views(rows []transit.Row, now time.Time, opts Options) []RowView {
 	for i, j := range idx {
 		v := &out[j]
 		v.Shown = true
+		if opts.Layout == LayoutGrid {
+			continue
+		}
 		box := awtrix.TC002Width
 		if opts.Layout == LayoutRows {
-			_, bw := badgeRegions("", 0, shown[i].Line, opts)
+			_, bw := badgeRegions("", 0, 0, awtrix.TC002Width, shown[i].Line, opts)
 			_, box = opts.fitRow(shown[i], now, bw+gap)
 		}
 		v.Overflows = FontWidth(opts.nameFont(v.Name), v.Name) > box
@@ -260,7 +313,7 @@ func Views(rows []transit.Row, now time.Time, opts Options) []RowView {
 // with the next times on the bottom row.
 func departureLayout(r transit.Row, now time.Time, opts Options) *awtrix.Layout {
 	y := awtrix.TC002Height - rowHeight
-	badge, bw := badgeRegions("badge", y, r.Line, opts)
+	badge, bw := badgeRegions("badge", 0, y, awtrix.TC002Width, r.Line, opts)
 	tx := bw + gap
 	// The destination has its own row here, so "Due" costs it nothing.
 	times := fitTimes(r.Departures, now, opts, awtrix.TC002Width-tx, true)
@@ -284,7 +337,7 @@ func rowsLayout(rows []transit.Row, now time.Time, opts Options) *awtrix.Layout 
 	y := (awtrix.TC002Height - len(rows)*rowHeight) / 2
 	for i, r := range rows {
 		id := func(part string) string { return fmt.Sprintf("r%d-%s", i, part) }
-		badge, bw := badgeRegions(id("badge"), y, r.Line, opts)
+		badge, bw := badgeRegions(id("badge"), 0, y, awtrix.TC002Width, r.Line, opts)
 		sx := bw + gap
 		times, nameW := opts.fitRow(r, now, sx)
 		l.Regions = append(l.Regions, badge...)
@@ -293,6 +346,36 @@ func rowsLayout(rows []transit.Row, now time.Time, opts Options) *awtrix.Layout 
 		y += rowHeight
 	}
 	return l
+}
+
+// gridLayout shows one line per cell, in two columns: its badge at the left
+// and its next time at the right. A cell takes up to four regions, so four
+// cells reach the firmware's limit of 16 per layout.
+func gridLayout(rows []transit.Row, now time.Time, opts Options) *awtrix.Layout {
+	l := &awtrix.Layout{Version: 1}
+	// A single row of cells sits in the middle of the display.
+	lines := (len(rows) + gridCols - 1) / gridCols
+	top := (awtrix.TC002Height - lines*rowHeight) / 2
+	for i, r := range rows {
+		id := func(part string) string { return fmt.Sprintf("c%d-%s", i, part) }
+		x, y := i%gridCols*(cellWidth+gap), top+i/gridCols*rowHeight
+		badge, bw := badgeRegions(id("badge"), x, y, cellBadgeW, r.Line, opts)
+		l.Regions = append(l.Regions, badge...)
+		times := fitTimes(nextTrip(r.Departures), now, opts, cellWidth-bw-gap, false)
+		if len(times.items) > 0 {
+			l.Regions = append(l.Regions, times.regions(id("min"), id("marks"), x+cellWidth-times.width, y, opts)...)
+		}
+	}
+	return l
+}
+
+// nextTrip returns the first of deps a rider can catch, or the first if all
+// are canceled.
+func nextTrip(deps []transit.Departure) []transit.Departure {
+	i := max(slices.IndexFunc(deps, func(d transit.Departure) bool {
+		return d.Status != transit.StatusCanceled
+	}), 0)
+	return deps[i:min(i+1, len(deps))]
 }
 
 // fitRow splits a rows-layout row whose name starts at x between its times
@@ -349,42 +432,44 @@ func accentAbove(c rune) bool {
 	return c >= 'À' && c <= 'ÿ' && !strings.ContainsRune("ÆÇÐ×ØÞßæçð÷øþ", c)
 }
 
-// badgeRegions returns the regions identifying a line and their width.
+// badgeRegions returns the regions identifying a line at x, at most maxW
+// wide, and their width.
 //
 // Metro lines, which riders know by color, get a color bar. Other lines
 // get their short name cut out of a block of the line's color, like a
 // route sign; a line without a color has nothing to fill, so its name is
-// plain text. A name too wide for a badge, such as a long route name
+// plain text, and one whose fill would be wider than maxW is plain text in
+// its color. A name too wide for a badge, such as a long route name
 // standing in for a missing short one, gets a glyph of the line's mode
 // instead: four letters of "Framingham" say less than the line's color.
-func badgeRegions(id string, y int, line transit.Line, opts Options) ([]awtrix.Region, int) {
+func badgeRegions(id string, x, y, maxW int, line transit.Line, opts Options) ([]awtrix.Region, int) {
 	color := line.Color
 	// A glyph or bar in a color too dark to light up would not show; a
 	// filled badge copes, because its number switches to cream.
 	if color == "" || luminance(color) < minMarkLuminance {
 		color = TextColor
 	}
-	if line.Mode != transit.ModeMetro && line.ShortName != "" && TextWidth(line.ShortName) <= maxBadgeW {
+	if line.Mode != transit.ModeMetro && line.ShortName != "" && TextWidth(line.ShortName) <= min(maxBadgeW, maxW) {
 		w := TextWidth(line.ShortName)
 		name := awtrix.Region{
 			ID:       id,
-			Box:      awtrix.Box{0, y, w, rowHeight},
+			Box:      awtrix.Box{x, y, w, rowHeight},
 			Text:     awtrix.PlainText(line.ShortName),
 			Font:     opts.Font,
-			Color:    TextColor,
+			Color:    color,
 			Align:    awtrix.AlignStart,
 			Scroll:   &awtrix.Scroll{Mode: awtrix.ScrollStatic},
 			TextCase: awtrix.TextCaseAsTyped,
 		}
-		if line.Color == "" {
+		if line.Color == "" || w+2 > maxW {
 			return []awtrix.Region{name}, w
 		}
 		// Regions are drawn in list order, later ones on top, so the name
 		// follows its fill.
-		name.ID, name.Box[0], name.Color = id+"-name", 1, badgeTextColor(line.Color)
+		name.ID, name.Box[0], name.Color = id+"-name", x+1, badgeTextColor(line.Color)
 		fill := awtrix.Region{
 			ID:   id,
-			Box:  awtrix.Box{0, y, w + 2, rowHeight},
+			Box:  awtrix.Box{x, y, w + 2, rowHeight},
 			Draw: []awtrix.Command{awtrix.RectFill(0, 0, w+2, rowHeight-1, line.Color)},
 		}
 		return []awtrix.Region{fill, name}, w + 2
@@ -392,13 +477,13 @@ func badgeRegions(id string, y int, line transit.Line, opts Options) ([]awtrix.R
 	if g, ok := modeGlyphs[line.Mode]; ok {
 		return []awtrix.Region{{
 			ID:   id,
-			Box:  awtrix.Box{0, y, glyphWidth, rowHeight},
+			Box:  awtrix.Box{x, y, glyphWidth, rowHeight},
 			Draw: []awtrix.Command{g.command(color)},
 		}}, glyphWidth
 	}
 	return []awtrix.Region{{
 		ID:   id,
-		Box:  awtrix.Box{0, y, barWidth, rowHeight},
+		Box:  awtrix.Box{x, y, barWidth, rowHeight},
 		Draw: []awtrix.Command{awtrix.RectFill(0, 1, barWidth, rowHeight-2, color)},
 	}}, barWidth
 }

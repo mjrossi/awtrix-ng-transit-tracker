@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "regions": [
+    {
+      "id": "c0-badge",
+      "box": [
+        0,
+        4,
+        15,
+        8
+      ],
+      "text": "3703",
+      "font": "small",
+      "color": "#C61D23",
+      "align": "start",
+      "scroll": {
+        "mode": "static"
+      },
+      "textCase": "asTyped"
+    },
+    {
+      "id": "c0-min",
+      "box": [
+        17,
+        4,
+        8,
+        8
+      ],
+      "text": [
+        {
+          "text": "14",
+          "color": "#EAE4D9"
+        }
+      ],
+      "font": "small",
+      "align": "start",
+      "scroll": {
+        "mode": "static"
+      },
+      "textCase": "asTyped"
+    },
+    {
+      "id": "c0-marks",
+      "box": [
+        16,
+        4,
+        10,
+        8
+      ],
+      "draw": [
+        [
+          "pixel",
+          8,
+          0,
+          "#D9955A"
+        ]
+      ]
+    }
+  ]
+}

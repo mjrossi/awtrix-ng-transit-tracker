@@ -56,7 +56,7 @@ url = "http://awtrixng-a1b2c3.local"
 # api_key = "${TRANSITLAND_API_KEY}"
 # feed = "f-drt-mbta"
 # refresh_interval = "2m"   # one request per stop per interval, 1m to 10m; default 5m
-# monthly_quota = 50000     # Hobbyist/Academic plan; default 10000 (free plan)
+# monthly_quota = 50000     # your plan's: 50000 is Hobbyist/Academic; default 10000 (free plan)
 
 # Metro de Lisboa: needs an application subscribed to EstadoServicoML at
 # https://api.metrolisboa.pt/store/ (client-credentials grant, OAuth
@@ -117,7 +117,8 @@ per_row = 3
 
 # How the board looks on the clock. Every setting is optional.
 [boards.clock]
-# layout = "rows"     # one line and direction per row, two rows; suits busy bus stops
+# layout = "rows"     # one line and direction per row, two rows
+# layout = "grid"     # up to four lines, next time only, no destinations; suits busy bus stops
 # max_rows = 2        # rows layout only
 # overflow = "clip"   # names too wide for the display are cut off instead of scrolling
 # lifetime = "135s"   # app is removed this long after the last push (default 3 × poll_interval)

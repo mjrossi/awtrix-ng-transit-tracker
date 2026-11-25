@@ -10,6 +10,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/mjrossi/urbanist-timetable/internal/config"
+	"github.com/mjrossi/urbanist-timetable/internal/render"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/providers"
 )
@@ -95,6 +96,16 @@ func TestBoardClockSettingsReachRenderOptions(t *testing.T) {
 	}
 }
 
+func TestGridLayoutIsValid(t *testing.T) {
+	cfg, err := config.Parse([]byte(withClock("layout = \"grid\"")), noEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Boards[0].Clock.Render().Layout; got != render.LayoutGrid {
+		t.Errorf("layout = %q, want %q", got, render.LayoutGrid)
+	}
+}
+
 func TestEnvExpansion(t *testing.T) {
 	src := "# ${IN_A_COMMENT} is ignored\n" + strings.Replace(minimal, "%s", "${CLOCK}", 1) +
 		"[[providers.demo.lines]]\nid = \"${CLOCK}\"\n"
@@ -136,7 +147,7 @@ func TestInvalid(t *testing.T) {
 		"unquoted quiet num":  {"quiet_hours = 6.5\n" + minimal, "quiet_hours: "},
 		"unquoted quiet bool": {"quiet_hours = true\n" + minimal, "quiet_hours: "},
 		"bad zone":            {"timezone = \"Mars/Olympus\"\n" + minimal, "timezone"},
-		"bad layout":          {withClock("layout = \"grid\""), "clock: layout"},
+		"bad layout":          {withClock("layout = \"columns\""), "clock: layout"},
 		"bad overflow":        {withClock("overflow = \"wrap\""), "overflow"},
 		"negative rows":       {withClock("max_rows = -1"), "max_rows"},
 		"duplicate":           {minimal + "[[boards]]\nname = \"metro\"\n[[boards.stops]]\nprovider = \"demo\"\nstop = \"s\"\n", "duplicate"},
