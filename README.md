@@ -223,6 +223,10 @@ A hidden board returns to the same place if you have arranged the rotation in
 the clock's web UI, which lists it as "no data" meanwhile. Boards you have
 not arranged return at the end of the rotation.
 
+Stopping the service works the same way: its boards leave the display when
+their `lifetime` ends, and the web UI lists them as "no data" until it runs
+again.
+
 ## Systems
 
 Ready-made settings for systems known to work:
