@@ -422,6 +422,30 @@ func TestErrorsRedactURLs(t *testing.T) {
 	}
 }
 
+func TestRedirectsDoNotCarryHeaders(t *testing.T) {
+	var followed, leaked atomic.Bool
+	other := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		followed.Store(true)
+		leaked.Store(r.Header.Get("X-Api-Key") != "" || r.Header.Get("Referer") != "")
+	}))
+	t.Cleanup(other.Close)
+	srv := httptest.NewServer(http.RedirectHandler(other.URL, http.StatusFound))
+	t.Cleanup(srv.Close)
+	p, err := gtfsrt.New(gtfsrt.Config{
+		RealtimeURLs: []string{srv.URL + "/?key=secret-key"},
+		Headers:      map[string]string{"x-api-key": "secret-key"},
+	}, srv.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Departures(t.Context(), transit.Query{StopID: "a", Now: bartRecorded, Window: time.Hour}); err != nil {
+		t.Fatal(err)
+	}
+	if !followed.Load() || leaked.Load() {
+		t.Errorf("redirect followed = %v, key sent = %v; want it followed without the key", followed.Load(), leaked.Load())
+	}
+}
+
 func TestHeaders(t *testing.T) {
 	a := newAgency(t, "mta")
 	a.wantHeader = "secret-key"

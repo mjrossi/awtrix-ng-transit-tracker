@@ -52,8 +52,10 @@ interpreted.
     secrets by then;
   - `gtfsrt` names URLs without credentials or query strings (`redact`);
   - `transitland` sends its key in the `apikey` header, never the URL, so
-    request errors cannot carry it, and refuses redirects to another host
-    or scheme, which would receive it;
+    request errors cannot carry it;
+  - the `transitland` key and `gtfsrt` `headers` go only to the host first
+    asked: on a redirect to another host, or from https to http, they and
+    `Referer` are dropped (`upstream.KeepHeadersOnHost`);
   - the clock URL may embed basic-auth credentials; logs show only its host
     (`Client.Host`), the state file its host and path (`Client.ID`), and
     URL parse errors drop the raw URL.

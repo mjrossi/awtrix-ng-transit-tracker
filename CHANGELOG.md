@@ -28,6 +28,8 @@ version may break configuration.
 
 ### Fixed
 
+- `gtfsrt` no longer sends its `headers`, or the address it was redirected
+  from, when a feed redirects to another host. Either could hold an API key.
 - `gtfsrt` and `metrolisboa` boards with `poll_interval = "15s"` read fresh
   data on every poll, instead of often repeating the previous poll's.
 - A trip without a destination no longer takes the place of a named one on

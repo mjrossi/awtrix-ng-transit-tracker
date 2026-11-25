@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
@@ -95,6 +96,7 @@ func New(cfg Config, client *http.Client) (*Provider, error) {
 	if client == nil {
 		client = &http.Client{}
 	}
+	client = upstream.KeepHeadersOnHost(client, slices.Collect(maps.Keys(cfg.Headers))...)
 	p := &Provider{cfg: cfg, http: client, clock: time.Now, feeds: map[string]*upstream.Cache[feed]{}}
 	if cfg.StaticURL != "" {
 		// A large schedule can take minutes to download, longer than a

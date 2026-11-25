@@ -35,6 +35,9 @@ const Name = "transitland"
 // DefaultBaseURL is the public REST API.
 const DefaultBaseURL = "https://transit.land/api/v2/rest"
 
+// keyHeader carries the API key.
+const keyHeader = "apikey"
+
 const (
 	// DefaultRefreshInterval keeps one stop polled all day within the free
 	// plan's 10,000 requests a month.
@@ -168,21 +171,9 @@ func New(cfg Config, client *http.Client) (*Provider, error) {
 	if client == nil {
 		client = &http.Client{Timeout: 20 * time.Second}
 	}
-	c := *client
-	// net/http drops Authorization on a redirect to another host, but not
-	// custom headers such as apikey.
-	c.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-		if req.URL.Host != via[0].URL.Host || req.URL.Scheme != via[0].URL.Scheme {
-			return errors.New("redirect to another host refused")
-		}
-		if len(via) >= 10 {
-			return errors.New("stopped after 10 redirects")
-		}
-		return nil
-	}
 	return &Provider{
 		base:    u,
-		http:    &c,
+		http:    upstream.KeepHeadersOnHost(client, keyHeader),
 		key:     key,
 		feed:    strings.TrimSpace(cfg.Feed),
 		refresh: refresh,
@@ -546,7 +537,7 @@ func (p *Provider) get(ctx context.Context, path string, params url.Values, v an
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "urbanist-timetable")
-	req.Header.Set("apikey", p.key)
+	req.Header.Set(keyHeader, p.key)
 	resp, err := p.http.Do(req)
 	if err != nil {
 		// The URL holds no secret: the key travels in a header.
