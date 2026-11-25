@@ -25,42 +25,43 @@ func (d *Duration) UnmarshalText(b []byte) error {
 // MarshalText implements encoding.TextMarshaler.
 func (d Duration) MarshalText() ([]byte, error) { return []byte(d.D().String()), nil }
 
-// ActiveHours is a daily window such as "06:00-23:30". A window whose end
+// DailyWindow is a daily window such as "06:00-23:30". A window whose end
 // is before its start runs past midnight, so "18:00-02:00" covers the
-// evening and early morning. The zero value is always active.
-type ActiveHours struct {
+// evening and early morning. The zero value is unset and covers the whole
+// day.
+type DailyWindow struct {
 	start, end int // minutes after midnight
 	set        bool
 }
 
 // UnmarshalText implements encoding.TextUnmarshaler.
-func (a *ActiveHours) UnmarshalText(b []byte) error {
+func (a *DailyWindow) UnmarshalText(b []byte) error {
 	s := strings.TrimSpace(string(b))
 	if s == "" {
-		*a = ActiveHours{}
+		*a = DailyWindow{}
 		return nil
 	}
 	from, to, ok := strings.Cut(s, "-")
 	if !ok {
-		return fmt.Errorf("active_hours %q: want HH:MM-HH:MM", s)
+		return fmt.Errorf("%q: want HH:MM-HH:MM", s)
 	}
 	start, err := parseClock(from)
 	if err != nil {
-		return fmt.Errorf("active_hours %q: %w", s, err)
+		return fmt.Errorf("%q: %w", s, err)
 	}
 	end, err := parseClock(to)
 	if err != nil {
-		return fmt.Errorf("active_hours %q: %w", s, err)
+		return fmt.Errorf("%q: %w", s, err)
 	}
 	if start == end {
-		return fmt.Errorf("active_hours %q: start and end are equal; leave it empty to stay always active", s)
+		return fmt.Errorf("%q: start and end are equal; leave it empty for no window", s)
 	}
-	*a = ActiveHours{start: start, end: end, set: true}
+	*a = DailyWindow{start: start, end: end, set: true}
 	return nil
 }
 
 // MarshalText implements encoding.TextMarshaler.
-func (a ActiveHours) MarshalText() ([]byte, error) {
+func (a DailyWindow) MarshalText() ([]byte, error) {
 	if !a.set {
 		return []byte{}, nil
 	}
@@ -68,7 +69,7 @@ func (a ActiveHours) MarshalText() ([]byte, error) {
 }
 
 // Contains reports whether t, in its own location, is inside the window.
-func (a ActiveHours) Contains(t time.Time) bool {
+func (a DailyWindow) Contains(t time.Time) bool {
 	if !a.set {
 		return true
 	}

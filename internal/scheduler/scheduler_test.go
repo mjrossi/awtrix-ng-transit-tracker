@@ -76,10 +76,11 @@ type harness struct {
 	out    *fakeOutput
 	runner *scheduler.Runner
 	logs   *logRecorder
+	quiet  bool
 }
 
-// logRecorder keeps the messages of records at info and above in msgs, and
-// the rest in debug.
+// logRecorder keeps the messages of records at info and above in msgs, with
+// their reason if they have one, and the rest in debug.
 type logRecorder struct {
 	msgs  []string
 	debug []string
@@ -88,10 +89,17 @@ type logRecorder struct {
 func (l *logRecorder) Enabled(context.Context, slog.Level) bool { return true }
 
 func (l *logRecorder) Handle(_ context.Context, r slog.Record) error {
+	msg := r.Message
+	r.Attrs(func(a slog.Attr) bool {
+		if a.Key == "reason" {
+			msg += ": " + a.Value.String()
+		}
+		return true
+	})
 	if r.Level < slog.LevelInfo {
-		l.debug = append(l.debug, r.Message)
+		l.debug = append(l.debug, msg)
 	} else {
-		l.msgs = append(l.msgs, r.Message)
+		l.msgs = append(l.msgs, msg)
 	}
 	return nil
 }
@@ -110,6 +118,7 @@ func newHarness(active func(time.Time) bool) *harness {
 		MaxStale:     5 * time.Minute,
 		PerRow:       3,
 		Active:       active,
+		Quiet:        func(time.Time) bool { return h.quiet },
 		Location:     time.UTC,
 	}
 	h.runner = scheduler.NewRunner(b, h.out, slog.New(h.logs), func() time.Time { return h.now })
@@ -324,7 +333,7 @@ func TestLogsStartOutsideActiveHours(t *testing.T) {
 	h := newHarness(func(time.Time) bool { return false })
 	h.runner.Tick(t.Context())
 	h.runner.Tick(t.Context())
-	if diff := cmp.Diff([]string{"outside active hours"}, h.logs.msgs); diff != "" {
+	if diff := cmp.Diff([]string{"board hidden: outside active hours"}, h.logs.msgs); diff != "" {
 		t.Errorf("logs (-want +got):\n%s", diff)
 	}
 	if h.out.withdrawals != 0 {
@@ -385,5 +394,63 @@ func TestShutdownDuringWithdrawIsNotLogged(t *testing.T) {
 	h.runner.Tick(ctx)
 	if h.out.withdrawals != 1 || len(h.logs.msgs) != 0 {
 		t.Errorf("withdrawals = %d, logs = %q; want 1 and none", h.out.withdrawals, h.logs.msgs)
+	}
+}
+
+func TestQuietHoursStopAllActivity(t *testing.T) {
+	active := true
+	h := newHarness(func(time.Time) bool { return active })
+	h.runner.Tick(t.Context())
+	h.quiet = true
+	for i := range 5 {
+		h.now = start.Add(time.Duration(i+1) * time.Minute)
+		h.runner.Tick(t.Context())
+	}
+	if h.prov.calls != 1 || len(h.out.pushes) != 1 || h.out.withdrawals != 1 {
+		t.Errorf("calls = %d, pushes = %d, withdrawals = %d; want 1 each", h.prov.calls, len(h.out.pushes), h.out.withdrawals)
+	}
+	// Already hidden, so nothing more is sent when active hours end too.
+	h.quiet, active = false, false
+	h.runner.Tick(t.Context())
+	active = true
+	h.runner.Tick(t.Context())
+	if h.prov.calls != 2 || len(h.out.pushes) != 2 || h.out.withdrawals != 1 {
+		t.Errorf("calls = %d, pushes = %d, withdrawals = %d; want 2, 2 and 1", h.prov.calls, len(h.out.pushes), h.out.withdrawals)
+	}
+	want := []string{
+		"board shown",
+		"board hidden: quiet hours",
+		"board hidden: outside active hours",
+		"board shown",
+	}
+	if diff := cmp.Diff(want, h.logs.msgs); diff != "" {
+		t.Errorf("logs (-want +got):\n%s", diff)
+	}
+}
+
+func TestStartInQuietHoursSendsNothing(t *testing.T) {
+	h := newHarness(nil)
+	h.quiet = true
+	h.runner.Tick(t.Context())
+	if h.prov.calls != 0 || len(h.out.pushes) != 0 || h.out.withdrawals != 0 {
+		t.Errorf("calls = %d, pushes = %d, withdrawals = %d; want none", h.prov.calls, len(h.out.pushes), h.out.withdrawals)
+	}
+}
+
+func TestFailedWithdrawIsRetried(t *testing.T) {
+	h := newHarness(nil)
+	h.runner.Tick(t.Context())
+	h.quiet = true
+	h.out.err = errors.New("output offline")
+	h.runner.Tick(t.Context())
+	h.out.err = nil
+	h.runner.Tick(t.Context())
+	h.runner.Tick(t.Context())
+	want := []string{"board shown", "hide board: quiet hours", "board hidden: quiet hours"}
+	if diff := cmp.Diff(want, h.logs.msgs); diff != "" {
+		t.Errorf("logs (-want +got):\n%s", diff)
+	}
+	if h.out.withdrawals != 2 {
+		t.Errorf("withdrawals = %d, want 2", h.out.withdrawals)
 	}
 }

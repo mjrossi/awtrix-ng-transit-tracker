@@ -192,7 +192,7 @@ the release version.
 ## Configuration
 
 See [`config.example.toml`](./config.example.toml). In short: an
-optional `timezone` for `active_hours`, one `[clock]`, one
+optional `timezone` and `quiet_hours`, one `[clock]`, one
 `[providers.NAME]` block per data source, and one `[[boards]]` entry per
 app on the clock, each with one or more stops. A board's
 `[boards.clock]` table holds how it looks on the clock: layout, labels,
@@ -201,6 +201,27 @@ lifetime and so on. Without `timezone`, the
 set it. A board's own `timezone` overrides the top-level one for that
 board's `active_hours`, for boards from another city; `"Local"` there
 means the `TZ` zone.
+
+### When boards are shown
+
+Two settings take a daily window such as `"06:30-23:30"`, which may run past
+midnight:
+
+- A board's `active_hours` are the hours you want to see it, such as your
+  commute. They are not the agency's service hours.
+- The top-level `quiet_hours` are a night mode for the whole service. They
+  hide every board, whatever its `active_hours`, and always follow the
+  top-level `timezone`.
+
+A hidden board is not polled, and the clock skips it. In quiet hours the
+service uses no network at all, except to hide the boards at the start: each
+within one `poll_interval`, retried if the clock does not answer, until the
+app's `lifetime` has passed. `preview` and `stops search` still work. The
+display stays on and shows the clock's other apps.
+
+A hidden board returns to the same place if you have arranged the rotation in
+the clock's web UI, which lists it as "no data" meanwhile. Boards you have
+not arranged return at the end of the rotation.
 
 ## Systems
 
@@ -254,7 +275,8 @@ trips the feed does not list yet are missing until it does.
 - If a provider fails, the last good data is reused for up to `max_stale`
   (10 minutes by default) while the provider is retried with backoff.
   Minutes are recomputed on every push.
-- Outside `active_hours` the app is removed and no requests are made.
+- Outside `active_hours` and in `quiet_hours` a board is hidden and no
+  requests are made; see [When boards are shown](#when-boards-are-shown).
 - A board removed from the configuration is removed from the clock at the
   next start, including its place in the rotation. If the clock is off, this
   is retried with backoff, from one minute up to one hour. Apps of other

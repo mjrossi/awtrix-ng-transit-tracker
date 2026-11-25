@@ -20,7 +20,7 @@ type Output interface {
 	// Publish shows a board's latest snapshot. It is called on every tick
 	// that has usable data, so it also restores an output that lost state.
 	Publish(ctx context.Context, snap Snapshot) error
-	// Withdraw removes a board, such as outside its active hours.
+	// Withdraw hides a board, outside its active hours or in quiet hours.
 	Withdraw(ctx context.Context, board string) error
 }
 
@@ -96,7 +96,10 @@ type Board struct {
 	PerRow       int
 	// Active reports whether the board should be shown at t. Nil means
 	// always.
-	Active   func(t time.Time) bool
+	Active func(t time.Time) bool
+	// Quiet reports whether every board is hidden at t, whatever Active
+	// says. Nil means never.
+	Quiet    func(t time.Time) bool
 	Location *time.Location
 }
 
@@ -120,6 +123,7 @@ const (
 	phaseNoData
 	phasePublishFailed
 	phaseInactive
+	phaseQuiet
 )
 
 // Runner drives one board. Create it with NewRunner.
@@ -165,27 +169,18 @@ func (r *Runner) Run(ctx context.Context) error {
 	}
 }
 
-// Tick runs one cycle: outside active hours it withdraws the board;
-// otherwise it refreshes due sources and publishes a snapshot. Errors are
-// logged, not returned, because the next tick retries.
+// Tick runs one cycle: outside active hours and in quiet hours it withdraws
+// the board; otherwise it refreshes due sources and publishes a snapshot.
+// Errors are logged, not returned, because the next tick retries.
 func (r *Runner) Tick(ctx context.Context) {
 	now := r.now().In(r.board.Location)
 
-	if r.board.Active != nil && !r.board.Active(now) {
-		if r.shown {
-			if err := r.out.Withdraw(ctx, r.board.Name); err != nil {
-				if ctx.Err() != nil {
-					return
-				}
-				r.log.WarnContext(ctx, "withdraw outside active hours", slog.Any("err", err))
-				return
-			}
-			r.shown = false
-			r.log.InfoContext(ctx, "outside active hours; withdrawn")
-		} else if r.phase != phaseInactive {
-			r.log.InfoContext(ctx, "outside active hours")
-		}
-		r.phase = phaseInactive
+	switch {
+	case r.board.Quiet != nil && r.board.Quiet(now):
+		r.hide(ctx, phaseQuiet, "quiet hours")
+		return
+	case r.board.Active != nil && !r.board.Active(now):
+		r.hide(ctx, phaseInactive, "outside active hours")
 		return
 	}
 
@@ -219,6 +214,23 @@ func (r *Runner) Tick(ctx context.Context) {
 		r.log.InfoContext(ctx, "board shown", rows)
 	}
 	r.log.DebugContext(ctx, "published", rows)
+}
+
+// hide withdraws the board, once unless that fails.
+func (r *Runner) hide(ctx context.Context, p phase, reason string) {
+	if r.shown {
+		if err := r.out.Withdraw(ctx, r.board.Name); err != nil {
+			if ctx.Err() == nil {
+				r.log.WarnContext(ctx, "hide board", slog.String("reason", reason), slog.Any("err", err))
+			}
+			return
+		}
+		r.shown = false
+	}
+	if r.phase != p {
+		r.phase = p
+		r.log.InfoContext(ctx, "board hidden", slog.String("reason", reason))
+	}
 }
 
 // Snapshot refreshes due sources and returns the board's state. ok is false

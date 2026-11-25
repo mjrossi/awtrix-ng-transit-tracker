@@ -54,7 +54,8 @@ Part of the Urbanist family with *The Urbanist Lexicon* (mjrossi.com) and
 - `pkg/awtrix/` — typed AWTRIX NG HTTP client.
 - `internal/config/` — TOML loading and validation.
 - `internal/render/` — departure rows to TC002 layouts.
-- `internal/scheduler/` — polling, active hours, backoff, last-good cache.
+- `internal/scheduler/` — polling, active and quiet hours, backoff,
+  last-good cache.
 - `docs/` — `ARCHITECTURE.md`, `rendering.md`, `PLAN.md` (roadmap only:
   no build log or history).
 - `CHANGELOG.md` — user-visible changes, Keep a Changelog format. Add an

@@ -36,6 +36,8 @@ type Cleanup struct {
 	// each further one, up to MaxRetry.
 	Retry    time.Duration
 	MaxRetry time.Duration
+	// Quiet reports whether to leave the clock alone at t. Nil means never.
+	Quiet func(t time.Time) bool
 }
 
 // cleanupState is the state file: the apps this service may have pushed.
@@ -74,6 +76,11 @@ func (c Cleanup) Run(ctx context.Context) {
 		return
 	}
 	for wait := c.Retry; ; wait = min(2*wait, c.MaxRetry) {
+		for c.Quiet != nil && c.Quiet(time.Now()) {
+			if !sleep(ctx, c.Retry) {
+				return
+			}
+		}
 		removed, err := c.Forgetter.ForgetApps(ctx, stale)
 		if err == nil {
 			if len(removed) > 0 {
@@ -91,13 +98,21 @@ func (c Cleanup) Run(ctx context.Context) {
 		}
 		c.Log.WarnContext(ctx, "remove old boards from the clock",
 			slog.Any("boards", stale), slog.Duration("retry_in", wait), slog.Any("err", err))
-		select {
-		case <-ctx.Done():
+		if !sleep(ctx, wait) {
 			return
-		case <-time.After(wait):
 		}
 	}
 	c.save(ctx, c.Boards)
+}
+
+// sleep waits for d and reports whether it did so before ctx was done.
+func sleep(ctx context.Context, d time.Duration) bool {
+	select {
+	case <-ctx.Done():
+		return false
+	case <-time.After(d):
+		return true
+	}
 }
 
 func (c Cleanup) save(ctx context.Context, apps []string) {

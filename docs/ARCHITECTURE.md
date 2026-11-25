@@ -10,7 +10,7 @@ model is in [SECURITY.md](../SECURITY.md).
 config.toml ──▶ internal/config ──▶ cmd (wire.go): one provider per block, one runner per board
 
 each tick, per board (internal/scheduler.Runner):
-  outside active_hours ──▶ Output.Withdraw (once)
+  in quiet_hours or outside active_hours ──▶ Output.Withdraw (once)
   otherwise:
     for each stop:  Provider.Departures ──▶ last-good cache, backoff
     ──▶ Snapshot (cached departures + health per stop) ──▶ Output.Publish
@@ -100,7 +100,8 @@ Rules, from [CLAUDE.md](../CLAUDE.md):
   query exists: stop search and OAuth token expiry.
 - A runner takes `now` in the board's location (`timezone`, else the
   top-level `timezone`, else `TZ`). The location only affects
-  `active_hours`; departures are absolute times.
+  `active_hours`; departures are absolute times. `quiet_hours` always follow
+  the top-level `timezone` (`config.Config.Quiet`).
 - Minutes are computed from absolute times at render time, so cached data
   stays accurate between fetches.
 
@@ -113,7 +114,7 @@ Rules, from [CLAUDE.md](../CLAUDE.md):
 | Every source is failing with nothing younger than `max_stale` | Nothing is published, which is logged when it starts. The app's `lifetimeMs` (default 3 × `poll_interval`) removes it from the clock instead of showing "No departures". |
 | A provider returns departures with a `*transit.PartialError` (such as one of several feeds failing) | The departures are used. The problem is logged when it starts, changes and clears, not on every poll. |
 | The service stops | Every push carries `lifetimeMs` with `lifetimeExpiry: remove`, so the app leaves the clock. |
-| Outside `active_hours` | No provider calls. The board is withdrawn once; on the clock the app expires at once (see "Removed boards"). A failed withdrawal is retried until the app's lifetime has passed. |
+| Outside `active_hours`, or in `quiet_hours` | No provider calls, and in `quiet_hours` no cleanup attempts. The board is withdrawn once; on the clock the app expires at once (see "Removed boards"). A failed withdrawal is retried until the app's lifetime has passed. |
 | A board is removed from the configuration | At the next start, `clockout.Cleanup` compares the configured boards with the names in the state file and calls `awtrix.Client.ForgetApps`, retrying until the clock answers: after 1 min, doubling up to 1 h. See below. |
 | The clock reboots | Pushed apps live in its RAM; the next tick pushes again. |
 | Pushing to the clock fails | Logged; the next tick retries. |
@@ -129,7 +130,7 @@ pushed there. A removed board stays in the file until the clock has
 forgotten it, so a restart resumes the cleanup. Names recorded for another
 address are dropped, which is logged.
 
-Neither this cleanup nor hiding a board outside its active hours uses
+Neither this cleanup nor hiding a board uses
 `DELETE /api/v1/apps/{name}`, which also erases the source of a script with
 that name. A pushed app is replaced by one that expires after 1 ms instead
 (`ExpireApp`), which cannot touch a script.
@@ -147,6 +148,7 @@ between reading and writing would be lost.
 
 ## Configuration shape
 
+`timezone` and `quiet_hours` apply to the whole service.
 A `[[boards]]` entry holds what the board is: its name, stops and filters,
 polling, `window`, `active_hours`, `timezone`, `max_stale` and `per_row`.
 Settings that only mean something on the clock (layout, labels, font,

@@ -4,9 +4,14 @@
 # environment variable NAME, so secrets can stay out of the file. A missing
 # variable is an error.
 
-# IANA time zone for active_hours. Empty uses the TZ environment variable.
-# A board's own `timezone` overrides it; "Local" there means the TZ zone.
+# IANA time zone for quiet_hours and active_hours. Empty uses the TZ
+# environment variable. A board's own `timezone` overrides it for that board's
+# active_hours; "Local" there means the TZ zone.
 timezone = "Europe/Lisbon"
+
+# Optional night mode: every board is hidden and the service uses no network,
+# whatever the boards' active_hours say. The display itself stays on.
+# quiet_hours = "23:30-06:30"
 
 [clock]
 # Your AWTRIX NG clock: its IP address or awtrixng-<last 6 MAC hex>.local.
@@ -86,7 +91,9 @@ name = "azul"
 poll_interval = "45s"
 # How far ahead to look for departures.
 window = "60m"
-# Leave empty to show the board all day.
+# When you want to see the board, not when the agency runs. Outside these
+# hours it is not polled, and the clock skips it but keeps its place if you
+# have arranged the rotation in the clock's web UI. Leave empty for all day.
 active_hours = "06:30-23:30"
 # Departure times to show (fewer if they do not fit).
 per_row = 3

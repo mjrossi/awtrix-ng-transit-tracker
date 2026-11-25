@@ -25,10 +25,13 @@ version may break configuration.
 
 ### Added
 
+- `quiet_hours`, a night mode: every board is hidden and the service uses no
+  network during a daily window.
+- The README explains what happens outside `active_hours`.
 - `name_font` in `[boards.clock]` sets the font of destination names.
 - Logs say which boards and stops are configured at startup, and when a
-  board is first shown, loses all usable data, recovers, or is outside its
-  active hours. `--log-level debug` also logs every fetch and push.
+  board is first shown, loses all usable data, recovers, or is hidden and why.
+  `--log-level debug` also logs every fetch and push.
 - The README states the minimum firmware, AWTRIX NG 1.2.2: earlier releases
   have no layouts.
 
