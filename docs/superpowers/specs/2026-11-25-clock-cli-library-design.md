@@ -1,6 +1,8 @@
 # Design: finish the clock, add a CLI, polish the library
 
-Date: 2026-11-25. Status: approved 2026-11-25.
+Date: 2026-11-25. Status: implemented. v0.5.0 and v0.6.0 were released on
+2026-11-25; the library work (release 3) landed without a version of its
+own, by the maintainer's choice.
 
 Items marked **(call)** were proposed by Claude and not discussed
 individually; check those first.

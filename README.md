@@ -24,7 +24,8 @@ schedule-only times are dimmed. Add a board per direction and the clock
 rotates through them. A `rows` layout fits two lines or directions on one
 screen instead, and a `grid` layout the next departure of up to four lines.
 
-> **Status:** early, and running on a real TC002. Supported today:
+> **Status:** early, and running on a real TC002. Supported today, in the
+> terminal and on the clock:
 > any agency publishing GTFS-Realtime, with six
 > [ready-made systems](#systems) checked against their live feeds, plus
 > dedicated providers for Metro de Lisboa and Carris Metropolitana, and
