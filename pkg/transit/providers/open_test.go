@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mjrossi/urbanist-timetable/pkg/transit"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/providers"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit/registry"
 )
 
 func TestOpen(t *testing.T) {
@@ -16,7 +16,7 @@ func TestOpen(t *testing.T) {
 	if _, err := providers.Open("agency", map[string]any{"type": "gtfsrt", "realtime_urls": []any{"https://x"}}, providers.WithScheduleCache(t.TempDir())); err != nil {
 		t.Errorf("gtfsrt: %v", err)
 	}
-	if _, err := providers.Open("nope", nil); !errors.Is(err, transit.ErrUnknownProvider) {
+	if _, err := providers.Open("nope", nil); !errors.Is(err, registry.ErrUnknownProvider) {
 		t.Errorf("unknown type: err = %v", err)
 	}
 	_, err := providers.Open("carrismetropolitana", map[string]any{"clientsecret": "SUPERSECRET"})

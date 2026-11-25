@@ -24,6 +24,7 @@ import (
 
 	"github.com/mjrossi/urbanist-timetable/pkg/transit"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/internal/upstream"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit/registry"
 )
 
 // Name is the provider's name in configuration.
@@ -63,8 +64,8 @@ type Provider struct {
 }
 
 // Register adds the provider to r.
-func Register(r *transit.Registry) {
-	transit.RegisterConfig(r, Name, func(cfg Config) (*Provider, error) { return New(cfg, nil) })
+func Register(r *registry.Registry) {
+	registry.RegisterConfig(r, Name, func(cfg Config) (*Provider, error) { return New(cfg, nil) })
 }
 
 // New returns a provider. A nil client gets a default with a timeout.

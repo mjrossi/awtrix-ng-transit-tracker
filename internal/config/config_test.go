@@ -44,7 +44,7 @@ func TestExampleConfig(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := reg.New(typ, opts); err != nil {
+		if _, err := reg.Build(typ, opts); err != nil {
 			t.Errorf("provider %s: %v", name, err)
 		}
 	}

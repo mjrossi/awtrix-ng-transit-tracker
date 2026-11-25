@@ -141,24 +141,6 @@ func TestGroup(t *testing.T) {
 	}
 }
 
-func TestRegistry(t *testing.T) {
-	r := transit.NewRegistry()
-	r.Register("b", func(transit.Options) (transit.Provider, error) { return nil, nil })
-	r.Register("a", func(transit.Options) (transit.Provider, error) { return nil, nil })
-	if diff := cmp.Diff([]string{"a", "b"}, r.Names()); diff != "" {
-		t.Errorf("Names mismatch (-want +got):\n%s", diff)
-	}
-	if _, err := r.New("missing", nil); err == nil {
-		t.Error("New(missing) succeeded")
-	}
-	defer func() {
-		if recover() == nil {
-			t.Error("duplicate Register did not panic")
-		}
-	}()
-	r.Register("a", nil)
-}
-
 func TestNormalizeColor(t *testing.T) {
 	tests := []struct{ in, want string }{
 		{"ee352e", "#EE352E"},

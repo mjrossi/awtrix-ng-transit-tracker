@@ -33,9 +33,10 @@ It listens on no ports.
 
 | Package | Owns | Imports (project) |
 |---|---|---|
-| `pkg/transit` | `Departure`, `Line`, `Provider`, `Query`, `PartialError`, `ErrUnknownStop`, `Metered`, `Quota`, `Filter`, `Group`, `Registry`, `MatchesSearch`, `ModeForRouteType` | none |
+| `pkg/transit` | `Departure`, `Line`, `Provider`, `Query`, `PartialError`, `ErrUnknownStop`, `StopNamer`, `Metered`, `Quota`, `Filter`, `Group`, `MatchesSearch`, `ModeForRouteType` | none |
+| `pkg/transit/registry` | building providers by name from configuration: `Registry`, `Options`, `RegisterConfig` | `transit` |
 | `pkg/transit/transittest` | the provider contract suite | `transit` |
-| `pkg/transit/providers/<name>` | one data source each | `transit` only |
+| `pkg/transit/providers/<name>` | one data source each | `transit`, `registry` |
 | `pkg/transit/providers` | the built-in registry, and `Open` | every provider, `catalog` |
 | `pkg/transit/catalog` | embedded system entries (`systems/*.toml`), and resolving a provider block (`Resolve`, `Options`) | none |
 | `pkg/awtrix` | typed AWTRIX NG HTTP client and payload types | none |

@@ -46,7 +46,8 @@ Part of the Urbanist family with *The Urbanist Lexicon* (mjrossi.com) and
   `stops search`, `systems`, `config validate`, `clock run`,
   `clock preview`. No business logic.
 - `pkg/transit/` — the importable core: model, `Provider`, `Filter`,
-  `Group`, `Registry`.
+  `Group`.
+- `pkg/transit/registry/` — building providers by name from configuration.
 - `pkg/transit/transittest/` — the provider contract suite.
 - `pkg/transit/catalog/` — ready-made systems, one TOML file each in
   `systems/`. `just catalog-check` verifies them live; update `verified`

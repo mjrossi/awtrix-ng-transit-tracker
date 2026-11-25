@@ -7,6 +7,14 @@ version may break configuration.
 
 ## [Unreleased]
 
+### Changed
+
+- For programs that import `pkg/`: `Registry`, `Options`, `Factory`,
+  `RegisterConfig` and `ErrUnknownProvider` move from `transit` to the new
+  `registry` package; `NewRegistry` is `registry.New`, and `Registry.New`
+  is `Registry.Build`. The core `transit` package has no configuration code
+  and no dependencies outside the standard library.
+
 ## [0.6.0] - 2026-11-25
 
 ### Added
