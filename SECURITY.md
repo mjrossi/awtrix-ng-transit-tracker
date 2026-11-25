@@ -74,23 +74,3 @@ interpreted.
   board names, never credentials.
 - Images are built by GitHub Actions, from version tags and from `main`,
   only after `just ci` passes.
-
-## When HTTP output lands
-
-The planned `serve` command (PLAN.md, "Direction") is the first listener.
-Its design must meet these rules before it merges:
-
-- **Opt-in.** Off unless configured; the clock-only setup stays portless.
-- **An explicit bind address**, documented for Docker, where `0.0.0.0`
-  inside the container plus a published port is the usual setup.
-- **Read-only.** `GET` only, nothing that changes state or configuration.
-- **Served from snapshots.** Requests read the last poll's result and never
-  call a provider, so HTTP traffic cannot multiply upstream API traffic.
-- **Bounded server.** `http.Server` read, write and idle timeouts, and a
-  header size limit.
-- **No debug surface.** No `pprof`, `expvar` or config dump.
-- **Minimal exposure.** Board names, stop IDs and departures only, never
-  provider settings, URLs or the clock's address.
-- **Decided, not defaulted:** whether to allow CORS (browser dashboards
-  need it) and whether to offer an optional bearer token for setups that
-  expose the port beyond the LAN.

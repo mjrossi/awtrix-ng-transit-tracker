@@ -2,9 +2,9 @@
 
 > Your next departure, wherever you look.
 
-Live public transit departures for the displays around your home,
-starting with [AWTRIX NG](https://github.com/Blueforcer/awtrix-ng) pixel
-clocks (Ulanzi TC002).
+Live public transit departures on an
+[AWTRIX NG](https://github.com/Blueforcer/awtrix-ng) pixel clock (Ulanzi
+TC002).
 
 A companion to [*The Urbanist Lexicon*](https://mjrossi.com/blog) and
 [*Urbanist Atlas*](https://urbanistatlas.com).
@@ -26,7 +26,7 @@ screen instead, and a `grid` layout the next departure of up to four lines.
 > [ready-made systems](#systems) checked against their live feeds, plus
 > dedicated providers for Metro de Lisboa and Carris Metropolitana, and
 > [Transitland](https://www.transit.land/) for thousands more. Only
-> the 52 × 16 TC002 is supported; other displays are on the roadmap in
+> the 52 × 16 TC002 is supported. What comes next is in
 > [`docs/PLAN.md`](./docs/PLAN.md).
 >
 > **Renamed:** this project was `awtrix-ng-transit-tracker` until v0.2.0.

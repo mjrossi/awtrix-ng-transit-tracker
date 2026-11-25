@@ -22,8 +22,11 @@ request. Add the system to the README's table.
 
 ## Adding a provider
 
-A new provider package is accepted only when the generic GTFS-RT provider
-cannot serve the agency, because:
+Catalog entries are welcome. New provider packages are not being accepted for
+now. The existing ones, and any the maintainer adds, meet these rules.
+
+A provider package exists only where the generic GTFS-RT provider cannot
+serve the agency, because:
 
 - the agency publishes no GTFS-RT `TripUpdates`, or
 - its own API is clearly better, such as realtime data the GTFS-RT feed

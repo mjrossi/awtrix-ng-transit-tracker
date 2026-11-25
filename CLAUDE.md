@@ -10,10 +10,9 @@ before making non-trivial changes. How the code fits together is in
 ## What this is
 
 A Go service that polls public transit departures and shows them on
-displays. The first, and so far only, display is an AWTRIX NG clock
-(Ulanzi TC002, 52 × 16). It runs as one Docker container with a mounted
-`config.toml`; it listens on no ports. Other outputs (HTTP JSON, MQTT, a
-hosted API) are planned in `docs/PLAN.md`, "Direction".
+an AWTRIX NG clock (Ulanzi TC002, 52 × 16). It runs as one Docker container with a mounted
+`config.toml`; it listens on no ports. What comes next is in
+`docs/PLAN.md`, "Direction".
 
 Part of the Urbanist family with *The Urbanist Lexicon* (mjrossi.com) and
 *Urbanist Atlas*.
@@ -80,8 +79,7 @@ Mirrors urbanist-atlas.
 
   GTFS-RT is decoded from the protobuf wire format with `encoding/binary`
   (`pkg/transit/providers/gtfsrt/feed.go`), so no protobuf module is
-  needed. Planned, not yet added: an MQTT client. Ask the maintainer before
-  adding any other module.
+  needed. Ask the maintainer before adding any other module.
 - **Logging:** `log/slog` with an explicit `*slog.Logger`; JSON in
   production, text in development.
 - **Errors:** stdlib `errors` and `fmt.Errorf("...: %w", err)`.

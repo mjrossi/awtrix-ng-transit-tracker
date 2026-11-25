@@ -173,8 +173,7 @@ A `[[boards]]` entry holds what the board is: its name, stops and filters,
 polling, `window`, `active_hours`, `timezone`, `max_stale` and `per_row`.
 Settings that only mean something on the clock (layout, labels, font,
 overflow, lifetime, duration) go in its `[boards.clock]` table
-(`config.BoardClock`), so a future output can add its own table beside
-it. `BoardClock.Render` turns them into `render.Options`, and
+(`config.BoardClock`). `BoardClock.Render` turns them into `render.Options`, and
 `render.Options.Validate` owns their allowed values.
 
 ## Provider resolution
@@ -195,4 +194,3 @@ mistyped key is an error that names the key but not its value.
   [CONTRIBUTING.md](../CONTRIBUTING.md).
 - A provider: a package under `pkg/transit/providers/` that passes
   `transittest.Run`; see CONTRIBUTING.md for the rules.
-- A display or output: planned in PLAN.md, "Direction".

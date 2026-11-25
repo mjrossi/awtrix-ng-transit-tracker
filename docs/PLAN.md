@@ -1,9 +1,8 @@
 # Plan
 
 Urbanist Timetable is a small Go service that polls public transit
-departure data and shows it on the displays around a home. The first
-display is an AWTRIX NG pixel clock (Ulanzi TC002, 52 × 16). It runs in
-Docker, for example on a NAS, and is meant to be usable by anyone, in any
+departure data and shows it on an AWTRIX NG pixel clock (Ulanzi TC002,
+52 × 16). It runs in Docker, for example on a NAS, and is meant to be usable by anyone, in any
 city. It belongs to the Urbanist family, alongside *The Urbanist Lexicon*
 and *Urbanist Atlas*.
 
@@ -15,41 +14,27 @@ and *Urbanist Atlas*.
   changing the core.
 - Support many agencies without maintaining code for each one.
 - Fail safe: stale data disappears from the clock rather than lying.
-- Keep departures independent of any one display, so the clock is the
-  first output rather than the only one.
+- Keep departures independent of the display.
 
 ## Non-goals (v1)
 
 - Trip planning or routing.
-- Running on the clock itself. An on-device Berry script for simple APIs
-  may come later; GTFS-RT decoding and large static GTFS zips do not fit on
-  the clock.
+- Running on the clock itself: GTFS-RT decoding and large static GTFS zips
+  do not fit there.
+- A server. The process listens on no ports.
 - A web UI. Configuration is one TOML file.
 
-## Direction: beyond the clock
+## Direction
 
-The clock is one place departures show up. Two more audiences are in
-view: people who run the service themselves and want departures on other
-displays (Home Assistant dashboards, e-ink panels, other LED matrices),
-and developers who would rather call a hosted API than run anything. The
-core already allows for both: `pkg/transit` is importable, and everything
-past a provider sees only `transit.Departure`. In order:
+Two releases follow, described in the
+[design](./superpowers/specs/2026-11-25-clock-cli-library-design.md):
 
-1. **Self-hosted HTTP output.** A `serve` command that answers with each
-   board's departures as JSON. This gives up "listens on no ports", so it
-   is opt-in and the clock-only setup stays portless. The JSON shape is
-   a public contract that the hosted API builds on, so it gets its own
-   design. The groundwork is in place: it becomes a second
-   `scheduler.Output` reading each board's `Snapshot` (ARCHITECTURE.md),
-   board settings for it go in a table beside `[boards.clock]`, and its
-   design must meet SECURITY.md, "When HTTP output lands".
-2. **MQTT and a Home Assistant add-on**, as described under [Later](#later).
-3. **A hosted public API.** The same service run for everyone, reusing
-   Urbanist Atlas's plans for API keys and rate limits. Needs its own
-   design first: agencies license their feeds differently (Lisbon's are
-   CC BY 4.0; others restrict redistribution), and an always-on public
-   service has running costs. Transitland's free plans are
-   non-commercial and per-user quotas, so they cannot back it.
+1. **v0.6.0, a command-line tool.** `departures` prints a stop's next
+   departures in a terminal, without a configuration file for systems that
+   need no key. The clock becomes a group of commands beside it.
+2. **v0.7.0, a library.** `pkg/` gets a core free of configuration code,
+   examples, and a lower Go requirement, so other Go programs can use the
+   providers.
 
 ## Data sources: agencies are data, adapters are code
 
@@ -63,10 +48,10 @@ with the number of agencies.
 | `transitland` | Thousands, merged into JSON by [Transitland](https://www.transit.land/) | None: a TOML entry with a feed Onestop ID | Done. The fallback where an agency's own feeds are awkward, and the way to show timetabled trips today. Every request counts against a monthly quota (10,000 free, 50,000 Hobbyist/Academic), so each stop is fetched once per `refresh_interval` and boards count down from that. The quota belongs to the API key, so blocks sharing a key are added up. |
 | Custom adapters | One each | A few hundred lines | Only for agencies without usable GTFS-RT `TripUpdates`. |
 
-**Rule for custom adapters** (goes into `CONTRIBUTING.md`): an agency gets
+**Rule for custom adapters** (also in `CONTRIBUTING.md`): an agency gets
 its own adapter only if the generic GTFS-RT provider cannot serve it, or
 its own API is clearly better (for example, realtime that the GTFS-RT feed
-lacks). Expect roughly 10–20 over the life of the project.
+lacks). New adapters are frozen unless the maintainer needs one.
 
 ### Lisbon (first city)
 
@@ -75,14 +60,14 @@ lacks). Expect roughly 10–20 over the life of the project.
 | Carris Metropolitana (regional bus) | Own JSON API, `https://api.carrismetropolitana.pt/v2/arrivals/by_stop/{id}`, no key. Returns the whole service day; `Cache-Control: max-age=20`; unknown stops get 404. Live line IDs carry a `[XXXXX]` feed prefix that `/lines` does not. Data CC BY 4.0 | **Done** (`carrismetropolitana` provider) |
 | Metro de Lisboa | EstadoServicoML API behind a WSO2 gateway; free registration and a client-credentials OAuth token. Wait times have no line field (read per line), errors come as HTTP 200 with `codigo`, some platforms are frozen since 2024, and terminals list trains twice. Data CC BY 4.0 | **Done** (`metrolisboa` provider) |
 | Carris (city bus and tram) | GTFS and GTFS-RT vehicle positions on `https://gateway.carris.pt/gateway/gtfs/api/v2.11/GTFS`; its trip updates and alerts paths answer 404. The GTFS has no headsigns. Transitland has the schedule (`f-carris~pt`) but no realtime | **Schedule only**, through `transitland` |
-| CP, Fertagus, ferries | — | Not researched |
+| CP (rail) | Transitland has the schedule (`f-eyc-cp`); a third-party `TripUpdates` feed exists (see Open questions) | **Schedule only**, through `transitland` |
+| Fertagus, ferries | — | Not researched |
 
 ## Where the rest lives
 
 - How the code is built: [ARCHITECTURE.md](./ARCHITECTURE.md).
 - TC002 layouts and design rules: [rendering.md](./rendering.md).
-- Security model, and the rules HTTP output must meet:
-  [SECURITY.md](../SECURITY.md).
+- Security model: [SECURITY.md](../SECURITY.md).
 - Conventions and approved modules: [CLAUDE.md](../CLAUDE.md).
 - Adding a city or provider, and releasing:
   [CONTRIBUTING.md](../CONTRIBUTING.md).
@@ -111,11 +96,6 @@ providers). Each widens who the project works for.
   departures have none. `transitland` could look up a trip's last stop once
   per route pattern. Each is a request against the quota, and may
   have to be repeated for each new feed version, which Carris has daily.
-- **MQTT output.** Pushed apps live in the clock's RAM, so after a reboot
-  a board is missing until the next poll (up to a minute). AWTRIX NG's
-  retained `availability` topic would allow an immediate re-push. MQTT
-  also avoids the clock's address having to resolve inside Docker. Needs
-  an MQTT client module approved.
 - **First departure in the empty state.** Instead of "No departures",
   show when service starts ("First 5:42"). Needs a departure beyond the
   board's window, so the scheduler would have to look further ahead, and
@@ -135,22 +115,19 @@ providers). Each widens who the project works for.
   order through the firmware's rotation API at startup, moving only this
   service's apps relative to each other. Off by default: with one agency
   or two boards, a card is a few seconds per round with no departures.
-- **32 × 8 renderer.** Both layouts use the TC002-only `layout` key, so
+
+## Contributions welcome
+
+- **32 × 8 renderer.** All layouts use the TC002-only `layout` key, so
   32 × 8 AWTRIX NG clocks such as the Ulanzi TC001, probably the more
   common device, cannot show boards. Needs its own design: a scrolling
   destination with the next time, or the badge and times only.
-- **Home Assistant add-on.** Many AWTRIX owners run Home Assistant OS,
-  where add-ons are the only way to run a container. Packaging only: an
-  add-on repository, options mapped to `config.toml`, and the published
-  multi-arch images.
-- **On-device mode.** A Berry script on the clock that polls a simple JSON
-  provider (Carris Metropolitana) with no server. Only for providers
-  that need no protobuf decoding or large schedule files.
 
 ## Open questions
 
 - Whether any Lisbon operator publishes GTFS-RT `TripUpdates`.
-- Which MQTT client to approve when MQTT lands.
+- Whether CP's third-party `TripUpdates` feed
+  (`rt.gtfs.baguette.pirnet.si`) works with `gtfsrt`, and on what terms.
 - The Ulanzi TC001's behavior with the `layout` key: confirm it is
   rejected before designing the 32 × 8 renderer.
 - Still to confirm on the maintainer's TC002:
