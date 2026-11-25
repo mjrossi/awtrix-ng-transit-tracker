@@ -95,9 +95,9 @@ Rules, from [CLAUDE.md](../CLAUDE.md):
   request counts against a monthly quota. It fetches one `refresh_interval`
   beyond the window and windows the cached result at each poll's
   `Query.Now`, so boards keep their own poll interval. Providers with a
-  quota implement `transit.Metered`; `config validate` and `run` pass their
-  refresh intervals to `Config.EstimateRequests`, add up the blocks with the
-  same `QuotaAccount`, and warn above the quota. An answer from the cache
+  quota implement `transit.Metered`; `Config.QuotaUses` estimates
+  their requests and adds up the blocks with the same `QuotaAccount`;
+  `config validate` and `run` warn above the quota. An answer from the cache
   looks fresh to the scheduler, so `refresh_interval` is at most 10 minutes.
   A prediction shown as live is at most that plus one `poll_interval` old,
   since the next fetch waits for a poll. A failed fetch is

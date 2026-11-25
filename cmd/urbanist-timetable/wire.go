@@ -3,8 +3,6 @@ package main
 import (
 	"fmt"
 	"log/slog"
-	"maps"
-	"slices"
 	"time"
 
 	"github.com/mjrossi/urbanist-timetable/internal/clockout"
@@ -32,57 +30,6 @@ func buildProviders(cfg *config.Config) (map[string]transit.Provider, error) {
 		out[name] = p
 	}
 	return out, nil
-}
-
-// quotaUse is the estimated requests a month against one quota, which
-// provider blocks with the same account share.
-type quotaUse struct {
-	// Providers are the blocks' names, sorted.
-	Providers []string
-	Requests  int
-	// Quota is the smallest the blocks configure, or the default if none
-	// does.
-	Quota int
-}
-
-// Over reports whether the estimate exceeds the quota.
-func (u quotaUse) Over() bool { return u.Requests > u.Quota }
-
-// quotaUses estimates monthly requests for every quota, sorted by block
-// name.
-func quotaUses(cfg *config.Config, provs map[string]transit.Provider) []quotaUse {
-	refresh := map[string]time.Duration{}
-	metered := map[string]transit.Metered{}
-	for name, p := range provs {
-		if m, ok := p.(transit.Metered); ok {
-			refresh[name], metered[name] = m.RefreshInterval(), m
-		}
-	}
-	est := cfg.EstimateRequests(refresh)
-	var out []quotaUse
-	index := map[string]int{}
-	configured := map[string]bool{}
-	for _, name := range slices.Sorted(maps.Keys(metered)) {
-		account := metered[name].QuotaAccount()
-		quota, set := metered[name].MonthlyQuota()
-		i, ok := index[account]
-		if !ok {
-			i = len(out)
-			index[account] = i
-			out = append(out, quotaUse{Quota: quota})
-			configured[account] = set
-		}
-		u := &out[i]
-		u.Providers = append(u.Providers, name)
-		u.Requests += est[name]
-		switch {
-		case set && !configured[account]:
-			u.Quota, configured[account] = quota, true
-		case set == configured[account]:
-			u.Quota = min(u.Quota, quota)
-		}
-	}
-	return out
 }
 
 func newClock(cfg *config.Config) (*awtrix.Client, error) {

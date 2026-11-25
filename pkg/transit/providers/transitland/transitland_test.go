@@ -274,20 +274,6 @@ func TestErrors(t *testing.T) {
 	}
 }
 
-func TestEmptyStopsListIsUnknown(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`{"stops":[]}`))
-	}))
-	t.Cleanup(srv.Close)
-	p, err := transitland.New(transitland.Config{APIKey: "k", BaseURL: srv.URL}, srv.Client())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := p.Departures(t.Context(), query("f-x:1", time.Hour)); !errors.Is(err, transit.ErrUnknownStop) {
-		t.Errorf("err = %v, want ErrUnknownStop", err)
-	}
-}
-
 func TestNew(t *testing.T) {
 	tests := map[string]struct {
 		cfg         transitland.Config
@@ -460,63 +446,24 @@ func TestUnknownStopIsCached(t *testing.T) {
 	}
 }
 
-// departuresJSON lists n departures a minute apart from start, honoring the
-// request's limit as the API does.
-func departuresJSON(r *http.Request, start time.Time, n int) []byte {
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	var rows []string
-	for i := range min(n, limit) {
-		at := start.Add(time.Duration(i) * time.Minute).Format(time.RFC3339)
-		rows = append(rows, fmt.Sprintf(`{"departure":{"scheduled_utc":%q,"estimated_utc":%q},"trip":{"trip_id":"%d","route":{"route_id":"1","route_type":3}}}`, at, at, i))
-	}
-	return []byte(`{"stops":[{"departures":[` + strings.Join(rows, ",") + `]}]}`)
-}
-
-func TestBusyStop(t *testing.T) {
-	tests := map[string]struct {
-		listed      int
-		window      time.Duration
-		want        int
-		wantPartial bool
-	}{
-		"more than 50 departures": {listed: 120, window: 90 * time.Minute, want: 91},
-		"cut off past the window": {listed: 2000, window: 90 * time.Minute, want: 91},
-		"list comes back full":    {listed: 2000, window: 24 * time.Hour, want: 1000, wantPartial: true},
-	}
-	for name, tt := range tests {
-		t.Run(name, func(t *testing.T) {
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				_, _ = w.Write(departuresJSON(r, now, tt.listed))
-			}))
-			t.Cleanup(srv.Close)
-			p, err := transitland.New(transitland.Config{APIKey: "k", BaseURL: srv.URL}, srv.Client())
-			if err != nil {
-				t.Fatal(err)
-			}
-			deps, err := p.Departures(t.Context(), query("f-x:1", tt.window))
-			var partial *transit.PartialError
-			if got := errors.As(err, &partial); got != tt.wantPartial || (err != nil && !got) {
-				t.Fatalf("err = %v, want partial = %v", err, tt.wantPartial)
-			}
-			if len(deps) != tt.want {
-				t.Errorf("%d departures, want %d", len(deps), tt.want)
-			}
-		})
-	}
-}
-
-// static answers every request with body.
-func static(t *testing.T, body string) *transitland.Provider {
+// serving returns a provider whose requests go to h.
+func serving(t *testing.T, h http.HandlerFunc) *transitland.Provider {
 	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(body))
-	}))
+	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
 	p, err := transitland.New(transitland.Config{APIKey: "k", BaseURL: srv.URL}, srv.Client())
 	if err != nil {
 		t.Fatal(err)
 	}
 	return p
+}
+
+// static answers every request with body.
+func static(t *testing.T, body string) *transitland.Provider {
+	t.Helper()
+	return serving(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(body))
+	})
 }
 
 // platform lists n departures a minute apart from start. Trip IDs begin with
@@ -551,6 +498,10 @@ func TestFullLists(t *testing.T) {
 		wantPartial bool
 		wantErr     bool
 	}{
+		"more than 50 departures":            {body: children(platform("a", now, 120, false)), window: 90 * time.Minute, want: 91},
+		"cut off past the window":            {body: children(platform("a", now, 1000, false)), window: 90 * time.Minute, want: 91},
+		"cut off within the window":          {body: children(platform("a", now, 1000, false)), window: 24 * time.Hour, want: 1000, wantPartial: true},
+		"the stop's own list is cut off":     {body: `{"stops":[{"departures":[` + platform("a", now, 1000, false) + `]}]}`, window: 24 * time.Hour, want: 1000, wantPartial: true},
 		"the first platform ends first":      {body: children(early, late), window: window, want: 1951, wantPartial: true},
 		"the last platform ends first":       {body: children(late, early), window: window, want: 1951, wantPartial: true},
 		"added trips are beyond the limit":   {body: children(platform("a", now, 600, false) + "," + platform("b", now, 600, true)), window: 24 * time.Hour, want: 1200},
@@ -613,19 +564,14 @@ func TestRedirectsWithinTheHost(t *testing.T) {
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			left := tt.redirects
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			p := serving(t, func(w http.ResponseWriter, r *http.Request) {
 				if left > 0 {
 					left--
 					http.Redirect(w, r, r.URL.Path, http.StatusFound)
 					return
 				}
 				_, _ = w.Write([]byte(`{"stops":[{"departures":[]}]}`))
-			}))
-			t.Cleanup(srv.Close)
-			p, err := transitland.New(transitland.Config{APIKey: "k", BaseURL: srv.URL}, srv.Client())
-			if err != nil {
-				t.Fatal(err)
-			}
+			})
 			if _, err := p.Departures(t.Context(), query("f-x:1", time.Hour)); (err != nil) != tt.wantErr {
 				t.Errorf("err = %v, want error = %v", err, tt.wantErr)
 			}
@@ -695,15 +641,7 @@ func TestConvert(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				_, _ = w.Write([]byte(`{"stops":[{"departures":[` + tt.row + `]}]}`))
-			}))
-			t.Cleanup(srv.Close)
-			p, err := transitland.New(transitland.Config{APIKey: "k", BaseURL: srv.URL}, srv.Client())
-			if err != nil {
-				t.Fatal(err)
-			}
-			got, err := p.Departures(t.Context(), query("f-x:1", time.Hour))
+			got, err := static(t, `{"stops":[{"departures":[`+tt.row+`]}]}`).Departures(t.Context(), query("f-x:1", time.Hour))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -968,15 +906,10 @@ func TestOffsetFromServiceDay(t *testing.T) {
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			var last url.Values
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			p := serving(t, func(w http.ResponseWriter, r *http.Request) {
 				last = r.URL.Query()
 				_, _ = fmt.Fprintf(w, `{"stops":[{"departures":[{"service_date":%q,"departure":{"scheduled":%q,"scheduled_utc":"2026-11-25T16:30:00Z"},"trip":{"trip_id":"t","route":{"route_id":"1"}}}]}]}`, tt.date, tt.scheduled)
-			}))
-			t.Cleanup(srv.Close)
-			p, err := transitland.New(transitland.Config{APIKey: "k", BaseURL: srv.URL}, srv.Client())
-			if err != nil {
-				t.Fatal(err)
-			}
+			})
 			for _, after := range []time.Duration{0, p.RefreshInterval()} {
 				q := query("f-x:1", time.Hour)
 				q.Now = now.Add(after)

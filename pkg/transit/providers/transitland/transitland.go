@@ -10,6 +10,7 @@
 package transitland
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -145,14 +146,9 @@ func New(cfg Config, client *http.Client) (*Provider, error) {
 	if key == "" {
 		return nil, errors.New("api_key is required")
 	}
-	base := cfg.BaseURL
-	if base == "" {
-		base = DefaultBaseURL
-	}
-	base = strings.TrimRight(base, "/")
-	u, ok := upstream.HTTPURL(base)
-	if !ok {
-		return nil, errors.New("base_url must be an http(s) URL")
+	u, err := upstream.HTTPURL("base_url", strings.TrimRight(cmp.Or(cfg.BaseURL, DefaultBaseURL), "/"))
+	if err != nil {
+		return nil, err
 	}
 	if u.User != nil || u.RawQuery != "" || u.Fragment != "" {
 		return nil, errors.New("base_url must not have credentials, a query or a fragment")
@@ -303,7 +299,7 @@ type wireStop struct {
 type wireDeparture struct {
 	ServiceDate          string    `json:"service_date"`
 	StopHeadsign         string    `json:"stop_headsign"`
-	PickupType           *int      `json:"pickup_type"`
+	PickupType           int       `json:"pickup_type"`
 	ScheduleRelationship string    `json:"schedule_relationship"`
 	Departure            wireEvent `json:"departure"`
 	Trip                 struct {
@@ -468,20 +464,16 @@ func offsetOf(w wireDeparture) (time.Duration, bool) {
 
 // convert maps one departure, reporting false for ones riders cannot board.
 func convert(w wireDeparture) (transit.Departure, bool) {
-	var predicted *time.Time
-	if e := w.Departure.EstimatedUTC; e != nil && !e.IsZero() {
-		t := *e
-		predicted = &t
+	predicted := w.Departure.EstimatedUTC
+	if predicted != nil && predicted.IsZero() {
+		predicted = nil
 	}
-	scheduled := w.Departure.ScheduledUTC
-	if scheduled == nil {
-		scheduled = predicted
-	}
+	scheduled := cmp.Or(w.Departure.ScheduledUTC, predicted)
 	if scheduled == nil {
 		return transit.Departure{}, false
 	}
 	// pickup_type 1: no pickup, as at a trip's last stop.
-	if w.PickupType != nil && *w.PickupType == 1 {
+	if w.PickupType == 1 {
 		return transit.Departure{}, false
 	}
 	status := transit.StatusScheduled
@@ -499,21 +491,7 @@ func convert(w wireDeparture) (transit.Departure, bool) {
 	}
 
 	r := w.Trip.Route
-	id := r.OnestopID
-	if id == "" {
-		id = r.RouteID
-	}
-	short := r.RouteShortName
-	if short == "" {
-		short = r.RouteLongName
-	}
-	if short == "" {
-		short = id
-	}
-	headsign := w.StopHeadsign
-	if headsign == "" {
-		headsign = w.Trip.TripHeadsign
-	}
+	id := cmp.Or(r.OnestopID, r.RouteID)
 	mode := transit.ModeOther
 	if r.RouteType != nil {
 		mode = transit.ModeForRouteType(*r.RouteType)
@@ -521,11 +499,11 @@ func convert(w wireDeparture) (transit.Departure, bool) {
 	d := transit.Departure{
 		Line: transit.Line{
 			ID:        id,
-			ShortName: short,
+			ShortName: cmp.Or(r.RouteShortName, r.RouteLongName, id),
 			Color:     transit.NormalizeColor(r.RouteColor),
 			Mode:      mode,
 		},
-		Headsign:  headsign,
+		Headsign:  cmp.Or(w.StopHeadsign, w.Trip.TripHeadsign),
 		Scheduled: *scheduled,
 		Predicted: predicted,
 		Status:    status,
@@ -575,10 +553,7 @@ func (p *Provider) SearchStops(ctx context.Context, search string) ([]transit.St
 
 // get requests path, which must already be escaped, below the base URL.
 func (p *Provider) get(ctx context.Context, path string, params url.Values, v any) error {
-	u, err := url.Parse(p.base.String() + "/" + path)
-	if err != nil {
-		return err
-	}
+	u := p.base.JoinPath(path)
 	u.RawQuery = params.Encode()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {

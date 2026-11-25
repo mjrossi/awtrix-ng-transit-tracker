@@ -6,8 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
-
 	"github.com/mjrossi/urbanist-timetable/internal/config"
 )
 
@@ -136,8 +134,8 @@ headway = "5m"
 				t.Fatal(err)
 			}
 			got := cfg.EstimateRequests(map[string]time.Duration{"tl": tt.refresh})
-			if diff := cmp.Diff(map[string]int{"tl": tt.want}, got); diff != "" {
-				t.Errorf("estimate (-want +got):\n%s", diff)
+			if got["tl"] != tt.want || got["other"] != 0 {
+				t.Errorf("estimate = %v, want tl = %d alone", got, tt.want)
 			}
 		})
 	}

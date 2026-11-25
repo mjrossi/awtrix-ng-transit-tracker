@@ -83,12 +83,14 @@ func New(cfg Config, client *http.Client) (*Provider, error) {
 		return nil, errors.New("realtime_urls: at least one GTFS-RT TripUpdates URL is required")
 	}
 	for i, u := range cfg.RealtimeURLs {
-		if _, ok := upstream.HTTPURL(u); !ok {
-			return nil, fmt.Errorf("realtime_urls[%d] must be an http(s) URL", i)
+		if _, err := upstream.HTTPURL(fmt.Sprintf("realtime_urls[%d]", i), u); err != nil {
+			return nil, err
 		}
 	}
-	if _, ok := upstream.HTTPURL(cfg.StaticURL); cfg.StaticURL != "" && !ok {
-		return nil, errors.New("static_url must be an http(s) URL")
+	if cfg.StaticURL != "" {
+		if _, err := upstream.HTTPURL("static_url", cfg.StaticURL); err != nil {
+			return nil, err
+		}
 	}
 	if client == nil {
 		client = &http.Client{}

@@ -1,12 +1,67 @@
 package config
 
 import (
+	"maps"
 	"slices"
 	"time"
+
+	"github.com/mjrossi/urbanist-timetable/pkg/transit"
 )
 
 // daysPerMonth is the longest month.
 const daysPerMonth = 31
+
+// QuotaUse is the estimated requests a month against one quota, which
+// provider blocks with the same account share.
+type QuotaUse struct {
+	// Providers are the blocks' names, sorted.
+	Providers []string
+	Requests  int
+	// Quota is the smallest the blocks configure, or the smallest default if
+	// none does.
+	Quota int
+
+	// configured records that Quota is not a default.
+	configured bool
+}
+
+// Over reports whether the estimate exceeds the quota.
+func (u QuotaUse) Over() bool { return u.Requests > u.Quota }
+
+// QuotaUses estimates monthly requests for every quota the metered providers
+// in provs, keyed by block name, draw on. It is sorted by block name.
+func (c *Config) QuotaUses(provs map[string]transit.Provider) []QuotaUse {
+	refresh := map[string]time.Duration{}
+	metered := map[string]transit.Metered{}
+	for name, p := range provs {
+		if m, ok := p.(transit.Metered); ok {
+			refresh[name], metered[name] = m.RefreshInterval(), m
+		}
+	}
+	est := c.EstimateRequests(refresh)
+	var out []QuotaUse
+	index := map[string]int{}
+	for _, name := range slices.Sorted(maps.Keys(metered)) {
+		account := metered[name].QuotaAccount()
+		quota, configured := metered[name].MonthlyQuota()
+		i, ok := index[account]
+		if !ok {
+			i = len(out)
+			index[account] = i
+			out = append(out, QuotaUse{Quota: quota, configured: configured})
+		}
+		u := &out[i]
+		u.Providers = append(u.Providers, name)
+		u.Requests += est[name]
+		switch {
+		case configured && !u.configured:
+			u.Quota, u.configured = quota, true
+		case configured == u.configured:
+			u.Quota = min(u.Quota, quota)
+		}
+	}
+	return out
+}
 
 // EstimateRequests estimates the upstream requests a month made by each
 // provider block named in refresh, which maps a block to the shortest time
@@ -30,10 +85,7 @@ func (c *Config) EstimateRequests(refresh map[string]time.Duration) map[string]i
 		}
 	}
 
-	out := make(map[string]int, len(refresh))
-	for name := range refresh {
-		out[name] = 0
-	}
+	out := map[string]int{}
 	// Active and Quiet only read the time of day, and a whole UTC day covers
 	// every time zone. Where zones differ in daylight saving, their overlap
 	// shifts with the season; one date stands for the year.

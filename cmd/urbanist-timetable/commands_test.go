@@ -15,6 +15,22 @@ import (
 	"github.com/mjrossi/urbanist-timetable/pkg/transit"
 )
 
+func noEnv(string) (string, bool) { return "", false }
+
+// validateConfig runs `config validate` on src and returns what it prints.
+func validateConfig(t *testing.T, src string) (string, error) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(path, []byte(src), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := newRootCommand()
+	var out bytes.Buffer
+	cmd.Writer = &out
+	err := cmd.Run(t.Context(), []string{"urbanist-timetable", "--config", path, "config", "validate"})
+	return out.String(), err
+}
+
 // A bare host must identify its clock too.
 func TestCleanupIdentifiesTheClock(t *testing.T) {
 	for _, u := range []string{"192.168.1.50", "http://192.168.1.50/"} {
@@ -53,12 +69,8 @@ func TestVersionFlag(t *testing.T) {
 }
 
 func TestConfigValidateBuildsClock(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "config.toml")
 	src := "[clock]\nurl = \"ftp://clock.local\"\n[providers.demo]\n[[providers.demo.lines]]\nid = \"azul\"\nheadway = \"6m\"\n[[boards]]\nname = \"metro\"\n[[boards.stops]]\nprovider = \"demo\"\nstop = \"s1\"\n"
-	if err := os.WriteFile(path, []byte(src), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	err := newRootCommand().Run(t.Context(), []string{"urbanist-timetable", "--config", path, "config", "validate"})
+	_, err := validateConfig(t, src)
 	if err == nil || !strings.Contains(err.Error(), "clock url") {
 		t.Errorf("err = %v, want a clock url error", err)
 	}
@@ -123,7 +135,7 @@ active_hours = "07:00-09:00"
 provider = "demo"
 stop = "s1"
 `
-	cfg, err := config.Parse([]byte(src), func(string) (string, bool) { return "", false })
+	cfg, err := config.Parse([]byte(src), noEnv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,22 +179,16 @@ func TestConfigValidateEstimatesQuota(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "config.toml")
 			src := "[clock]\nurl = \"http://clock.local\"\n[providers.tl]\ntype = \"transitland\"\napi_key = \"k\"\nfeed = \"f-drt-mbta\"\nrefresh_interval = \"" + tt.refresh + "\"\n[[boards]]\nname = \"mbta\"\n[[boards.stops]]\nprovider = \"tl\"\nstop = \"place-sstat\"\n"
-			if err := os.WriteFile(path, []byte(src), 0o600); err != nil {
+			out, err := validateConfig(t, src)
+			if err != nil {
 				t.Fatal(err)
 			}
-			cmd := newRootCommand()
-			var out bytes.Buffer
-			cmd.Writer = &out
-			if err := cmd.Run(t.Context(), []string{"urbanist-timetable", "--config", path, "config", "validate"}); err != nil {
-				t.Fatal(err)
+			if !strings.Contains(out, tt.want) {
+				t.Errorf("output %q, want %q", out, tt.want)
 			}
-			if !strings.Contains(out.String(), tt.want) {
-				t.Errorf("output %q, want %q", out.String(), tt.want)
-			}
-			if got := strings.Contains(out.String(), "warning: providers.tl would exceed"); got != tt.warn {
-				t.Errorf("warning printed = %v, want %v: %q", got, tt.warn, out.String())
+			if got := strings.Contains(out, "warning: providers.tl would exceed"); got != tt.warn {
+				t.Errorf("warning printed = %v, want %v: %q", got, tt.warn, out)
 			}
 		})
 	}
@@ -218,7 +224,7 @@ name = "a"
 provider = "a"
 stop = "f-x:1"
 `, tt.a, tt.b)
-			cfg, err := config.Parse([]byte(src), func(string) (string, bool) { return "", false })
+			cfg, err := config.Parse([]byte(src), noEnv)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -226,7 +232,7 @@ stop = "f-x:1"
 			if err != nil {
 				t.Fatal(err)
 			}
-			uses := quotaUses(cfg, provs)
+			uses := cfg.QuotaUses(provs)
 			if len(uses) != 1 || uses[0].Quota != tt.want {
 				t.Errorf("uses = %+v, want one with quota %d", uses, tt.want)
 			}
@@ -248,28 +254,22 @@ func TestConfigValidateSumsBlocksSharingAKey(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "config.toml")
 			var src strings.Builder
 			src.WriteString("[clock]\nurl = \"http://clock.local\"\n")
 			for block, key := range map[string]string{"bart": "k", "muni": tt.muniKey} {
 				fmt.Fprintf(&src, "[providers.%[1]s]\ntype = \"transitland\"\napi_key = %[2]q\nfeed = \"f-%[1]s\"\n[[boards]]\nname = %[1]q\n[[boards.stops]]\nprovider = %[1]q\nstop = \"1\"\n", block, key)
 			}
-			if err := os.WriteFile(path, []byte(src.String()), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			cmd := newRootCommand()
-			var out bytes.Buffer
-			cmd.Writer = &out
-			if err := cmd.Run(t.Context(), []string{"urbanist-timetable", "--config", path, "config", "validate"}); err != nil {
+			out, err := validateConfig(t, src.String())
+			if err != nil {
 				t.Fatal(err)
 			}
 			for _, want := range tt.want {
-				if !strings.Contains(out.String(), want) {
-					t.Errorf("output %q, want %q", out.String(), want)
+				if !strings.Contains(out, want) {
+					t.Errorf("output %q, want %q", out, want)
 				}
 			}
-			if got := strings.Contains(out.String(), "warning: "); got != tt.warn {
-				t.Errorf("warning printed = %v, want %v: %q", got, tt.warn, out.String())
+			if got := strings.Contains(out, "warning: "); got != tt.warn {
+				t.Errorf("warning printed = %v, want %v: %q", got, tt.warn, out)
 			}
 		})
 	}

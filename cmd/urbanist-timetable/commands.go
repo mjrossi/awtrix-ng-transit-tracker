@@ -74,7 +74,7 @@ func runCommand() *cli.Command {
 					slog.Duration("poll_interval", b.PollInterval.D()),
 					slog.Duration("lifetime", b.Clock.Lifetime.D()))
 			}
-			for _, u := range quotaUses(cfg, provs) {
+			for _, u := range cfg.QuotaUses(provs) {
 				attrs := []any{slog.Any("providers", u.Providers), slog.Int("requests_per_month", u.Requests), slog.Int("monthly_quota", u.Quota)}
 				if u.Over() {
 					log.WarnContext(ctx, "estimated requests exceed the provider's monthly quota; raise refresh_interval or narrow active_hours", attrs...)
@@ -192,7 +192,7 @@ func configCommand() *cli.Command {
 				}
 				w := c.Root().Writer
 				fmt.Fprintf(w, "%s: OK (%d boards)\n", c.String("config"), len(cfg.Boards))
-				writeQuotaUses(w, quotaUses(cfg, provs))
+				writeQuotaUses(w, cfg.QuotaUses(provs))
 				return nil
 			},
 		}},
@@ -202,7 +202,7 @@ func configCommand() *cli.Command {
 // writeQuotaUses prints the estimate for each quota. Going over is a
 // warning, not an error: the configuration is valid, and the estimate is
 // approximate.
-func writeQuotaUses(w io.Writer, uses []quotaUse) {
+func writeQuotaUses(w io.Writer, uses []config.QuotaUse) {
 	for _, u := range uses {
 		names := "providers." + strings.Join(u.Providers, ", providers.")
 		fmt.Fprintf(w, "%s: about %d requests a month, quota %d\n", names, u.Requests, u.Quota)
