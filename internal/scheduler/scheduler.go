@@ -175,16 +175,18 @@ func (r *Runner) Run(ctx context.Context) error {
 func (r *Runner) Tick(ctx context.Context) {
 	now := r.now().In(r.board.Location)
 
-	switch {
-	case r.board.Quiet != nil && r.board.Quiet(now):
-		r.hide(ctx, phaseQuiet, "quiet hours")
-		return
-	case r.board.Active != nil && !r.board.Active(now):
-		r.hide(ctx, phaseInactive, "outside active hours")
+	if p := r.hidden(now); p != phaseNone {
+		r.hide(ctx, p)
 		return
 	}
 
 	snap, ok := r.Snapshot(ctx, now)
+	// A slow fetch, such as a first schedule download, can outlast the hours
+	// it started in.
+	if p := r.hidden(r.now().In(r.board.Location)); p != phaseNone && ctx.Err() == nil {
+		r.hide(ctx, p)
+		return
+	}
 	if !ok {
 		// Every source failed with nothing fresh enough to reuse. Showing
 		// "No departures" would be a lie, so nothing is published; on the
@@ -195,6 +197,8 @@ func (r *Runner) Tick(ctx context.Context) {
 		}
 		return
 	}
+	// Set even if publishing fails, since the output may have applied it.
+	r.shown = true
 	if err := r.out.Publish(ctx, snap); err != nil {
 		if ctx.Err() != nil {
 			return
@@ -203,7 +207,6 @@ func (r *Runner) Tick(ctx context.Context) {
 		r.log.WarnContext(ctx, "publish", slog.Any("err", err))
 		return
 	}
-	r.shown = true
 	first := r.phase != phaseShown
 	r.phase = phaseShown
 	if !first && !r.log.Enabled(ctx, slog.LevelDebug) {
@@ -216,8 +219,23 @@ func (r *Runner) Tick(ctx context.Context) {
 	r.log.DebugContext(ctx, "published", rows)
 }
 
+// hidden returns the phase that hides the board at now, or phaseNone.
+func (r *Runner) hidden(now time.Time) phase {
+	switch {
+	case r.board.Quiet != nil && r.board.Quiet(now):
+		return phaseQuiet
+	case r.board.Active != nil && !r.board.Active(now):
+		return phaseInactive
+	}
+	return phaseNone
+}
+
 // hide withdraws the board, once unless that fails.
-func (r *Runner) hide(ctx context.Context, p phase, reason string) {
+func (r *Runner) hide(ctx context.Context, p phase) {
+	reason := "quiet hours"
+	if p == phaseInactive {
+		reason = "outside active hours"
+	}
 	if r.shown {
 		if err := r.out.Withdraw(ctx, r.board.Name); err != nil {
 			if ctx.Err() == nil {

@@ -27,6 +27,18 @@ func TestCleanupIdentifiesTheClock(t *testing.T) {
 	}
 }
 
+func TestCleanupFollowsQuietHours(t *testing.T) {
+	clock, err := awtrix.NewClient("192.168.1.50")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{QuietHours: "23:00-06:00"}
+	c := newCleanup(cfg, "", clock, nil)
+	if night := time.Date(2026, 11, 24, 0, 30, 0, 0, cfg.Location()); c.Quiet == nil || !c.Quiet(night) {
+		t.Error("cleanup is not paused in quiet hours")
+	}
+}
+
 func TestVersionFlag(t *testing.T) {
 	cmd := newRootCommand()
 	var out bytes.Buffer

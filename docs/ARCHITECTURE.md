@@ -40,7 +40,7 @@ It listens on no ports.
 | `pkg/transit/catalog` | embedded system entries (`systems/*.toml`) | none |
 | `pkg/awtrix` | typed AWTRIX NG HTTP client and payload types | none |
 | `internal/render` | departure rows → TC002 `awtrix.Layout` | `transit`, `awtrix` |
-| `internal/scheduler` | polling, backoff, last-good cache, active hours, `Snapshot`, the `Output` interface | `transit` |
+| `internal/scheduler` | polling, backoff, last-good cache, active and quiet hours, `Snapshot`, the `Output` interface | `transit` |
 | `internal/clockout` | the clock `Output`: snapshot → TC002 app → push or expire; cleanup of removed boards | `scheduler`, `render`, `awtrix` |
 | `internal/config` | TOML decoding, `${NAME}` expansion, validation, provider resolution | `transit`, `catalog`, `render`, `awtrix` |
 | `cmd/urbanist-timetable` | CLI commands and wiring (`wire.go`) | everything |
@@ -61,7 +61,8 @@ Rules, from [CLAUDE.md](../CLAUDE.md):
   that state needs no lock. A snapshot shares the cached departure slices
   with the runner; a refresh replaces a slice rather than changing it, and
   `Snapshot.Rows` copies before it changes anything.
-- All runners share one output. `clockout.Output` holds no mutable state.
+- All runners share one output. `clockout.Output` keeps each board's last
+  push time, under a mutex.
 - Within a tick, a board refreshes its due sources one after another.
 - `buildProviders` (`cmd/urbanist-timetable/wire.go`) builds each
   `[providers.NAME]` block **once**. Boards that name the same block share

@@ -3,6 +3,7 @@ package scheduler_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"slices"
 	"testing"
@@ -24,10 +25,15 @@ type fakeProvider struct {
 	// live gives every departure a prediction.
 	live  bool
 	calls int
+	// during, if set, runs while a fetch is in progress.
+	during func()
 }
 
 func (p *fakeProvider) Departures(_ context.Context, q transit.Query) ([]transit.Departure, error) {
 	p.calls++
+	if p.during != nil {
+		p.during()
+	}
 	if p.err != nil {
 		return nil, p.err
 	}
@@ -425,6 +431,64 @@ func TestQuietHoursStopAllActivity(t *testing.T) {
 	}
 	if diff := cmp.Diff(want, h.logs.msgs); diff != "" {
 		t.Errorf("logs (-want +got):\n%s", diff)
+	}
+}
+
+// A fetch can take minutes, so the window is checked again before publishing.
+func TestWindowStartingDuringFetch(t *testing.T) {
+	tests := map[string]struct {
+		window func(h *harness, active *bool)
+		reason string
+	}{
+		"quiet hours":          {func(h *harness, _ *bool) { h.quiet = true }, "quiet hours"},
+		"outside active hours": {func(_ *harness, active *bool) { *active = false }, "outside active hours"},
+	}
+	for name, tt := range tests {
+		for _, shown := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s, shown %v", name, shown), func(t *testing.T) {
+				active := true
+				h := newHarness(func(time.Time) bool { return active })
+				want := 0
+				if shown {
+					h.runner.Tick(t.Context())
+					want = 1
+				}
+				h.prov.during = func() { tt.window(h, &active) }
+				h.runner.Tick(t.Context())
+				if len(h.out.pushes) != want || h.out.withdrawals != want {
+					t.Errorf("pushes = %d, withdrawals = %d; want %d each", len(h.out.pushes), h.out.withdrawals, want)
+				}
+				if got, want := h.logs.msgs[len(h.logs.msgs)-1], "board hidden: "+tt.reason; got != want {
+					t.Errorf("last log = %q, want %q", got, want)
+				}
+			})
+		}
+	}
+}
+
+// Closing the window is judged by the time after the fetch, in the board's
+// own zone.
+func TestWindowIsRecheckedWithTheCurrentTime(t *testing.T) {
+	end := start.Add(5 * time.Minute)
+	h := newHarness(func(t time.Time) bool { return t.Before(end) })
+	h.prov.during = func() { h.now = end }
+	h.runner.Tick(t.Context())
+	if len(h.out.pushes) != 0 {
+		t.Errorf("pushes = %d, want 0 after active hours ended during the fetch", len(h.out.pushes))
+	}
+}
+
+// A push that reports an error may still have been applied.
+func TestFailedPublishIsWithdrawn(t *testing.T) {
+	h := newHarness(nil)
+	h.out.err = errors.New("timeout")
+	h.runner.Tick(t.Context())
+	h.out.err = nil
+	h.quiet = true
+	h.runner.Tick(t.Context())
+	h.runner.Tick(t.Context())
+	if h.out.withdrawals != 1 {
+		t.Errorf("withdrawals = %d, want 1", h.out.withdrawals)
 	}
 }
 

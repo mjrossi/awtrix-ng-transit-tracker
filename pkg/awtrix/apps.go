@@ -11,9 +11,9 @@ import (
 
 const originPushed = "pushed"
 
-// builtinNames are the firmware's built-in apps on every clock model. A
-// pushed app of the same name hides a built-in one from the app list, and
-// there is no lookup for them as there is for scripts.
+// builtinNames are the built-in apps of all clock models together, as of
+// firmware commit d51e266. A pushed app of the same name hides a built-in one
+// from the app list, and there is no lookup for them as there is for scripts.
 var builtinNames = []string{"Time", "Status", "Date", "Temperature", "Humidity", "Battery"}
 
 // listedApp is one entry of GET /api/v1/apps.

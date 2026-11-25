@@ -36,8 +36,8 @@ type Config struct {
 	// boards that set none. Empty means the process's local zone (the TZ
 	// environment variable in Docker).
 	Timezone string `toml:"timezone"`
-	// QuietHours is when the service hides every board and uses no network;
-	// see Quiet.
+	// QuietHours is when the service hides every board and starts no other
+	// requests; see Quiet.
 	QuietHours DailyWindow               `toml:"quiet_hours"`
 	Clock      Clock                     `toml:"clock"`
 	Providers  map[string]map[string]any `toml:"providers"`
@@ -117,6 +117,11 @@ func (c BoardClock) options() render.Options {
 	}
 }
 
+// Active reports whether t, in the board's location, is in its active hours.
+func (b Board) Active(t time.Time) bool {
+	return !b.ActiveHours.IsSet() || b.ActiveHours.Contains(t)
+}
+
 // Location is the board's resolved time zone.
 func (b Board) Location() *time.Location { return orLocal(b.location) }
 
@@ -154,7 +159,7 @@ func (s Stop) Filter() transit.Filter {
 // Quiet reports whether t is in the quiet hours, which follow the top-level
 // time zone even for boards with their own.
 func (c *Config) Quiet(t time.Time) bool {
-	return c.QuietHours.set && c.QuietHours.Contains(t.In(c.Location()))
+	return c.QuietHours.IsSet() && c.QuietHours.Contains(t.In(c.Location()))
 }
 
 // Location is the resolved time zone.
@@ -260,6 +265,9 @@ func (c *Config) validate() error {
 			c.location = loc
 		}
 	}
+	if err := c.QuietHours.Validate(); err != nil {
+		errs = append(errs, fmt.Errorf("quiet_hours: %w", err))
+	}
 	if c.Clock.URL == "" {
 		errs = append(errs, errors.New("clock.url is required"))
 	}
@@ -317,6 +325,9 @@ func (b *Board) validate(providers map[string]map[string]any) error {
 	var errs []error
 	if !awtrix.ValidAppName(b.Name) {
 		errs = append(errs, fmt.Errorf("name %q must be 1-32 letters, digits, - or _", b.Name))
+	}
+	if err := b.ActiveHours.Validate(); err != nil {
+		errs = append(errs, fmt.Errorf("active_hours: %w", err))
 	}
 	if b.PollInterval.D() < MinPollInterval {
 		errs = append(errs, fmt.Errorf("poll_interval must be at least %s", MinPollInterval))

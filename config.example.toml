@@ -9,8 +9,9 @@
 # active_hours; "Local" there means the TZ zone.
 timezone = "Europe/Lisbon"
 
-# Optional night mode: every board is hidden and the service uses no network,
-# whatever the boards' active_hours say. The display itself stays on.
+# Optional night mode: every board is hidden, whatever its active_hours say,
+# and the service makes no requests except to hide them. The display itself
+# stays on.
 # quiet_hours = "23:30-06:30"
 
 [clock]

@@ -27,57 +27,54 @@ func (d Duration) MarshalText() ([]byte, error) { return []byte(d.D().String()),
 
 // DailyWindow is a daily window such as "06:00-23:30". A window whose end
 // is before its start runs past midnight, so "18:00-02:00" covers the
-// evening and early morning. The zero value is unset and covers the whole
-// day.
-type DailyWindow struct {
-	start, end int // minutes after midnight
-	set        bool
-}
+// evening and early morning. An empty one is unset.
+//
+// It is a plain string, checked by Validate, because go-toml names the key
+// of an unquoted value only for types without UnmarshalText.
+type DailyWindow string
 
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (a *DailyWindow) UnmarshalText(b []byte) error {
-	s := strings.TrimSpace(string(b))
-	if s == "" {
-		*a = DailyWindow{}
+// IsSet reports whether there is a window.
+func (w DailyWindow) IsSet() bool { return strings.TrimSpace(string(w)) != "" }
+
+// Validate reports whether the window is unset or well formed.
+func (w DailyWindow) Validate() error {
+	if !w.IsSet() {
 		return nil
 	}
-	from, to, ok := strings.Cut(s, "-")
-	if !ok {
-		return fmt.Errorf("%q: want HH:MM-HH:MM", s)
-	}
-	start, err := parseClock(from)
-	if err != nil {
-		return fmt.Errorf("%q: %w", s, err)
-	}
-	end, err := parseClock(to)
-	if err != nil {
-		return fmt.Errorf("%q: %w", s, err)
-	}
-	if start == end {
-		return fmt.Errorf("%q: start and end are equal; leave it empty for no window", s)
-	}
-	*a = DailyWindow{start: start, end: end, set: true}
-	return nil
+	_, _, err := w.parse()
+	return err
 }
 
-// MarshalText implements encoding.TextMarshaler.
-func (a DailyWindow) MarshalText() ([]byte, error) {
-	if !a.set {
-		return []byte{}, nil
-	}
-	return fmt.Appendf(nil, "%02d:%02d-%02d:%02d", a.start/60, a.start%60, a.end/60, a.end%60), nil
-}
-
-// Contains reports whether t, in its own location, is inside the window.
-func (a DailyWindow) Contains(t time.Time) bool {
-	if !a.set {
-		return true
+// Contains reports whether t, in its own location, is inside a valid window.
+func (w DailyWindow) Contains(t time.Time) bool {
+	start, end, err := w.parse()
+	if err != nil {
+		return false
 	}
 	m := t.Hour()*60 + t.Minute()
-	if a.start < a.end {
-		return m >= a.start && m < a.end
+	if start < end {
+		return m >= start && m < end
 	}
-	return m >= a.start || m < a.end
+	return m >= start || m < end
+}
+
+// parse returns the bounds in minutes after midnight.
+func (w DailyWindow) parse() (start, end int, err error) {
+	s := strings.TrimSpace(string(w))
+	from, to, ok := strings.Cut(s, "-")
+	if !ok {
+		return 0, 0, fmt.Errorf("%q: want HH:MM-HH:MM", s)
+	}
+	if start, err = parseClock(from); err != nil {
+		return 0, 0, fmt.Errorf("%q: %w", s, err)
+	}
+	if end, err = parseClock(to); err != nil {
+		return 0, 0, fmt.Errorf("%q: %w", s, err)
+	}
+	if start == end {
+		return 0, 0, fmt.Errorf("%q: start and end are equal; leave it empty for no window", s)
+	}
+	return start, end, nil
 }
 
 func parseClock(s string) (int, error) {

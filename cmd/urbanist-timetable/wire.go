@@ -47,7 +47,7 @@ func boardFor(cfg *config.Config, b config.Board, provs map[string]transit.Provi
 		Window:       b.Window.D(),
 		MaxStale:     b.MaxStale.D(),
 		PerRow:       b.PerRow,
-		Active:       b.ActiveHours.Contains,
+		Active:       b.Active,
 		Quiet:        cfg.Quiet,
 		Location:     b.Location(),
 	}

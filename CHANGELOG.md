@@ -22,11 +22,13 @@ version may break configuration.
 - A board that cannot be hidden because the clock is unreachable is no longer
   retried on every poll after its app has expired.
 - Stopping the service no longer logs a publish warning.
+- A board is no longer shown after its `active_hours` end because a fetch was
+  still running, and is hidden even if its last push reported an error.
 
 ### Added
 
-- `quiet_hours`, a night mode: every board is hidden and the service uses no
-  network during a daily window.
+- `quiet_hours`, a night mode: every board is hidden during a daily window,
+  and the service makes no requests except to hide them.
 - The README explains what happens outside `active_hours`.
 - `name_font` in `[boards.clock]` sets the font of destination names.
 - Logs say which boards and stops are configured at startup, and when a
