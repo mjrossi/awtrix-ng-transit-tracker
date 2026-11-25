@@ -26,11 +26,10 @@ and *Urbanist Atlas*.
 
 ## Direction
 
-One release follows, described in the
-[design](./superpowers/specs/2026-11-25-clock-cli-library-design.md):
-**v0.7.0, a library.** `pkg/` gets a core free of configuration code,
-examples, and a lower Go requirement, so other Go programs can use the
-providers.
+The terminal tool, the clock and the library are in place, as the
+[design](./superpowers/specs/2026-11-25-clock-cli-library-design.md)
+planned. No release is planned; the next work comes from "Later", and a
+version is cut when there is a reason to.
 
 ## Data sources: agencies are data, adapters are code
 

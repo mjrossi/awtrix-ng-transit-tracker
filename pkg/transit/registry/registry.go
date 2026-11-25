@@ -1,5 +1,6 @@
-// Package registry builds providers by name from their configuration, for
-// programs that, like this one, read providers from a file.
+// Package registry builds providers by name from configuration blocks, for
+// programs that read their providers from a file. Most programs can call
+// providers.Open instead.
 package registry
 
 import (

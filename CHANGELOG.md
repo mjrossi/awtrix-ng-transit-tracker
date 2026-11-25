@@ -7,6 +7,12 @@ version may break configuration.
 
 ## [Unreleased]
 
+### Added
+
+- The README explains how to use the packages from Go, and
+  `examples/departures` is a complete program that does. Runnable examples
+  document the main packages.
+
 ### Changed
 
 - For programs that import `pkg/`: the module needs Go 1.26, down from

@@ -2,8 +2,9 @@
 // provider returns, the Provider interface, and the filtering and grouping
 // that turn raw departures into rows for a display.
 //
-// Nothing outside a provider package should know which provider produced a
-// departure. See docs/ARCHITECTURE.md for the design.
+// Code that uses departures never needs to know which provider produced
+// them. To get a provider, open one with the providers package, or build one
+// directly from its own package, such as gtfsrt.
 package transit
 
 import (
