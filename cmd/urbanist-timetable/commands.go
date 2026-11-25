@@ -75,7 +75,7 @@ func runCommand() *cli.Command {
 					slog.Duration("lifetime", b.Clock.Lifetime.D()))
 			}
 			for _, u := range quotaUses(cfg, provs) {
-				attrs := []any{slog.String("provider", u.Provider), slog.Int("requests_per_month", u.Requests), slog.Int("monthly_quota", u.Quota)}
+				attrs := []any{slog.Any("providers", u.Providers), slog.Int("requests_per_month", u.Requests), slog.Int("monthly_quota", u.Quota)}
 				if u.Over() {
 					log.WarnContext(ctx, "estimated requests exceed the provider's monthly quota; raise refresh_interval or narrow active_hours", attrs...)
 				} else {
@@ -199,14 +199,15 @@ func configCommand() *cli.Command {
 	}
 }
 
-// writeQuotaUses prints each metered provider's estimate. Going over is a
+// writeQuotaUses prints the estimate for each quota. Going over is a
 // warning, not an error: the configuration is valid, and upstream refuses
 // the excess requests.
 func writeQuotaUses(w io.Writer, uses []quotaUse) {
 	for _, u := range uses {
-		fmt.Fprintf(w, "providers.%s: about %d requests a month, quota %d\n", u.Provider, u.Requests, u.Quota)
+		names := "providers." + strings.Join(u.Providers, ", providers.")
+		fmt.Fprintf(w, "%s: about %d requests a month, quota %d\n", names, u.Requests, u.Quota)
 		if u.Over() {
-			fmt.Fprintf(w, "warning: providers.%s would exceed its monthly quota; raise refresh_interval or narrow active_hours\n", u.Provider)
+			fmt.Fprintf(w, "warning: %s would exceed the monthly quota; raise refresh_interval or narrow active_hours\n", names)
 		}
 	}
 }

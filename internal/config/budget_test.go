@@ -90,6 +90,18 @@ headway = "5m"
 			refresh: 5 * time.Minute,
 			want:    2 * 24 * 31,
 		},
+		"each active span rounds up": {
+			boards: []string{
+				board("a", `active_hours = "07:00-07:06"`, "tl:s1"),
+				board("b", `active_hours = "12:00-12:06"`, "tl:s1"),
+			},
+			refresh: 5 * time.Minute,
+			want:    4 * 31,
+		},
+		"slow polling": {
+			boards: []string{board("a", `poll_interval = "10m"`, "tl:s1")}, refresh: 2 * time.Minute,
+			want: 144 * 31,
+		},
 		"other providers ignored": {
 			boards: []string{board("a", "", "other:s1")}, refresh: 5 * time.Minute,
 			want: 0,

@@ -76,11 +76,14 @@ type StopSearcher interface {
 // Metered is implemented by providers whose upstream API has a monthly
 // request quota, so the configuration can be checked against it.
 type Metered interface {
-	// RefreshInterval is the shortest time between two upstream requests
-	// for one stop.
+	// RefreshInterval is the shortest time between two successful upstream
+	// requests for one stop and window.
 	RefreshInterval() time.Duration
 	// MonthlyQuota is the number of upstream requests allowed a month.
 	MonthlyQuota() int
+	// QuotaAccount identifies what the quota belongs to, such as an API key,
+	// without revealing it. Providers with the same account share one quota.
+	QuotaAccount() string
 }
 
 // Options decodes a provider's configuration block into v.

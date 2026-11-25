@@ -16,7 +16,7 @@ func Registry() *transit.Registry {
 	carrismetropolitana.Register(r)
 	demo.Register(r)
 	gtfsrt.Register(r)
-	transitland.Register(r)
 	metrolisboa.Register(r)
+	transitland.Register(r)
 	return r
 }

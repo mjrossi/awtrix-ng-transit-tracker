@@ -82,7 +82,7 @@ Rules, from [CLAUDE.md](../CLAUDE.md):
   | `metrolisboa` | OAuth token | until 1 min before expiry | refetched on 401 once |
   | `carrismetropolitana` | lines | 24 h | keep last, retry in 15 min |
   | `carrismetropolitana` | stop list (search only) | process lifetime | not cached |
-  | `transitland` | each stop's departures, per window | `refresh_interval` (5 min) | failure reported until `refresh_interval` has passed; with no data yet, retry next poll |
+  | `transitland` | each stop's departures, per window | `refresh_interval` (5 min) | keep last without predictions for one more `refresh_interval`, retry in `refresh_interval` or 5 min, whichever is shorter; with no data yet, retry next poll; an unknown stop counts as an answer |
 
   Every row except the token and stop list uses `upstream.Cache`
   (`pkg/transit/internal/upstream`), which is single-flight: one download
@@ -96,7 +96,15 @@ Rules, from [CLAUDE.md](../CLAUDE.md):
   beyond the window and windows the cached result at each poll's
   `Query.Now`, so boards keep their own poll interval. Providers with a
   quota implement `transit.Metered`; `config validate` and `run` pass their
-  refresh intervals to `Config.EstimateRequests` and warn above the quota.
+  refresh intervals to `Config.EstimateRequests`, add up the blocks with the
+  same `QuotaAccount`, and warn above the quota. Because an answer from the
+  cache looks fresh to the scheduler, the provider itself stops marking
+  predictions live after 10 minutes, and reports a failed fetch as a
+  `*transit.PartialError` while the last timetable is less than two
+  intervals old. Transitland filters by scheduled time, so to keep late
+  vehicles the provider asks from 30 minutes back, in the agency's zone. It
+  learns that zone's offset from each answer, so a first request uses
+  `next`, without the lookback.
 - The process stops on `SIGINT` or `SIGTERM`: the root context is canceled,
   runners return, and a canceled fetch counts as neither a success nor a
   failure.

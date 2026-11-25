@@ -4,13 +4,15 @@
 //
 // Every request counts against a fixed monthly quota (10,000 on the free
 // plan, 50,000 on the Hobbyist/Academic plan), so the provider fetches each
-// stop at most once per refresh interval and answers polls in between from
-// that response. Boards still tick at their own poll interval, so minutes
-// count down between fetches; predictions are up to one interval old.
+// stop and window once per refresh interval and answers polls in between
+// from that response. Boards still tick at their own poll interval, so
+// minutes count down between fetches. Failed fetches are retried sooner.
 package transitland
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -39,12 +41,28 @@ const (
 	// MinRefreshInterval stops a typo from spending a month's quota in a
 	// day.
 	MinRefreshInterval = time.Minute
+	// MaxRefreshInterval keeps cancellations and timetable changes from
+	// going unseen for hours.
+	MaxRefreshInterval = time.Hour
 	// DefaultMonthlyQuota is the free plan's REST quota.
 	DefaultMonthlyQuota = 10_000
 
-	// departureLimit caps departures per stop and per child platform. It
-	// bounds the response, not what boards show.
-	departureLimit = 50
+	// maxPredictionAge is when a prediction stops counting as live, though it
+	// stays the best estimate of the time.
+	maxPredictionAge = 10 * time.Minute
+	// retryInterval is how soon a failed fetch is repeated while earlier data
+	// is served, if the refresh interval is not shorter.
+	retryInterval = 5 * time.Minute
+
+	// lateLookback is how late a vehicle can run and still be shown.
+	lateLookback = 30 * time.Minute
+	// offsetMaxAge limits how far a daylight saving change can make a stop's
+	// offset wrong.
+	offsetMaxAge = 12 * time.Hour
+
+	// departureLimit caps departures per stop and per child platform. It is
+	// the server's maximum, since filters only see what it returns.
+	departureLimit = 1000
 	searchLimit    = 50
 	maxBody        = 16 << 20
 )
@@ -56,12 +74,13 @@ var ErrUnknownStop = errors.New("unknown stop")
 type Config struct {
 	// APIKey is required; use ${NAME} to read it from the environment.
 	APIKey string `toml:"api_key"`
-	// Feed is a feed Onestop ID, such as "f-9q9-bart". When set, stops
+	// Feed is a feed Onestop ID, such as "f-drt-mbta". When set, stops
 	// are that feed's GTFS stop IDs and search is limited to the feed;
 	// otherwise stops are full Transitland stop keys ("<feed>:<stop_id>").
 	Feed string `toml:"feed"`
 	// RefreshInterval is the shortest time between requests for one stop,
-	// such as "2m". Defaults to DefaultRefreshInterval.
+	// such as "2m", from MinRefreshInterval to MaxRefreshInterval. Defaults
+	// to DefaultRefreshInterval.
 	RefreshInterval string `toml:"refresh_interval"`
 	// MonthlyQuota is the plan's monthly REST quota, used to warn about
 	// configurations that would exceed it. Defaults to DefaultMonthlyQuota.
@@ -83,7 +102,28 @@ type Provider struct {
 	mu sync.Mutex
 	// stops holds one cache per stop and window, so boards polling the same
 	// stop share each request.
-	stops map[stopWindow]*upstream.Cache[[]transit.Departure]
+	stops map[stopWindow]*upstream.Cache[timetable]
+	// offsets holds each stop key's service-day offset.
+	offsets map[string]serviceOffset
+}
+
+// serviceOffset is how far a stop's GTFS times are ahead of UTC, which is
+// the agency's zone rather than the stop's.
+type serviceOffset struct {
+	ahead time.Duration
+	at    time.Time
+}
+
+// timetable is one fetched answer for a stop.
+type timetable struct {
+	deps []transit.Departure
+	// unknown records that the stop does not exist, so a mistyped stop is
+	// not asked for on every poll.
+	unknown bool
+	at      time.Time
+	// until is how far the departures are complete.
+	until     time.Time
+	truncated bool
 }
 
 type stopWindow struct {
@@ -98,7 +138,8 @@ func Register(r *transit.Registry) {
 
 // New returns a provider. A nil client gets a default with a timeout.
 func New(cfg Config, client *http.Client) (*Provider, error) {
-	if strings.TrimSpace(cfg.APIKey) == "" {
+	key := strings.TrimSpace(cfg.APIKey)
+	if key == "" {
 		return nil, errors.New("api_key is required")
 	}
 	base := cfg.BaseURL
@@ -108,6 +149,9 @@ func New(cfg Config, client *http.Client) (*Provider, error) {
 	u, ok := upstream.HTTPURL(base)
 	if !ok {
 		return nil, fmt.Errorf("base_url %q must be an http(s) URL", base)
+	}
+	if u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return nil, errors.New("base_url must not have credentials, a query or a fragment")
 	}
 	refresh := DefaultRefreshInterval
 	if cfg.RefreshInterval != "" {
@@ -120,6 +164,9 @@ func New(cfg Config, client *http.Client) (*Provider, error) {
 	if refresh < MinRefreshInterval {
 		return nil, fmt.Errorf("refresh_interval must be at least %s", MinRefreshInterval)
 	}
+	if refresh > MaxRefreshInterval {
+		return nil, fmt.Errorf("refresh_interval must be at most %s", MaxRefreshInterval)
+	}
 	quota := cfg.MonthlyQuota
 	switch {
 	case quota < 0:
@@ -130,14 +177,27 @@ func New(cfg Config, client *http.Client) (*Provider, error) {
 	if client == nil {
 		client = &http.Client{Timeout: 20 * time.Second}
 	}
+	c := *client
+	// net/http drops Authorization on a redirect to another host, but not
+	// custom headers such as apikey.
+	c.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if req.URL.Host != via[0].URL.Host || req.URL.Scheme != via[0].URL.Scheme {
+			return errors.New("redirect to another host refused")
+		}
+		if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
+		}
+		return nil
+	}
 	return &Provider{
 		base:    u,
-		http:    client,
-		key:     cfg.APIKey,
+		http:    &c,
+		key:     key,
 		feed:    strings.TrimSpace(cfg.Feed),
 		refresh: refresh,
 		quota:   quota,
-		stops:   map[stopWindow]*upstream.Cache[[]transit.Departure]{},
+		stops:   map[stopWindow]*upstream.Cache[timetable]{},
+		offsets: map[string]serviceOffset{},
 	}, nil
 }
 
@@ -147,19 +207,36 @@ func (p *Provider) RefreshInterval() time.Duration { return p.refresh }
 // MonthlyQuota implements transit.Metered.
 func (p *Provider) MonthlyQuota() int { return p.quota }
 
+// QuotaAccount implements transit.Metered. Quotas belong to API keys, so it
+// identifies the key without revealing it.
+func (p *Provider) QuotaAccount() string {
+	sum := sha256.Sum256([]byte(p.base.String() + "\x00" + p.key))
+	return Name + ":" + hex.EncodeToString(sum[:])
+}
+
 // Departures implements transit.Provider.
 func (p *Provider) Departures(ctx context.Context, q transit.Query) ([]transit.Departure, error) {
 	// A fresh cache would answer without touching ctx.
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	all, err := p.cacheFor(q).Get(ctx, q.Now)
-	if err != nil {
+	tt, err := p.cacheFor(q).Get(ctx, q.Now)
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return nil, ctxErr
+	}
+	age := q.Now.Sub(tt.at)
+	// One missed refresh leaves a timetable worth showing. Past that, report
+	// the failure so the board's max_stale decides.
+	if err != nil && (tt.at.IsZero() || age >= 2*p.refresh) {
 		return nil, err
 	}
+	if tt.unknown {
+		return nil, fmt.Errorf("%w %q", ErrUnknownStop, p.stopKey(q.StopID))
+	}
+	live := err == nil && age <= maxPredictionAge
 	end := q.Now.Add(q.Window)
-	out := make([]transit.Departure, 0, len(all))
-	for _, d := range all {
+	out := make([]transit.Departure, 0, len(tt.deps))
+	for _, d := range tt.deps {
 		if t := d.Time(); t.Before(q.Now) || t.After(end) {
 			continue
 		}
@@ -167,14 +244,29 @@ func (p *Provider) Departures(ctx context.Context, q transit.Query) ([]transit.D
 		d.Scheduled = d.Scheduled.In(q.Now.Location())
 		if d.Predicted != nil {
 			t := d.Predicted.In(q.Now.Location())
-			d.Predicted = &t
+			if live {
+				d.Predicted = &t
+			} else {
+				d.Scheduled, d.Predicted = t, nil
+			}
 		}
 		out = append(out, d)
 	}
-	return transit.SortAndLimit(out, q.Limit), nil
+	out = transit.SortAndLimit(out, q.Limit)
+	if err == nil && tt.truncated && tt.until.Before(end) {
+		err = fmt.Errorf("%s: %s has more departures than one request returns; shorten window or refresh_interval", Name, p.stopKey(q.StopID))
+	}
+	if err == nil {
+		return out, nil
+	}
+	// Empty because the data ran out does not mean there is no service.
+	if len(out) == 0 && tt.until.Before(end) {
+		return nil, err
+	}
+	return out, &transit.PartialError{Err: err}
 }
 
-func (p *Provider) cacheFor(q transit.Query) *upstream.Cache[[]transit.Departure] {
+func (p *Provider) cacheFor(q transit.Query) *upstream.Cache[timetable] {
 	k := stopWindow{key: p.stopKey(q.StopID), window: q.Window}
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -183,12 +275,12 @@ func (p *Provider) cacheFor(q transit.Query) *upstream.Cache[[]transit.Departure
 		// Fetching one refresh interval past the window keeps the end of
 		// the window filled until the next fetch.
 		span := q.Window + p.refresh
-		c = upstream.NewCache(upstream.Policy{
+		c = upstream.NewCacheAt(upstream.Policy{
 			TTL:               p.refresh,
-			Retry:             p.refresh,
+			Retry:             min(p.refresh, retryInterval),
 			RetryOnlyWithData: true,
-		}, func(ctx context.Context) ([]transit.Departure, error) {
-			return p.fetch(ctx, k.key, span)
+		}, func(ctx context.Context, now time.Time) (timetable, error) {
+			return p.fetch(ctx, k.key, now, span)
 		})
 		p.stops[k] = c
 	}
@@ -217,6 +309,7 @@ type wireStop struct {
 }
 
 type wireDeparture struct {
+	ServiceDate          string    `json:"service_date"`
 	StopHeadsign         string    `json:"stop_headsign"`
 	PickupType           *int      `json:"pickup_type"`
 	ScheduleRelationship string    `json:"schedule_relationship"`
@@ -231,33 +324,50 @@ type wireDeparture struct {
 			RouteShortName string `json:"route_short_name"`
 			RouteLongName  string `json:"route_long_name"`
 			RouteColor     string `json:"route_color"`
-			RouteType      int    `json:"route_type"`
+			RouteType      *int   `json:"route_type"`
 		} `json:"route"`
 	} `json:"trip"`
 }
 
 type wireEvent struct {
+	// Scheduled is the GTFS time of the service day, which passes 24:00.
+	Scheduled string `json:"scheduled"`
+	// ScheduledUTC is null for trips added in realtime.
 	ScheduledUTC *time.Time `json:"scheduled_utc"`
 	EstimatedUTC *time.Time `json:"estimated_utc"`
 }
 
-func (p *Provider) fetch(ctx context.Context, key string, span time.Duration) ([]transit.Departure, error) {
+func (p *Provider) fetch(ctx context.Context, key string, now time.Time, span time.Duration) (timetable, error) {
 	params := url.Values{
-		"next":  {strconv.Itoa(int(span / time.Second))},
 		"limit": {strconv.Itoa(departureLimit)},
 		// The default falls back to a typical day's timetable when the feed
 		// has expired, which would show trips that do not run.
 		"use_service_window": {"false"},
 	}
+	// The server filters by scheduled time, so next leaves out a late vehicle
+	// that has not come yet. Asking for earlier times needs the stop's
+	// offset, which the first answer gives.
+	p.mu.Lock()
+	offset, ok := p.offsets[key]
+	p.mu.Unlock()
+	if age := now.Sub(offset.at).Abs(); ok && age <= offsetMaxAge {
+		from := now.Add(offset.ahead - lateLookback).UTC()
+		start := from.Sub(from.Truncate(24 * time.Hour))
+		params.Set("date", from.Format(time.DateOnly))
+		params.Set("start_time", gtfsTime(start))
+		params.Set("end_time", gtfsTime(start+lateLookback+span))
+	} else {
+		params.Set("next", strconv.Itoa(int(span/time.Second)))
+	}
 	var resp departuresResponse
 	if err := p.get(ctx, "stops/"+url.PathEscape(key)+"/departures", params, &resp); err != nil {
 		if errors.Is(err, errNotFound) {
-			return nil, fmt.Errorf("%w %q", ErrUnknownStop, key)
+			return timetable{unknown: true, at: now}, nil
 		}
-		return nil, err
+		return timetable{}, err
 	}
 	if len(resp.Stops) == 0 {
-		return nil, fmt.Errorf("%w %q", ErrUnknownStop, key)
+		return timetable{unknown: true, at: now}, nil
 	}
 
 	type seen struct {
@@ -265,35 +375,98 @@ func (p *Provider) fetch(ctx context.Context, key string, span time.Duration) ([
 		at   time.Time
 	}
 	dup := map[seen]bool{}
-	var out []transit.Departure
-	add := func(w wireDeparture) {
-		d, ok := convert(w)
-		if !ok {
-			return
+	out := timetable{at: now, until: now.Add(span)}
+	learned := false
+	add := func(list []wireDeparture) {
+		// The server lists added trips on top of the limit.
+		scheduled := 0
+		var last time.Time
+		for _, w := range list {
+			if !learned {
+				if ahead, ok := offsetOf(w); ok {
+					learned = true
+					p.mu.Lock()
+					p.offsets[key] = serviceOffset{ahead, now}
+					p.mu.Unlock()
+				}
+			}
+			if at := w.Departure.ScheduledUTC; at != nil {
+				scheduled++
+				if at.After(last) {
+					last = *at
+				}
+			}
+			d, ok := convert(w)
+			if !ok {
+				continue
+			}
+			k := seen{w.Trip.TripID, d.Scheduled}
+			if w.Trip.TripID != "" && dup[k] {
+				continue
+			}
+			dup[k] = true
+			out.deps = append(out.deps, d)
 		}
-		k := seen{w.Trip.TripID, d.Scheduled}
-		if w.Trip.TripID != "" && dup[k] {
-			return
+		if scheduled >= departureLimit {
+			out.truncated = true
+			if last.Before(out.until) {
+				out.until = last
+			}
 		}
-		dup[k] = true
-		out = append(out, d)
 	}
 	for _, s := range resp.Stops {
-		for _, w := range s.Departures {
-			add(w)
-		}
+		add(s.Departures)
 		for _, c := range s.Children {
-			for _, w := range c.Departures {
-				add(w)
-			}
+			add(c.Departures)
 		}
 	}
 	return out, nil
 }
 
+func gtfsTime(d time.Duration) string {
+	s := int(d / time.Second)
+	return fmt.Sprintf("%02d:%02d:%02d", s/3600, s/60%60, s%60)
+}
+
+// offsetOf derives the service-day offset from a departure's GTFS time and
+// the instant it stands for.
+func offsetOf(w wireDeparture) (time.Duration, bool) {
+	if w.Departure.ScheduledUTC == nil {
+		return 0, false
+	}
+	day, err := time.Parse(time.DateOnly, w.ServiceDate)
+	if err != nil {
+		return 0, false
+	}
+	parts := strings.Split(w.Departure.Scheduled, ":")
+	if len(parts) != 3 {
+		return 0, false
+	}
+	var secs int
+	for _, part := range parts {
+		n, err := strconv.Atoi(part)
+		if err != nil {
+			return 0, false
+		}
+		secs = secs*60 + n
+	}
+	ahead := day.Add(time.Duration(secs) * time.Second).Sub(*w.Departure.ScheduledUTC)
+	// Zones run from UTC-12 to UTC+14.
+	return ahead, ahead >= -12*time.Hour && ahead <= 14*time.Hour
+}
+
 // convert maps one departure, reporting false for ones riders cannot board.
 func convert(w wireDeparture) (transit.Departure, bool) {
-	if w.Departure.ScheduledUTC == nil {
+	var predicted *time.Time
+	if e := w.Departure.EstimatedUTC; e != nil && !e.IsZero() {
+		t := *e
+		predicted = &t
+	}
+	scheduled := w.Departure.ScheduledUTC
+	if scheduled == nil {
+		scheduled = predicted
+	}
+	if scheduled == nil {
 		return transit.Departure{}, false
 	}
 	// pickup_type 1: no pickup, as at a trip's last stop.
@@ -303,11 +476,11 @@ func convert(w wireDeparture) (transit.Departure, bool) {
 	status := transit.StatusScheduled
 	for _, rel := range []string{w.ScheduleRelationship, w.Trip.ScheduleRelationship} {
 		switch rel {
-		case "SKIPPED":
+		case "SKIPPED", "DELETED":
 			return transit.Departure{}, false
-		case "CANCELED", "DELETED":
+		case "CANCELED":
 			status = transit.StatusCanceled
-		case "ADDED", "NEW", "REPLACEMENT", "DUPLICATED":
+		case "ADDED", "NEW", "DUPLICATED":
 			if status == transit.StatusScheduled {
 				status = transit.StatusAdded
 			}
@@ -330,20 +503,21 @@ func convert(w wireDeparture) (transit.Departure, bool) {
 	if headsign == "" {
 		headsign = w.Trip.TripHeadsign
 	}
+	mode := transit.ModeOther
+	if r.RouteType != nil {
+		mode = transit.ModeForRouteType(*r.RouteType)
+	}
 	d := transit.Departure{
 		Line: transit.Line{
 			ID:        id,
 			ShortName: short,
 			Color:     transit.NormalizeColor(r.RouteColor),
-			Mode:      transit.ModeForRouteType(r.RouteType),
+			Mode:      mode,
 		},
 		Headsign:  headsign,
-		Scheduled: *w.Departure.ScheduledUTC,
+		Scheduled: *scheduled,
+		Predicted: predicted,
 		Status:    status,
-	}
-	if e := w.Departure.EstimatedUTC; e != nil && !e.IsZero() {
-		t := *e
-		d.Predicted = &t
 	}
 	return d, d.Line.ID != ""
 }
@@ -352,8 +526,12 @@ func convert(w wireDeparture) (transit.Departure, bool) {
 // stop search, limited to the configured feed if there is one. Each search
 // counts against the quota.
 func (p *Provider) SearchStops(ctx context.Context, search string) ([]transit.Stop, error) {
+	search = strings.TrimSpace(search)
+	if search == "" {
+		return nil, nil
+	}
 	params := url.Values{
-		"search": {strings.TrimSpace(search)},
+		"search": {search},
 		"limit":  {strconv.Itoa(searchLimit)},
 	}
 	if p.feed != "" {

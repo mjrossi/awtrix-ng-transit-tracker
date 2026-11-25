@@ -1,0 +1,16 @@
+{
+ "stops": [
+  {
+   "stop_id": "QUIET",
+   "stop_name": "Quiet Street",
+   "onestop_id": "s-example-quiet",
+   "departures": [],
+   "feed_version": {
+    "feed": {
+     "onestop_id": "f-example-harbor"
+    }
+   },
+   "children": null
+  }
+ ]
+}

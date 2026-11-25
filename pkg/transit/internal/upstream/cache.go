@@ -39,7 +39,7 @@ type Policy struct {
 // expired, so a clock stepped back cannot keep data fresh indefinitely.
 type Cache[T any] struct {
 	policy Policy
-	load   func(context.Context) (T, error)
+	load   func(context.Context, time.Time) (T, error)
 	// onWait, when set by tests, runs as a caller starts waiting for a load.
 	onWait func()
 
@@ -65,6 +65,12 @@ type call[T any] struct {
 // NewCache returns an empty cache that fills itself with load. It panics if
 // p sets Background without a Timeout.
 func NewCache[T any](p Policy, load func(context.Context) (T, error)) *Cache[T] {
+	return NewCacheAt(p, func(ctx context.Context, _ time.Time) (T, error) { return load(ctx) })
+}
+
+// NewCacheAt is NewCache for a load that needs the time of the Get that
+// started it, such as to record the value's age.
+func NewCacheAt[T any](p Policy, load func(context.Context, time.Time) (T, error)) *Cache[T] {
 	if p.Background && p.Timeout <= 0 {
 		panic("upstream: Policy.Background requires a Timeout")
 	}
@@ -141,7 +147,7 @@ func (c *Cache[T]) run(ctx context.Context, now time.Time, cl *call[T]) {
 		ctx, cancel = context.WithTimeout(ctx, c.policy.Timeout)
 		defer cancel()
 	}
-	val, err := c.load(ctx)
+	val, err := c.load(ctx, now)
 
 	c.mu.Lock()
 	defer c.mu.Unlock()

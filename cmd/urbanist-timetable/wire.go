@@ -3,8 +3,8 @@ package main
 import (
 	"fmt"
 	"log/slog"
+	"maps"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/mjrossi/urbanist-timetable/internal/clockout"
@@ -34,31 +34,45 @@ func buildProviders(cfg *config.Config) (map[string]transit.Provider, error) {
 	return out, nil
 }
 
-// quotaUse is a metered provider block's estimated requests a month.
+// quotaUse is the estimated requests a month against one quota, which
+// provider blocks with the same account share.
 type quotaUse struct {
-	Provider        string
-	Requests, Quota int
+	// Providers are the blocks' names, sorted.
+	Providers []string
+	Requests  int
+	// Quota is the smallest the blocks name.
+	Quota int
 }
 
 // Over reports whether the estimate exceeds the quota.
 func (u quotaUse) Over() bool { return u.Requests > u.Quota }
 
-// quotaUses estimates monthly requests for every provider with a quota,
-// sorted by block name.
+// quotaUses estimates monthly requests for every quota, sorted by block
+// name.
 func quotaUses(cfg *config.Config, provs map[string]transit.Provider) []quotaUse {
 	refresh := map[string]time.Duration{}
-	quota := map[string]int{}
+	metered := map[string]transit.Metered{}
 	for name, p := range provs {
 		if m, ok := p.(transit.Metered); ok {
-			refresh[name], quota[name] = m.RefreshInterval(), m.MonthlyQuota()
+			refresh[name], metered[name] = m.RefreshInterval(), m
 		}
 	}
 	est := cfg.EstimateRequests(refresh)
-	out := make([]quotaUse, 0, len(est))
-	for name, n := range est {
-		out = append(out, quotaUse{Provider: name, Requests: n, Quota: quota[name]})
+	var out []quotaUse
+	index := map[string]int{}
+	for _, name := range slices.Sorted(maps.Keys(metered)) {
+		m := metered[name]
+		i, ok := index[m.QuotaAccount()]
+		if !ok {
+			i = len(out)
+			index[m.QuotaAccount()] = i
+			out = append(out, quotaUse{Quota: m.MonthlyQuota()})
+		}
+		u := &out[i]
+		u.Providers = append(u.Providers, name)
+		u.Requests += est[name]
+		u.Quota = min(u.Quota, m.MonthlyQuota())
 	}
-	slices.SortFunc(out, func(a, b quotaUse) int { return strings.Compare(a.Provider, b.Provider) })
 	return out
 }
 

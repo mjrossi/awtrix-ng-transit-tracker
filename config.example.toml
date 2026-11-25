@@ -50,12 +50,12 @@ url = "http://awtrixng-a1b2c3.local"
 # you can, since every Transitland request counts against a monthly quota.
 # Get a key at https://www.transit.land/. With `feed` set to the feed's
 # Onestop ID, stops are its GTFS stop IDs; without it, use full stop keys
-# ("f-9q9-bart:LAKE"). `config validate` estimates requests a month.
-# [providers.bart]
+# ("f-drt-mbta:place-sstat"). `config validate` estimates requests a month.
+# [providers.mbta]
 # type = "transitland"
 # api_key = "${TRANSITLAND_API_KEY}"
-# feed = "f-9q9-bart"
-# refresh_interval = "2m"   # at most one request per stop per interval; default 5m
+# feed = "f-drt-mbta"
+# refresh_interval = "2m"   # one request per stop per interval, 1m to 1h; default 5m
 # monthly_quota = 50000     # Hobbyist/Academic plan; default 10000 (free plan)
 
 # Metro de Lisboa: needs an application subscribed to EstadoServicoML at

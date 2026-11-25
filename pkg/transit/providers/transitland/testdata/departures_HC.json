@@ -1,0 +1,309 @@
+{
+ "stops": [
+  {
+   "stop_id": "HC",
+   "stop_name": "Harbor Central",
+   "onestop_id": "s-example-hc",
+   "departures": [],
+   "feed_version": {
+    "feed": {
+     "onestop_id": "f-example-harbor"
+    }
+   },
+   "children": [
+    {
+     "stop_id": "HC-1",
+     "stop_name": "Harbor Central",
+     "onestop_id": "s-example-hc-1",
+     "departures": [
+      {
+       "service_date": "2026-11-25",
+       "stop_headsign": null,
+       "pickup_type": 0,
+       "schedule_relationship": "CANCELED",
+       "departure": {
+        "scheduled": "09:52:00",
+        "scheduled_utc": "2026-11-25T15:52:00Z",
+        "estimated_utc": null
+       },
+       "trip": {
+        "trip_id": "trip-1",
+        "trip_headsign": "Westgate",
+        "schedule_relationship": "CANCELED",
+        "route": {
+         "onestop_id": "r-example-crosstown",
+         "route_id": "X",
+         "route_short_name": null,
+         "route_long_name": "Crosstown",
+         "route_color": "2E7D32",
+         "route_type": 1
+        }
+       }
+      },
+      {
+       "service_date": "2026-11-25",
+       "stop_headsign": null,
+       "pickup_type": 0,
+       "schedule_relationship": "SCHEDULED",
+       "departure": {
+        "scheduled": "09:58:00",
+        "scheduled_utc": "2026-11-25T15:58:00Z",
+        "estimated_utc": "2026-11-25T16:21:40Z"
+       },
+       "trip": {
+        "trip_id": "trip-2",
+        "trip_headsign": "Westgate",
+        "schedule_relationship": "SCHEDULED",
+        "route": {
+         "onestop_id": "r-example-crosstown",
+         "route_id": "X",
+         "route_short_name": null,
+         "route_long_name": "Crosstown",
+         "route_color": "2E7D32",
+         "route_type": 1
+        }
+       }
+      },
+      {
+       "service_date": "2026-11-25",
+       "stop_headsign": null,
+       "pickup_type": 0,
+       "schedule_relationship": "SCHEDULED",
+       "departure": {
+        "scheduled": "10:07:00",
+        "scheduled_utc": "2026-11-25T16:07:00Z",
+        "estimated_utc": "2026-11-25T16:08:15Z"
+       },
+       "trip": {
+        "trip_id": "trip-3",
+        "trip_headsign": "Orchard",
+        "schedule_relationship": "SCHEDULED",
+        "route": {
+         "onestop_id": "r-example-crosstown",
+         "route_id": "X",
+         "route_short_name": null,
+         "route_long_name": "Crosstown",
+         "route_color": "2E7D32",
+         "route_type": 1
+        }
+       }
+      },
+      {
+       "service_date": "2026-11-25",
+       "stop_headsign": null,
+       "pickup_type": 0,
+       "schedule_relationship": "CANCELED",
+       "departure": {
+        "scheduled": "10:19:00",
+        "scheduled_utc": "2026-11-25T16:19:00Z",
+        "estimated_utc": null
+       },
+       "trip": {
+        "trip_id": "trip-4",
+        "trip_headsign": "Westgate",
+        "schedule_relationship": "CANCELED",
+        "route": {
+         "onestop_id": "r-example-crosstown",
+         "route_id": "X",
+         "route_short_name": null,
+         "route_long_name": "Crosstown",
+         "route_color": "2E7D32",
+         "route_type": 1
+        }
+       }
+      },
+      {
+       "service_date": "2026-11-25",
+       "stop_headsign": null,
+       "pickup_type": 0,
+       "schedule_relationship": "STATIC",
+       "departure": {
+        "scheduled": "10:37:00",
+        "scheduled_utc": "2026-11-25T16:37:00Z",
+        "estimated_utc": null
+       },
+       "trip": {
+        "trip_id": "trip-5",
+        "trip_headsign": "Orchard",
+        "schedule_relationship": "STATIC",
+        "route": {
+         "onestop_id": "r-example-crosstown",
+         "route_id": "X",
+         "route_short_name": null,
+         "route_long_name": "Crosstown",
+         "route_color": "2E7D32",
+         "route_type": 1
+        }
+       }
+      }
+     ]
+    },
+    {
+     "stop_id": "HC-2",
+     "stop_name": "Harbor Central",
+     "onestop_id": "s-example-hc-2",
+     "departures": [
+      {
+       "service_date": "2026-11-25",
+       "stop_headsign": null,
+       "pickup_type": 0,
+       "schedule_relationship": "ADDED",
+       "departure": {
+        "scheduled": null,
+        "scheduled_utc": null,
+        "estimated_utc": "2026-11-25T16:23:05Z"
+       },
+       "trip": {
+        "trip_id": "trip-6",
+        "trip_headsign": null,
+        "schedule_relationship": "ADDED",
+        "route": {
+         "onestop_id": "r-example-crosstown",
+         "route_id": "X",
+         "route_short_name": null,
+         "route_long_name": "Crosstown",
+         "route_color": "2E7D32",
+         "route_type": 1
+        }
+       }
+      },
+      {
+       "service_date": "2026-11-25",
+       "stop_headsign": null,
+       "pickup_type": 0,
+       "schedule_relationship": "SCHEDULED",
+       "departure": {
+        "scheduled": "10:10:00",
+        "scheduled_utc": "2026-11-25T16:10:00Z",
+        "estimated_utc": "2026-11-25T16:12:30Z"
+       },
+       "trip": {
+        "trip_id": "trip-7",
+        "trip_headsign": "Quarry",
+        "schedule_relationship": "SCHEDULED",
+        "route": {
+         "onestop_id": "r-example-crosstown",
+         "route_id": "X",
+         "route_short_name": null,
+         "route_long_name": "Crosstown",
+         "route_color": "2E7D32",
+         "route_type": 1
+        }
+       }
+      }
+     ]
+    },
+    {
+     "stop_id": "HC-3",
+     "stop_name": "Harbor Central",
+     "onestop_id": "s-example-hc-3",
+     "departures": [
+      {
+       "service_date": "2026-11-25",
+       "stop_headsign": null,
+       "pickup_type": 0,
+       "schedule_relationship": "ADDED",
+       "departure": {
+        "scheduled": null,
+        "scheduled_utc": null,
+        "estimated_utc": "2026-11-25T14:10:00Z"
+       },
+       "trip": {
+        "trip_id": "trip-8",
+        "trip_headsign": null,
+        "schedule_relationship": "ADDED",
+        "route": {
+         "onestop_id": "r-example-h1",
+         "route_id": "H1",
+         "route_short_name": "H1",
+         "route_long_name": "Harbor Loop",
+         "route_color": "5D4037",
+         "route_type": 3
+        }
+       }
+      },
+      {
+       "service_date": "2026-11-25",
+       "stop_headsign": null,
+       "pickup_type": 0,
+       "schedule_relationship": "ADDED",
+       "departure": {
+        "scheduled": null,
+        "scheduled_utc": null,
+        "estimated_utc": "2026-11-25T16:26:00Z"
+       },
+       "trip": {
+        "trip_id": "trip-9",
+        "trip_headsign": null,
+        "schedule_relationship": "ADDED",
+        "route": {
+         "onestop_id": "r-example-h1",
+         "route_id": "H1",
+         "route_short_name": "H1",
+         "route_long_name": "Harbor Loop",
+         "route_color": "5D4037",
+         "route_type": 3
+        }
+       }
+      }
+     ]
+    },
+    {
+     "stop_id": "HC-4",
+     "stop_name": "Harbor Central",
+     "onestop_id": "s-example-hc-4",
+     "departures": [
+      {
+       "service_date": "2026-11-25",
+       "stop_headsign": "Millbrook via Fen",
+       "pickup_type": 0,
+       "schedule_relationship": "SCHEDULED",
+       "departure": {
+        "scheduled": "10:24:00",
+        "scheduled_utc": "2026-11-25T16:24:00Z",
+        "estimated_utc": "2026-11-25T16:24:00Z"
+       },
+       "trip": {
+        "trip_id": "trip-10",
+        "trip_headsign": "Millbrook",
+        "schedule_relationship": "SCHEDULED",
+        "route": {
+         "onestop_id": "r-example-valley",
+         "route_id": "V",
+         "route_short_name": null,
+         "route_long_name": "Valley Line",
+         "route_color": "1A237E",
+         "route_type": 2
+        }
+       }
+      },
+      {
+       "service_date": "2026-11-25",
+       "stop_headsign": "Millbrook via Heath",
+       "pickup_type": 0,
+       "schedule_relationship": "STATIC",
+       "departure": {
+        "scheduled": "10:41:00",
+        "scheduled_utc": "2026-11-25T16:41:00Z",
+        "estimated_utc": null
+       },
+       "trip": {
+        "trip_id": "trip-11",
+        "trip_headsign": "Millbrook",
+        "schedule_relationship": "STATIC",
+        "route": {
+         "onestop_id": "r-example-valley",
+         "route_id": "V",
+         "route_short_name": null,
+         "route_long_name": "Valley Line",
+         "route_color": "1A237E",
+         "route_type": 2
+        }
+       }
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

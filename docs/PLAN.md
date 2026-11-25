@@ -60,7 +60,7 @@ with the number of agencies.
 | Provider | Agencies | Code per agency | Notes |
 |---|---|---|---|
 | `gtfsrt` (generic) | Thousands: anything with static GTFS + GTFS-RT `TripUpdates` | None: a TOML entry | The default path. Feeds are listed in the [Mobility Database](https://mobilitydatabase.org/). |
-| `transitland` | Thousands, merged into JSON by [Transitland](https://www.transit.land/) | None: a TOML entry with a feed Onestop ID | Done. The fallback where an agency's own feeds are awkward, and the way to show timetabled trips today. Every request counts against a monthly quota (10,000 free, 50,000 Hobbyist/Academic), so each stop is fetched once per `refresh_interval` and boards count down from that. |
+| `transitland` | Thousands, merged into JSON by [Transitland](https://www.transit.land/) | None: a TOML entry with a feed Onestop ID | Done. The fallback where an agency's own feeds are awkward, and the way to show timetabled trips today. Every request counts against a monthly quota (10,000 free, 50,000 Hobbyist/Academic), so each stop is fetched once per `refresh_interval` and boards count down from that. The quota belongs to the API key, so blocks sharing a key are added up. |
 | Custom adapters | One each | A few hundred lines | Only for agencies without usable GTFS-RT `TripUpdates`. |
 
 **Rule for custom adapters** (goes into `CONTRIBUTING.md`): an agency gets

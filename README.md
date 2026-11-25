@@ -281,27 +281,39 @@ large for your NAS), `transitland` serves the agency from one API, with
 timetabled trips shown even when realtime has none.
 
 ```toml
-[providers.bart]
+[providers.mbta]
 type = "transitland"
 api_key = "${TRANSITLAND_API_KEY}"
-feed = "f-9q9-bart"        # the feed's Onestop ID; stops are then GTFS stop IDs
+feed = "f-drt-mbta"        # the feed's Onestop ID; stops are then GTFS stop IDs
 refresh_interval = "2m"    # default 5m
 monthly_quota = 50000      # your plan's REST quota; default 10000 (free plan)
 ```
 
 Every request counts against your plan's monthly quota (10,000 on the free
 plan, 50,000 on Hobbyist/Academic, which is free for non-commercial use).
-Each stop is fetched at most once per `refresh_interval`, and boards still
-count minutes down between fetches, so predictions are up to that old.
-Requests a month are about
+Each stop is fetched once per `refresh_interval` (1 minute to 1 hour), and
+boards still count minutes down between fetches. A prediction more than 10
+minutes old is shown as scheduled, not live. Boards with different `window`s
+on one stop fetch separately. If a fetch fails, boards keep the last
+timetable, shown as scheduled, for up to one more `refresh_interval`, and
+`max_stale` counts from there; the fetch is retried every 5 minutes, or
+every `refresh_interval` if that is shorter. Requests a month are about
 
     31 × stops × active hours a day × 60 ÷ refresh minutes
 
 so one stop polled all day at 5 minutes is about 8,900, and two stops for
 16 hours a day at 2 minutes about 29,800. `config validate` prints this
 estimate, taking `active_hours` and `quiet_hours` into account, and warns
-when it exceeds `monthly_quota`; `run` logs it at startup. Stop searches
-count too. Find a feed's Onestop ID on its Transitland page. Data via
+when it exceeds `monthly_quota`; `run` logs it at startup. Blocks with the
+same key share its quota, so they are added up. Stop searches, previews and
+retries count too, but are not in the estimate. `lines` matches short names
+or Transitland route Onestop IDs, not GTFS route IDs. Vehicles up to 30
+minutes late stay on the board until they leave, except that a board's first
+fetch, at startup or after 12 hours without one, misses those already past
+their scheduled time. Find a feed's Onestop ID on its Transitland page.
+Some agency feeds answer nothing because Transitland serves the agency from a
+regional feed instead: BART's `f-9q9-bart` does, in favor of
+`f-sf~bay~area~rg`. Search without `feed` to see which feed has a stop. Data via
 Transitland.
 
 ## How it behaves
