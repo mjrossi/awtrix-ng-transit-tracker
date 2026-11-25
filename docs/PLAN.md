@@ -144,13 +144,7 @@ providers). Each widens who the project works for.
 - The Ulanzi TC001's behavior with the `layout` key: confirm it is
   rejected before designing the 32 × 8 renderer.
 - Still to confirm on the maintainer's TC002:
-  - stopping the service removes the app after its lifetime (three polls);
-  - after a clock reboot the app returns within one poll;
-  - outside active hours and in quiet hours the app leaves at once, by a
-    push that expires after 1 ms, and an arranged board returns to its place,
-    also if the clock rebooted meanwhile;
-  - a removed board leaves the app list, and the rest of the rotation,
-    scripts included, stays as it was;
+  - a cleanup of removed boards leaves scripts in the rotation;
   - names in `matrix-light6` next to boards in `small`, and that a name
     with an accented capital ("Águas Livres") keeps the baseline of the
     others;

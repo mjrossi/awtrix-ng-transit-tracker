@@ -7,6 +7,13 @@ version may break configuration.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-25
+
+### Changed
+
+- Errors in a config value name its key, and errors in `active_hours` also
+  name the board.
+
 ### Fixed
 
 - Hiding a board outside its active hours can no longer delete a script of
@@ -29,6 +36,8 @@ version may break configuration.
 
 - `quiet_hours`, a night mode: every board is hidden during a daily window,
   and the service makes no requests except to hide them.
+- `run --state` (`TIMETABLE_STATE`), the file that remembers the configured
+  boards.
 - The README explains what happens outside `active_hours`.
 - `name_font` in `[boards.clock]` sets the font of destination names.
 - Logs say which boards and stops are configured at startup, and when a
@@ -112,7 +121,8 @@ First release: live departures on an AWTRIX NG clock (Ulanzi TC002).
   Metropolitana, Lisbon Metro, NYC Subway and SF BART.
 - Commands: `run`, `preview`, `config validate`, `systems`, `stops search`.
 
-[Unreleased]: https://github.com/mjrossi/urbanist-timetable/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/mjrossi/urbanist-timetable/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/mjrossi/urbanist-timetable/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/mjrossi/urbanist-timetable/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/mjrossi/urbanist-timetable/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/mjrossi/urbanist-timetable/compare/v0.1.0...v0.1.1
