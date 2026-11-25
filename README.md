@@ -301,7 +301,8 @@ so one stop polled all day at 5 minutes is about 8,900, and two stops for
 16 hours a day at 2 minutes about 29,800. `config validate` prints this
 estimate, taking `active_hours` and `quiet_hours` into account, and warns
 when it exceeds `monthly_quota`; `run` logs it at startup. Blocks with the
-same key share its quota, so they are added up. Stop searches, previews and
+same key share its quota, so they are added up against the smallest
+`monthly_quota` any of them sets. Stop searches, previews and
 retries count too, but are not in the estimate. `lines` matches short names
 or Transitland route Onestop IDs, not GTFS route IDs. Vehicles up to 30
 minutes late stay on the board until they leave, except that a board's first

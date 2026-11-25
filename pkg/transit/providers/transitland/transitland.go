@@ -92,7 +92,8 @@ type Provider struct {
 	key     string
 	feed    string
 	refresh time.Duration
-	quota   int
+	// quota is zero when the configuration does not set it.
+	quota int
 
 	mu sync.Mutex
 	// stops holds one cache per stop and window, so boards polling the same
@@ -140,6 +141,7 @@ func New(cfg Config, client *http.Client) (*Provider, error) {
 	if base == "" {
 		base = DefaultBaseURL
 	}
+	base = strings.TrimRight(base, "/")
 	u, ok := upstream.HTTPURL(base)
 	if !ok {
 		return nil, fmt.Errorf("base_url %q must be an http(s) URL", base)
@@ -161,12 +163,8 @@ func New(cfg Config, client *http.Client) (*Provider, error) {
 	if refresh > MaxRefreshInterval {
 		return nil, fmt.Errorf("refresh_interval must be at most %s", MaxRefreshInterval)
 	}
-	quota := cfg.MonthlyQuota
-	switch {
-	case quota < 0:
+	if cfg.MonthlyQuota < 0 {
 		return nil, errors.New("monthly_quota must not be negative")
-	case quota == 0:
-		quota = DefaultMonthlyQuota
 	}
 	if client == nil {
 		client = &http.Client{Timeout: 20 * time.Second}
@@ -189,7 +187,7 @@ func New(cfg Config, client *http.Client) (*Provider, error) {
 		key:     key,
 		feed:    strings.TrimSpace(cfg.Feed),
 		refresh: refresh,
-		quota:   quota,
+		quota:   cfg.MonthlyQuota,
 		stops:   map[stopWindow]*upstream.Cache[timetable]{},
 		offsets: map[string]serviceOffset{},
 	}, nil
@@ -199,7 +197,12 @@ func New(cfg Config, client *http.Client) (*Provider, error) {
 func (p *Provider) RefreshInterval() time.Duration { return p.refresh }
 
 // MonthlyQuota implements transit.Metered.
-func (p *Provider) MonthlyQuota() int { return p.quota }
+func (p *Provider) MonthlyQuota() (quota int, configured bool) {
+	if p.quota == 0 {
+		return DefaultMonthlyQuota, false
+	}
+	return p.quota, true
+}
 
 // QuotaAccount implements transit.Metered. Quotas belong to API keys, so it
 // identifies the key without revealing it.
@@ -333,12 +336,12 @@ func (r departuresResponse) lists() [][]wireDeparture {
 
 func (p *Provider) fetch(ctx context.Context, key string, now time.Time, span time.Duration) (timetable, error) {
 	var resp departuresResponse
-	err := p.get(ctx, "stops/"+url.PathEscape(key)+"/departures", p.departureParams(key, now, span), &resp)
-	switch {
-	case errors.Is(err, errNotFound), err == nil && len(resp.Stops) == 0:
-		return timetable{unknown: true}, nil
-	case err != nil:
+	if err := p.get(ctx, "stops/"+url.PathEscape(key)+"/departures", p.departureParams(key, now, span), &resp); err != nil {
 		return timetable{}, err
+	}
+	// The API answers an unknown stop with 200 and no stops.
+	if len(resp.Stops) == 0 {
+		return timetable{unknown: true}, nil
 	}
 	lists := resp.lists()
 	p.learnOffset(key, lists, now)
@@ -562,11 +565,9 @@ func (p *Provider) SearchStops(ctx context.Context, search string) ([]transit.St
 	return out, nil
 }
 
-var errNotFound = errors.New("not found")
-
 // get requests path, which must already be escaped, below the base URL.
 func (p *Provider) get(ctx context.Context, path string, params url.Values, v any) error {
-	u, err := url.Parse(strings.TrimSuffix(p.base.String(), "/") + "/" + path)
+	u, err := url.Parse(p.base.String() + "/" + path)
 	if err != nil {
 		return err
 	}
@@ -589,8 +590,6 @@ func (p *Provider) get(ctx context.Context, path string, params url.Values, v an
 	}
 	switch resp.StatusCode {
 	case http.StatusOK:
-	case http.StatusNotFound:
-		return errNotFound
 	case http.StatusUnauthorized, http.StatusForbidden:
 		return fmt.Errorf("%s: %s: check api_key", Name, resp.Status)
 	case http.StatusTooManyRequests:

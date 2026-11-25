@@ -188,6 +188,52 @@ func TestConfigValidateEstimatesQuota(t *testing.T) {
 	}
 }
 
+func TestSharedQuotaIgnoresBlocksThatDoNotSetIt(t *testing.T) {
+	tests := map[string]struct {
+		a, b string
+		want int
+	}{
+		"neither set":         {"", "", 10000},
+		"only the first set":  {"monthly_quota = 50000", "", 50000},
+		"only the second set": {"", "monthly_quota = 50000", 50000},
+		"set to the default":  {"monthly_quota = 50000", "monthly_quota = 10000", 10000},
+		"both set":            {"monthly_quota = 20000", "monthly_quota = 50000", 20000},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			src := fmt.Sprintf(`
+[clock]
+url = "http://clock.local"
+[providers.a]
+type = "transitland"
+api_key = "k"
+%s
+[providers.b]
+type = "transitland"
+api_key = "k"
+%s
+[[boards]]
+name = "a"
+[[boards.stops]]
+provider = "a"
+stop = "f-x:1"
+`, tt.a, tt.b)
+			cfg, err := config.Parse([]byte(src), func(string) (string, bool) { return "", false })
+			if err != nil {
+				t.Fatal(err)
+			}
+			provs, err := buildProviders(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			uses := quotaUses(cfg, provs)
+			if len(uses) != 1 || uses[0].Quota != tt.want {
+				t.Errorf("uses = %+v, want one with quota %d", uses, tt.want)
+			}
+		})
+	}
+}
+
 func TestConfigValidateSumsBlocksSharingAKey(t *testing.T) {
 	tests := map[string]struct {
 		muniKey string

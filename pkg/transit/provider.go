@@ -74,8 +74,9 @@ type Metered interface {
 	// RefreshInterval is the shortest time between two successful upstream
 	// requests for one stop and window.
 	RefreshInterval() time.Duration
-	// MonthlyQuota is the number of upstream requests allowed a month.
-	MonthlyQuota() int
+	// MonthlyQuota is the number of upstream requests allowed a month, and
+	// whether the configuration sets it rather than the provider's default.
+	MonthlyQuota() (quota int, configured bool)
 	// QuotaAccount identifies what the quota belongs to, such as an API key,
 	// without revealing it. Providers with the same account share one quota.
 	QuotaAccount() string

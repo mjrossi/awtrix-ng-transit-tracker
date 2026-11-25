@@ -40,7 +40,8 @@ type quotaUse struct {
 	// Providers are the blocks' names, sorted.
 	Providers []string
 	Requests  int
-	// Quota is the smallest the blocks name.
+	// Quota is the smallest the blocks configure, or the default if none
+	// does.
 	Quota int
 }
 
@@ -60,18 +61,26 @@ func quotaUses(cfg *config.Config, provs map[string]transit.Provider) []quotaUse
 	est := cfg.EstimateRequests(refresh)
 	var out []quotaUse
 	index := map[string]int{}
+	configured := map[string]bool{}
 	for _, name := range slices.Sorted(maps.Keys(metered)) {
-		m := metered[name]
-		i, ok := index[m.QuotaAccount()]
+		account := metered[name].QuotaAccount()
+		quota, set := metered[name].MonthlyQuota()
+		i, ok := index[account]
 		if !ok {
 			i = len(out)
-			index[m.QuotaAccount()] = i
-			out = append(out, quotaUse{Quota: m.MonthlyQuota()})
+			index[account] = i
+			out = append(out, quotaUse{Quota: quota})
+			configured[account] = set
 		}
 		u := &out[i]
 		u.Providers = append(u.Providers, name)
 		u.Requests += est[name]
-		u.Quota = min(u.Quota, m.MonthlyQuota())
+		switch {
+		case set && !configured[account]:
+			u.Quota, configured[account] = quota, true
+		case set == configured[account]:
+			u.Quota = min(u.Quota, quota)
+		}
 	}
 	return out
 }

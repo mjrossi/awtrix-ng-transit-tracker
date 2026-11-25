@@ -15,7 +15,8 @@ version may break configuration.
   default) to stay within the plan's monthly quota.
 - `config validate` prints the estimated requests a month for each
   Transitland key, adding up blocks that share one, and warns when they
-  exceed `monthly_quota`; `run` logs the same at startup.
+  exceed the smallest `monthly_quota` those blocks set; `run` logs the same
+  at startup.
 
 ### Changed
 

@@ -11,9 +11,9 @@ const daysPerMonth = 31
 // EstimateRequests estimates the upstream requests a month made by each
 // provider block named in refresh, which maps a block to the shortest time
 // between its requests for one stop. Boards that poll the same stop with
-// the same window share requests; a stop is counted for every minute in
-// which any of its boards is active and not in quiet hours. Failed fetches
-// that are retried, searches and previews are not counted.
+// the same window share requests: a poll makes one once the refresh interval
+// has passed since the last. Failed fetches that are retried, searches and
+// previews are not counted.
 func (c *Config) EstimateRequests(refresh map[string]time.Duration) map[string]int {
 	type source struct {
 		provider, stop string
@@ -39,31 +39,40 @@ func (c *Config) EstimateRequests(refresh map[string]time.Duration) map[string]i
 	// shifts with the season; one date stands for the year.
 	day := time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC)
 	for k, bs := range boards {
-		every := refresh[k.provider]
-		poll := bs[0].PollInterval.D()
-		for _, b := range bs[1:] {
-			poll = min(poll, b.PollInterval.D())
+		var polls []time.Duration
+		for _, b := range bs {
+			polls = append(polls, c.pollTimes(b, day)...)
 		}
-		every = max(every, poll)
-
-		active := func(t time.Time) bool {
-			return !c.Quiet(t) && slices.ContainsFunc(bs, func(b Board) bool { return b.Active(t.In(b.Location())) })
-		}
-		// Each active span starts with a fetch, so spans round up one by one.
-		perDay, span := 0, time.Duration(0)
-		endSpan := func() {
-			perDay += int((span + every - 1) / every)
-			span = 0
-		}
-		for m := range 24 * 60 {
-			if active(day.Add(time.Duration(m) * time.Minute)) {
-				span += time.Minute
-			} else {
-				endSpan()
+		slices.Sort(polls)
+		perDay, last := 0, -refresh[k.provider]
+		for _, t := range polls {
+			if t-last >= refresh[k.provider] {
+				perDay++
+				last = t
 			}
 		}
-		endSpan()
 		out[k.provider] += perDay * daysPerMonth
+	}
+	return out
+}
+
+// pollTimes lists when b polls on day, as time since its start. Each active
+// span starts with a poll.
+func (c *Config) pollTimes(b Board, day time.Time) []time.Duration {
+	// A zero interval would never advance.
+	poll := max(b.PollInterval.D(), MinPollInterval)
+	var out []time.Duration
+	var due time.Duration
+	for start := time.Duration(0); start < 24*time.Hour; start += time.Minute {
+		end := start + time.Minute
+		at := day.Add(start)
+		if c.Quiet(at) || !b.Active(at.In(b.Location())) {
+			due = end
+			continue
+		}
+		for ; due < end; due += poll {
+			out = append(out, due)
+		}
 	}
 	return out
 }

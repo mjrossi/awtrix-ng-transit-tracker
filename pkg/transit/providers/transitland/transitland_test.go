@@ -244,7 +244,7 @@ func TestErrors(t *testing.T) {
 		"forbidden":     {status: http.StatusForbidden, stop: "HC", want: "check api_key"},
 		"quota":         {status: http.StatusTooManyRequests, stop: "HC", want: "quota"},
 		"server error":  {status: http.StatusBadGateway, stop: "HC", want: "502"},
-		"not found":     {status: http.StatusNotFound, stop: "HC", is: transit.ErrUnknownStop},
+		"not found":     {status: http.StatusNotFound, stop: "HC", want: "transitland: GET stops/f-example-harbor:HC/departures: 404"},
 		"unknown stop":  {stop: "NOPE", is: transit.ErrUnknownStop},
 		"stop not sent": {stop: "", is: transit.ErrUnknownStop},
 	}
@@ -259,6 +259,9 @@ func TestErrors(t *testing.T) {
 			}
 			if tt.is != nil && !errors.Is(err, tt.is) {
 				t.Errorf("err = %v, want %v", err, tt.is)
+			}
+			if tt.is == nil && errors.Is(err, transit.ErrUnknownStop) {
+				t.Errorf("err = %v, want it not to blame the stop", err)
 			}
 			if tt.want != "" && !strings.Contains(err.Error(), tt.want) {
 				t.Errorf("err = %v, want it to mention %q", err, tt.want)
@@ -316,8 +319,12 @@ func TestNew(t *testing.T) {
 				t.Fatal(err)
 			}
 			var m transit.Metered = p
-			if m.RefreshInterval() != tt.wantRefresh || m.MonthlyQuota() != tt.wantQuota {
-				t.Errorf("refresh %s quota %d, want %s and %d", m.RefreshInterval(), m.MonthlyQuota(), tt.wantRefresh, tt.wantQuota)
+			quota, configured := m.MonthlyQuota()
+			if m.RefreshInterval() != tt.wantRefresh || quota != tt.wantQuota {
+				t.Errorf("refresh %s quota %d, want %s and %d", m.RefreshInterval(), quota, tt.wantRefresh, tt.wantQuota)
+			}
+			if want := tt.cfg.MonthlyQuota != 0; configured != want {
+				t.Errorf("quota configured = %v, want %v", configured, want)
 			}
 		})
 	}
@@ -352,6 +359,33 @@ func TestSearchStops(t *testing.T) {
 				t.Errorf("query %v", q)
 			}
 		})
+	}
+}
+
+func TestSearchNamesTheFailedRequest(t *testing.T) {
+	s := newServer(t)
+	s.status.Store(http.StatusNotFound)
+	p := newProvider(t, s, transitland.Config{})
+	_, err := p.SearchStops(t.Context(), "harbor")
+	if err == nil || !strings.Contains(err.Error(), "transitland: GET stops: 404") {
+		t.Errorf("err = %v, want it to name the request and status", err)
+	}
+}
+
+func TestQuotaAccount(t *testing.T) {
+	account := func(key, base string) string {
+		p, err := transitland.New(transitland.Config{APIKey: key, BaseURL: base}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p.QuotaAccount()
+	}
+	want := account("k", "")
+	if got := account("k", transitland.DefaultBaseURL+"/"); got != want {
+		t.Error("a trailing slash in base_url makes another account")
+	}
+	if got := account("k2", ""); got == want {
+		t.Error("different keys share an account")
 	}
 }
 

@@ -102,6 +102,27 @@ headway = "5m"
 			boards: []string{board("a", `poll_interval = "10m"`, "tl:s1")}, refresh: 2 * time.Minute,
 			want: 144 * 31,
 		},
+		"slow boards polling at different times": {
+			boards: []string{
+				board("a", `poll_interval = "2m"`, "tl:s1"),
+				board("b", `poll_interval = "3m"`, "tl:s1"),
+			},
+			refresh: time.Minute,
+			// Minutes 0, 2, 3 and 4 of every six.
+			want: 960 * 31,
+		},
+		"slow boards polling together": {
+			boards: []string{
+				board("a", `poll_interval = "4m"`, "tl:s1"),
+				board("b", `poll_interval = "4m"`, "tl:s1"),
+			},
+			refresh: time.Minute,
+			want:    360 * 31,
+		},
+		"active for less than one poll": {
+			boards: []string{board("a", "active_hours = \"07:01-07:07\"\npoll_interval = \"10m\"", "tl:s1")}, refresh: time.Minute,
+			want: 31,
+		},
 		"other providers ignored": {
 			boards: []string{board("a", "", "other:s1")}, refresh: 5 * time.Minute,
 			want: 0,
