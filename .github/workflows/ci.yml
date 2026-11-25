@@ -42,9 +42,13 @@ jobs:
       GOTOOLCHAIN: local
     steps:
       - uses: actions/checkout@v7
+      # The go line, not the toolchain line, which setup-go would prefer.
+      - id: version
+        run: echo "go=$(awk '$1 == "go" {print $2}' go.mod)" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-go@v7
         with:
-          go-version-file: go.mod
+          go-version: ${{ steps.version.outputs.go }}
+      - run: go version
       - run: go build ./...
       - run: go test ./...
 
