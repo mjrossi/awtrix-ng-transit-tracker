@@ -33,7 +33,7 @@ It listens on no ports.
 
 | Package | Owns | Imports (project) |
 |---|---|---|
-| `pkg/transit` | `Departure`, `Line`, `Provider`, `Query`, `PartialError`, `Filter`, `Group`, `Registry`, `MatchesSearch` | none |
+| `pkg/transit` | `Departure`, `Line`, `Provider`, `Query`, `PartialError`, `Metered`, `Filter`, `Group`, `Registry`, `MatchesSearch`, `ModeForRouteType` | none |
 | `pkg/transit/transittest` | the provider contract suite | `transit` |
 | `pkg/transit/providers/<name>` | one data source each | `transit` only |
 | `pkg/transit/providers` | the built-in registry | every provider |
@@ -42,7 +42,7 @@ It listens on no ports.
 | `internal/render` | departure rows → TC002 `awtrix.Layout` | `transit`, `awtrix` |
 | `internal/scheduler` | polling, backoff, last-good cache, active and quiet hours, `Snapshot`, the `Output` interface | `transit` |
 | `internal/clockout` | the clock `Output`: snapshot → TC002 app → push or expire; cleanup of removed boards | `scheduler`, `render`, `awtrix` |
-| `internal/config` | TOML decoding, `${NAME}` expansion, validation, provider resolution | `transit`, `catalog`, `render`, `awtrix` |
+| `internal/config` | TOML decoding, `${NAME}` expansion, validation, provider resolution, monthly request estimates | `transit`, `catalog`, `render`, `awtrix` |
 | `cmd/urbanist-timetable` | CLI commands and wiring (`wire.go`) | everything |
 
 Rules, from [CLAUDE.md](../CLAUDE.md):
@@ -82,6 +82,7 @@ Rules, from [CLAUDE.md](../CLAUDE.md):
   | `metrolisboa` | OAuth token | until 1 min before expiry | refetched on 401 once |
   | `carrismetropolitana` | lines | 24 h | keep last, retry in 15 min |
   | `carrismetropolitana` | stop list (search only) | process lifetime | not cached |
+  | `transitland` | each stop's departures, per window | `refresh_interval` (5 min) | failure reported until `refresh_interval` has passed; with no data yet, retry next poll |
 
   Every row except the token and stop list uses `upstream.Cache`
   (`pkg/transit/internal/upstream`), which is single-flight: one download
@@ -90,6 +91,12 @@ Rules, from [CLAUDE.md](../CLAUDE.md):
   detached from the poll's context, and callers keep using the previous
   schedule. Concurrent token fetches are harmless, so they are not
   deduplicated.
+- `transitland` caches departures, not just reference data, because every
+  request counts against a monthly quota. It fetches one `refresh_interval`
+  beyond the window and windows the cached result at each poll's
+  `Query.Now`, so boards keep their own poll interval. Providers with a
+  quota implement `transit.Metered`; `config validate` and `run` pass their
+  refresh intervals to `Config.EstimateRequests` and warn above the quota.
 - The process stops on `SIGINT` or `SIGTERM`: the root context is canceled,
   runners return, and a canceled fetch counts as neither a success nor a
   failure.

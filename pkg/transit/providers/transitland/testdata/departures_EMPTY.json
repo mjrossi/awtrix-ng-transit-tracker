@@ -1,0 +1,10 @@
+{
+ "stops": [
+  {
+   "stop_id": "EMPTY",
+   "stop_name": "Closed",
+   "departures": [],
+   "children": []
+  }
+ ]
+}

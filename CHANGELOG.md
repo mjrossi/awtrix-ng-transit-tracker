@@ -7,6 +7,16 @@ version may break configuration.
 
 ## [Unreleased]
 
+### Added
+
+- `transitland` provider: thousands of agencies through the Transitland
+  API, with timetabled trips shown alongside realtime ones. Needs a free
+  API key. Each stop is fetched at most once per `refresh_interval`
+  (5 minutes by default) to stay within the plan's monthly quota.
+- `config validate` prints each Transitland block's estimated requests a
+  month and warns when they exceed its `monthly_quota`; `run` logs the
+  same at startup.
+
 ## [0.4.0] - 2026-11-25
 
 ### Changed

@@ -1,0 +1,234 @@
+{
+ "stops": [
+  {
+   "stop_id": "LAKE",
+   "stop_name": "Lake Merritt",
+   "onestop_id": "s-9q9p1wxf72-lakemerritt",
+   "feed_version": {
+    "feed": {
+     "onestop_id": "f-9q9-bart"
+    }
+   },
+   "departures": [],
+   "children": [
+    {
+     "stop_id": "LAKE-1",
+     "departures": [
+      {
+       "stop_headsign": "",
+       "pickup_type": 0,
+       "schedule_relationship": "SCHEDULED",
+       "departure": {
+        "scheduled_utc": "2026-11-25T18:04:00Z",
+        "estimated_utc": "2026-11-25T18:06:00Z",
+        "scheduled_local": null
+       },
+       "trip": {
+        "trip_id": "1001",
+        "trip_headsign": "SFO / Millbrae",
+        "schedule_relationship": "SCHEDULED",
+        "route": {
+         "onestop_id": "r-9q9-antioch~sfia~millbrae",
+         "route_id": "1",
+         "route_short_name": "",
+         "route_long_name": "Antioch - SFIA/Millbrae",
+         "route_color": "ffff33",
+         "route_type": 1
+        }
+       }
+      },
+      {
+       "stop_headsign": "",
+       "pickup_type": 0,
+       "schedule_relationship": "STATIC",
+       "departure": {
+        "scheduled_utc": "2026-11-25T18:19:00Z",
+        "estimated_utc": null,
+        "scheduled_local": null
+       },
+       "trip": {
+        "trip_id": "1002",
+        "trip_headsign": "SFO / Millbrae",
+        "schedule_relationship": "STATIC",
+        "route": {
+         "onestop_id": "r-9q9-antioch~sfia~millbrae",
+         "route_id": "1",
+         "route_short_name": "",
+         "route_long_name": "Antioch - SFIA/Millbrae",
+         "route_color": "ffff33",
+         "route_type": 1
+        }
+       }
+      },
+      {
+       "stop_headsign": "",
+       "pickup_type": 0,
+       "schedule_relationship": "CANCELED",
+       "departure": {
+        "scheduled_utc": "2026-11-25T18:34:00Z",
+        "estimated_utc": null,
+        "scheduled_local": null
+       },
+       "trip": {
+        "trip_id": "1003",
+        "trip_headsign": "SFO / Millbrae",
+        "schedule_relationship": "CANCELED",
+        "route": {
+         "onestop_id": "r-9q9-antioch~sfia~millbrae",
+         "route_id": "1",
+         "route_short_name": "",
+         "route_long_name": "Antioch - SFIA/Millbrae",
+         "route_color": "ffff33",
+         "route_type": 1
+        }
+       }
+      },
+      {
+       "stop_headsign": "",
+       "pickup_type": 0,
+       "schedule_relationship": "STATIC",
+       "departure": {
+        "scheduled_utc": "2026-11-25T19:00:00Z",
+        "estimated_utc": null,
+        "scheduled_local": null
+       },
+       "trip": {
+        "trip_id": "1100",
+        "trip_headsign": "Daly City",
+        "schedule_relationship": "STATIC",
+        "route": {
+         "onestop_id": "r-9q9-dublin~pleasanton~daly~city",
+         "route_id": "11",
+         "route_short_name": "",
+         "route_long_name": "Dublin/Pleasanton - Daly City",
+         "route_color": "0099CC",
+         "route_type": 1
+        }
+       }
+      }
+     ]
+    },
+    {
+     "stop_id": "LAKE-2",
+     "departures": [
+      {
+       "stop_headsign": "Dublin",
+       "pickup_type": 0,
+       "schedule_relationship": "SCHEDULED",
+       "departure": {
+        "scheduled_utc": "2026-11-25T17:57:00Z",
+        "estimated_utc": "2026-11-25T18:02:00Z",
+        "scheduled_local": null
+       },
+       "trip": {
+        "trip_id": "2001",
+        "trip_headsign": "Dublin / Pleasanton",
+        "schedule_relationship": "SCHEDULED",
+        "route": {
+         "onestop_id": "r-9q9-dublin~pleasanton~daly~city",
+         "route_id": "11",
+         "route_short_name": "",
+         "route_long_name": "Dublin/Pleasanton - Daly City",
+         "route_color": "0099CC",
+         "route_type": 1
+        }
+       }
+      },
+      {
+       "stop_headsign": "",
+       "pickup_type": 1,
+       "schedule_relationship": "STATIC",
+       "departure": {
+        "scheduled_utc": "2026-11-25T18:12:00Z",
+        "estimated_utc": null,
+        "scheduled_local": null
+       },
+       "trip": {
+        "trip_id": "2002",
+        "trip_headsign": "Lake Merritt",
+        "schedule_relationship": "STATIC",
+        "route": {
+         "onestop_id": "r-9q9-dublin~pleasanton~daly~city",
+         "route_id": "11",
+         "route_short_name": "",
+         "route_long_name": "Dublin/Pleasanton - Daly City",
+         "route_color": "0099CC",
+         "route_type": 1
+        }
+       }
+      },
+      {
+       "stop_headsign": "",
+       "pickup_type": 0,
+       "schedule_relationship": "SKIPPED",
+       "departure": {
+        "scheduled_utc": "2026-11-25T18:27:00Z",
+        "estimated_utc": null,
+        "scheduled_local": null
+       },
+       "trip": {
+        "trip_id": "2003",
+        "trip_headsign": "Dublin / Pleasanton",
+        "schedule_relationship": "SKIPPED",
+        "route": {
+         "onestop_id": "r-9q9-dublin~pleasanton~daly~city",
+         "route_id": "11",
+         "route_short_name": "",
+         "route_long_name": "Dublin/Pleasanton - Daly City",
+         "route_color": "0099CC",
+         "route_type": 1
+        }
+       }
+      },
+      {
+       "stop_headsign": "",
+       "pickup_type": 0,
+       "schedule_relationship": "ADDED",
+       "departure": {
+        "scheduled_utc": "2026-11-25T18:09:00Z",
+        "estimated_utc": "2026-11-25T18:09:00Z",
+        "scheduled_local": null
+       },
+       "trip": {
+        "trip_id": "9001",
+        "trip_headsign": "Fruitvale",
+        "schedule_relationship": "ADDED",
+        "route": {
+         "onestop_id": "",
+         "route_id": "bridge",
+         "route_short_name": "B1",
+         "route_long_name": "Bus bridge",
+         "route_color": "",
+         "route_type": 3
+        }
+       }
+      },
+      {
+       "stop_headsign": "",
+       "pickup_type": 0,
+       "schedule_relationship": "SCHEDULED",
+       "departure": {
+        "scheduled_utc": "2026-11-25T18:04:00Z",
+        "estimated_utc": "2026-11-25T18:06:00Z",
+        "scheduled_local": null
+       },
+       "trip": {
+        "trip_id": "1001",
+        "trip_headsign": "SFO / Millbrae",
+        "schedule_relationship": "SCHEDULED",
+        "route": {
+         "onestop_id": "r-9q9-antioch~sfia~millbrae",
+         "route_id": "1",
+         "route_short_name": "",
+         "route_long_name": "Antioch - SFIA/Millbrae",
+         "route_color": "ffff33",
+         "route_type": 1
+        }
+       }
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

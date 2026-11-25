@@ -27,7 +27,8 @@ cannot serve the agency, because:
 
 - the agency publishes no GTFS-RT `TripUpdates`, or
 - its own API is clearly better, such as realtime data the GTFS-RT feed
-  lacks.
+  lacks, or
+- it aggregates many agencies behind one API, as `transitland` does.
 
 This keeps the number of adapters small enough to maintain.
 

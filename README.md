@@ -24,7 +24,8 @@ screen instead.
 > **Status:** early, and running on a real TC002. Supported today:
 > any agency publishing GTFS-Realtime, with six
 > [ready-made systems](#systems) checked against their live feeds, plus
-> dedicated providers for Metro de Lisboa and Carris Metropolitana. Only
+> dedicated providers for Metro de Lisboa and Carris Metropolitana, and
+> [Transitland](https://www.transit.land/) for thousands more. Only
 > the 52 × 16 TC002 is supported; other displays are on the roadmap in
 > [`docs/PLAN.md`](./docs/PLAN.md).
 >
@@ -256,6 +257,7 @@ Other settings in the block override the system's.
 | `carrismetropolitana` | Carris Metropolitana buses, Lisbon metropolitan area | None | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), © Carris Metropolitana |
 | `metrolisboa` | Metro de Lisboa, all four lines | Free OAuth client from the [API Store](https://api.metrolisboa.pt/store/) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), © Metropolitano de Lisboa |
 | `gtfsrt` | Any agency with GTFS and GTFS-Realtime TripUpdates, configured by URL (several per config with `type = "gtfsrt"`) | Depends on the agency | The agency's |
+| `transitland` | Thousands of agencies through [Transitland](https://www.transit.land/), schedule and realtime merged | Free API key; requests count against a monthly quota | The agency's; Transitland's terms apply |
 | `demo` | Generated departures for testing the display | None | — |
 
 Find an agency's feeds in the [Mobility Database](https://mobilitydatabase.org/),
@@ -270,6 +272,37 @@ realtime_urls = ["https://example.org/tripupdates.pb"]
 
 The `gtfsrt` provider shows only departures with realtime predictions;
 trips the feed does not list yet are missing until it does.
+
+### Transitland
+
+Prefer an agency's own feeds where you can: they have no quota. Where that
+is awkward (no realtime feed, a feed behind a key, or a schedule zip too
+large for your NAS), `transitland` serves the agency from one API, with
+timetabled trips shown even when realtime has none.
+
+```toml
+[providers.bart]
+type = "transitland"
+api_key = "${TRANSITLAND_API_KEY}"
+feed = "f-9q9-bart"        # the feed's Onestop ID; stops are then GTFS stop IDs
+refresh_interval = "2m"    # default 5m
+monthly_quota = 50000      # your plan's REST quota; default 10000 (free plan)
+```
+
+Every request counts against your plan's monthly quota (10,000 on the free
+plan, 50,000 on Hobbyist/Academic, which is free for non-commercial use).
+Each stop is fetched at most once per `refresh_interval`, and boards still
+count minutes down between fetches, so predictions are up to that old.
+Requests a month are about
+
+    31 × stops × active hours a day × 60 ÷ refresh minutes
+
+so one stop polled all day at 5 minutes is about 8,900, and two stops for
+16 hours a day at 2 minutes about 29,800. `config validate` prints this
+estimate, taking `active_hours` and `quiet_hours` into account, and warns
+when it exceeds `monthly_quota`; `run` logs it at startup. Stop searches
+count too. Find a feed's Onestop ID on its Transitland page. Data via
+Transitland.
 
 ## How it behaves
 

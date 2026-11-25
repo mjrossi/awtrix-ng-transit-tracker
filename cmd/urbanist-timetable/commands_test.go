@@ -154,3 +154,35 @@ stop = "s1"
 		}
 	}
 }
+
+func TestConfigValidateEstimatesQuota(t *testing.T) {
+	tests := map[string]struct {
+		refresh string
+		want    string
+		warn    bool
+	}{
+		"within quota": {"5m", "providers.tl: about 8928 requests a month, quota 10000\n", false},
+		"over quota":   {"2m", "providers.tl: about 22320 requests a month, quota 10000\n", true},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.toml")
+			src := "[clock]\nurl = \"http://clock.local\"\n[providers.tl]\ntype = \"transitland\"\napi_key = \"k\"\nfeed = \"f-9q9-bart\"\nrefresh_interval = \"" + tt.refresh + "\"\n[[boards]]\nname = \"bart\"\n[[boards.stops]]\nprovider = \"tl\"\nstop = \"LAKE\"\n"
+			if err := os.WriteFile(path, []byte(src), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			cmd := newRootCommand()
+			var out bytes.Buffer
+			cmd.Writer = &out
+			if err := cmd.Run(t.Context(), []string{"urbanist-timetable", "--config", path, "config", "validate"}); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(out.String(), tt.want) {
+				t.Errorf("output %q, want %q", out.String(), tt.want)
+			}
+			if got := strings.Contains(out.String(), "warning: providers.tl would exceed"); got != tt.warn {
+				t.Errorf("warning printed = %v, want %v: %q", got, tt.warn, out.String())
+			}
+		})
+	}
+}

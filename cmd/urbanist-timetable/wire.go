@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"log/slog"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/mjrossi/urbanist-timetable/internal/clockout"
@@ -30,6 +32,34 @@ func buildProviders(cfg *config.Config) (map[string]transit.Provider, error) {
 		out[name] = p
 	}
 	return out, nil
+}
+
+// quotaUse is a metered provider block's estimated requests a month.
+type quotaUse struct {
+	Provider        string
+	Requests, Quota int
+}
+
+// Over reports whether the estimate exceeds the quota.
+func (u quotaUse) Over() bool { return u.Requests > u.Quota }
+
+// quotaUses estimates monthly requests for every provider with a quota,
+// sorted by block name.
+func quotaUses(cfg *config.Config, provs map[string]transit.Provider) []quotaUse {
+	refresh := map[string]time.Duration{}
+	quota := map[string]int{}
+	for name, p := range provs {
+		if m, ok := p.(transit.Metered); ok {
+			refresh[name], quota[name] = m.RefreshInterval(), m.MonthlyQuota()
+		}
+	}
+	est := cfg.EstimateRequests(refresh)
+	out := make([]quotaUse, 0, len(est))
+	for name, n := range est {
+		out = append(out, quotaUse{Provider: name, Requests: n, Quota: quota[name]})
+	}
+	slices.SortFunc(out, func(a, b quotaUse) int { return strings.Compare(a.Provider, b.Provider) })
+	return out
 }
 
 func newClock(cfg *config.Config) (*awtrix.Client, error) {
@@ -66,11 +96,7 @@ func boardFor(cfg *config.Config, b config.Board, provs map[string]transit.Provi
 	return sb, nil
 }
 
-func newRunners(cfg *config.Config, out scheduler.Output, log *slog.Logger, now func() time.Time) ([]*scheduler.Runner, error) {
-	provs, err := buildProviders(cfg)
-	if err != nil {
-		return nil, err
-	}
+func newRunners(cfg *config.Config, provs map[string]transit.Provider, out scheduler.Output, log *slog.Logger, now func() time.Time) ([]*scheduler.Runner, error) {
 	runners := make([]*scheduler.Runner, 0, len(cfg.Boards))
 	for _, b := range cfg.Boards {
 		sb, err := boardFor(cfg, b, provs)

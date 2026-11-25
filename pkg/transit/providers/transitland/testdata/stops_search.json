@@ -1,0 +1,22 @@
+{
+ "stops": [
+  {
+   "stop_id": "LAKE",
+   "stop_name": "Lake Merritt",
+   "feed_version": {
+    "feed": {
+     "onestop_id": "f-9q9-bart"
+    }
+   }
+  },
+  {
+   "stop_id": "12TH",
+   "stop_name": "12th St. Oakland City Center",
+   "feed_version": {
+    "feed": {
+     "onestop_id": "f-9q9-bart"
+    }
+   }
+  }
+ ]
+}

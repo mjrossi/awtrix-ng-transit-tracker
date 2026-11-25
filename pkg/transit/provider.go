@@ -73,6 +73,16 @@ type StopSearcher interface {
 	SearchStops(ctx context.Context, search string) ([]Stop, error)
 }
 
+// Metered is implemented by providers whose upstream API has a monthly
+// request quota, so the configuration can be checked against it.
+type Metered interface {
+	// RefreshInterval is the shortest time between two upstream requests
+	// for one stop.
+	RefreshInterval() time.Duration
+	// MonthlyQuota is the number of upstream requests allowed a month.
+	MonthlyQuota() int
+}
+
 // Options decodes a provider's configuration block into v.
 type Options interface {
 	Decode(v any) error

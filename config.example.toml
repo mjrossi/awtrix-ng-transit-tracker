@@ -45,6 +45,19 @@ url = "http://awtrixng-a1b2c3.local"
 # Open API, no key needed.
 [providers.carrismetropolitana]
 
+# Transitland: thousands of agencies through one API, with timetabled trips
+# shown even without realtime. Prefer the agency's own feeds above where
+# you can, since every Transitland request counts against a monthly quota.
+# Get a key at https://www.transit.land/. With `feed` set to the feed's
+# Onestop ID, stops are its GTFS stop IDs; without it, use full stop keys
+# ("f-9q9-bart:LAKE"). `config validate` estimates requests a month.
+# [providers.bart]
+# type = "transitland"
+# api_key = "${TRANSITLAND_API_KEY}"
+# feed = "f-9q9-bart"
+# refresh_interval = "2m"   # at most one request per stop per interval; default 5m
+# monthly_quota = 50000     # Hobbyist/Academic plan; default 10000 (free plan)
+
 # Metro de Lisboa: needs an application subscribed to EstadoServicoML at
 # https://api.metrolisboa.pt/store/ (client-credentials grant, OAuth
 # tokens). Keep the keys in the environment, for example in

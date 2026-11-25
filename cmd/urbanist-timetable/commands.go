@@ -49,7 +49,11 @@ func runCommand() *cli.Command {
 			if err != nil {
 				return err
 			}
-			runners, err := newRunners(cfg, newClockOutput(cfg, clock), log, nil)
+			provs, err := buildProviders(cfg)
+			if err != nil {
+				return err
+			}
+			runners, err := newRunners(cfg, provs, newClockOutput(cfg, clock), log, nil)
 			if err != nil {
 				return err
 			}
@@ -69,6 +73,14 @@ func runCommand() *cli.Command {
 					slog.Any("active_hours", b.ActiveHours),
 					slog.Duration("poll_interval", b.PollInterval.D()),
 					slog.Duration("lifetime", b.Clock.Lifetime.D()))
+			}
+			for _, u := range quotaUses(cfg, provs) {
+				attrs := []any{slog.String("provider", u.Provider), slog.Int("requests_per_month", u.Requests), slog.Int("monthly_quota", u.Quota)}
+				if u.Over() {
+					log.WarnContext(ctx, "estimated requests exceed the provider's monthly quota; raise refresh_interval or narrow active_hours", attrs...)
+				} else {
+					log.InfoContext(ctx, "estimated provider requests", attrs...)
+				}
 			}
 			var wg sync.WaitGroup
 			if path := c.String("state"); path != "" {
@@ -115,7 +127,11 @@ func previewCommand() *cli.Command {
 				}
 			}
 			out := newClockOutput(cfg, pusher)
-			runners, err := newRunners(cfg, out, log, nil)
+			provs, err := buildProviders(cfg)
+			if err != nil {
+				return err
+			}
+			runners, err := newRunners(cfg, provs, out, log, nil)
 			if err != nil {
 				return err
 			}
@@ -167,16 +183,31 @@ func configCommand() *cli.Command {
 				if err != nil {
 					return err
 				}
-				if _, err := buildProviders(cfg); err != nil {
+				provs, err := buildProviders(cfg)
+				if err != nil {
 					return err
 				}
 				if _, err := newClock(cfg); err != nil {
 					return err
 				}
-				fmt.Printf("%s: OK (%d boards)\n", c.String("config"), len(cfg.Boards))
+				w := c.Root().Writer
+				fmt.Fprintf(w, "%s: OK (%d boards)\n", c.String("config"), len(cfg.Boards))
+				writeQuotaUses(w, quotaUses(cfg, provs))
 				return nil
 			},
 		}},
+	}
+}
+
+// writeQuotaUses prints each metered provider's estimate. Going over is a
+// warning, not an error: the configuration is valid, and upstream refuses
+// the excess requests.
+func writeQuotaUses(w io.Writer, uses []quotaUse) {
+	for _, u := range uses {
+		fmt.Fprintf(w, "providers.%s: about %d requests a month, quota %d\n", u.Provider, u.Requests, u.Quota)
+		if u.Over() {
+			fmt.Fprintf(w, "warning: providers.%s would exceed its monthly quota; raise refresh_interval or narrow active_hours\n", u.Provider)
+		}
 	}
 }
 
