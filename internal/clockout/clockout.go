@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/mjrossi/urbanist-timetable/internal/render"
@@ -34,6 +35,11 @@ type Board struct {
 type Output struct {
 	pusher Pusher
 	boards map[string]Board
+
+	mu sync.Mutex
+	// pushed is when each board's last push returned, even with an error,
+	// since the clock may have applied it.
+	pushed map[string]time.Time
 }
 
 var _ scheduler.Output = (*Output)(nil)
@@ -41,7 +47,7 @@ var _ scheduler.Output = (*Output)(nil)
 // New returns an output for the given boards, keyed by board name. pusher
 // may be nil when the output is used only to build apps.
 func New(pusher Pusher, boards map[string]Board) *Output {
-	return &Output{pusher: pusher, boards: boards}
+	return &Output{pusher: pusher, boards: boards, pushed: map[string]time.Time{}}
 }
 
 // App renders a snapshot into the payload pushed to the clock.
@@ -71,13 +77,29 @@ func (o *Output) Publish(ctx context.Context, snap scheduler.Snapshot) error {
 	if err != nil {
 		return err
 	}
-	return o.pusher.PushApp(ctx, snap.Board, app)
+	err = o.pusher.PushApp(ctx, snap.Board, app)
+	o.mu.Lock()
+	o.pushed[snap.Board] = time.Now()
+	o.mu.Unlock()
+	return err
 }
 
-// Withdraw implements scheduler.Output.
+// Withdraw implements scheduler.Output. Once the app's lifetime has passed it
+// has left the clock by itself, so nothing is sent.
 func (o *Output) Withdraw(ctx context.Context, board string) error {
 	if o.pusher == nil {
 		return errNoPusher
 	}
+	if o.expired(board) {
+		return nil
+	}
 	return o.pusher.ExpireApp(ctx, board)
+}
+
+func (o *Output) expired(board string) bool {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	last, ok := o.pushed[board]
+	lifetime := o.boards[board].Lifetime
+	return ok && lifetime > 0 && time.Since(last) > lifetime
 }

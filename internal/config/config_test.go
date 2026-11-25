@@ -128,7 +128,13 @@ func TestInvalid(t *testing.T) {
 		"fast poll":           {strings.Replace(minimal, `name = "metro"`, "name = \"m\"\npoll_interval = \"5s\"", 1), "poll_interval"},
 		"short life":          {withClock("lifetime = \"20s\""), "clock.lifetime"},
 		"no provider section": {strings.Replace(minimal, "[providers.demo]", "", 1), "providers.demo"},
-		"bad hours":           {strings.Replace(minimal, `name = "metro"`, "name = \"m\"\nactive_hours = \"6-23\"", 1), "active_hours"},
+		"bad hours":           {strings.Replace(minimal, `name = "metro"`, "name = \"m\"\nactive_hours = \"6-23\"", 1), "active_hours: "},
+		"bad quiet hours":     {"quiet_hours = \"23-6\"\n" + minimal, "quiet_hours: "},
+		"all-day quiet hours": {"quiet_hours = \"00:00-00:00\"\n" + minimal, "quiet_hours: "},
+		"unquoted hours":      {strings.Replace(minimal, `name = "metro"`, "name = \"m\"\nactive_hours = 6", 1), "active_hours: "},
+		"unquoted quiet int":  {"quiet_hours = 6\n" + minimal, "quiet_hours: "},
+		"unquoted quiet num":  {"quiet_hours = 6.5\n" + minimal, "quiet_hours: "},
+		"unquoted quiet bool": {"quiet_hours = true\n" + minimal, "quiet_hours: "},
 		"bad zone":            {"timezone = \"Mars/Olympus\"\n" + minimal, "timezone"},
 		"bad layout":          {withClock("layout = \"grid\""), "clock: layout"},
 		"bad overflow":        {withClock("overflow = \"wrap\""), "overflow"},
@@ -172,14 +178,13 @@ func TestProviderOptionsStrict(t *testing.T) {
 	}
 }
 
-func TestActiveHours(t *testing.T) {
+func TestDailyWindow(t *testing.T) {
 	at := func(h, m int) time.Time { return time.Date(2026, 1, 1, h, m, 0, 0, time.UTC) }
 	tests := []struct {
 		spec string
 		t    time.Time
 		want bool
 	}{
-		{"", at(3, 0), true},
 		{"06:00-23:30", at(5, 59), false},
 		{"06:00-23:30", at(6, 0), true},
 		{"06:00-23:30", at(23, 29), true},
@@ -190,8 +195,8 @@ func TestActiveHours(t *testing.T) {
 		{"18:00-02:00", at(20, 0), true},
 	}
 	for _, tt := range tests {
-		var a config.ActiveHours
-		if err := a.UnmarshalText([]byte(tt.spec)); err != nil {
+		a := config.DailyWindow(tt.spec)
+		if err := a.Validate(); err != nil {
 			t.Fatal(err)
 		}
 		if got := a.Contains(tt.t); got != tt.want {
@@ -199,9 +204,57 @@ func TestActiveHours(t *testing.T) {
 		}
 	}
 	for _, bad := range []string{"06:00", "6-23", "25:00-26:00", "08:00-08:00"} {
-		var a config.ActiveHours
-		if err := a.UnmarshalText([]byte(bad)); err == nil {
+		if err := config.DailyWindow(bad).Validate(); err == nil {
 			t.Errorf("%q accepted", bad)
+		}
+	}
+}
+
+func TestUnsetActiveHoursCoverTheDay(t *testing.T) {
+	for _, unset := range []config.DailyWindow{"", " "} {
+		if err := unset.Validate(); err != nil {
+			t.Errorf("%q: %v", unset, err)
+		}
+		if !(config.Board{ActiveHours: unset}).Active(time.Date(2026, 1, 1, 3, 0, 0, 0, time.UTC)) {
+			t.Errorf("board with active hours %q is inactive, want always active", unset)
+		}
+	}
+}
+
+func TestQuietHours(t *testing.T) {
+	// The board's own zone must not matter.
+	parse := func(quiet string) *config.Config {
+		src := "timezone = \"Europe/Lisbon\"\n" + quiet + strings.Replace(minimal, `name = "metro"`, "name = \"metro\"\ntimezone = \"Asia/Tokyo\"", 1)
+		cfg, err := config.Parse([]byte(strings.Replace(src, "%s", "clock.local", 1)), noEnv)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return cfg
+	}
+	tokyo, err := time.LoadLocation("Asia/Tokyo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lisbon, err := time.LoadLocation("Europe/Lisbon")
+	if err != nil {
+		t.Fatal(err)
+	}
+	set := parse("quiet_hours = \"23:30-06:30\"\n")
+	// Lisbon is on UTC in winter and an hour ahead in summer.
+	for _, month := range []time.Month{time.January, time.July} {
+		for _, tt := range []struct {
+			h, m int
+			want bool
+		}{{23, 29, false}, {23, 30, true}, {3, 0, true}, {6, 29, true}, {6, 30, false}, {12, 0, false}} {
+			at := time.Date(2026, month, 1, tt.h, tt.m, 0, 0, lisbon)
+			if got := set.Quiet(at.In(tokyo)); got != tt.want {
+				t.Errorf("Quiet at %s in Lisbon = %v, want %v", at, got, tt.want)
+			}
+		}
+	}
+	for _, unset := range []string{"", "quiet_hours = \"\"\n"} {
+		if parse(unset).Quiet(time.Date(2026, 1, 1, 3, 0, 0, 0, time.UTC)) {
+			t.Errorf("config with %q is quiet, want never", unset)
 		}
 	}
 }

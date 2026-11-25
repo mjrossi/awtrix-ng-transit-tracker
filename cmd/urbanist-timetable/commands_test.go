@@ -27,6 +27,18 @@ func TestCleanupIdentifiesTheClock(t *testing.T) {
 	}
 }
 
+func TestCleanupFollowsQuietHours(t *testing.T) {
+	clock, err := awtrix.NewClient("192.168.1.50")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{QuietHours: "23:00-06:00"}
+	c := newCleanup(cfg, "", clock, nil)
+	if night := time.Date(2026, 11, 24, 0, 30, 0, 0, cfg.Location()); c.Quiet == nil || !c.Quiet(night) {
+		t.Error("cleanup is not paused in quiet hours")
+	}
+}
+
 func TestVersionFlag(t *testing.T) {
 	cmd := newRootCommand()
 	var out bytes.Buffer
@@ -89,6 +101,7 @@ func TestPrintRowsMarksHiddenRows(t *testing.T) {
 
 func TestBoardForUsesBoardTimezone(t *testing.T) {
 	src := `timezone = "Europe/Lisbon"
+quiet_hours = "23:00-06:00"
 [clock]
 url = "http://clock.local"
 [providers.demo]
@@ -124,7 +137,7 @@ stop = "s1"
 		{"tokyo", "Asia/Tokyo", false},
 	}
 	for i, tt := range tests {
-		sb, err := boardFor(cfg.Boards[i], provs)
+		sb, err := boardFor(cfg, cfg.Boards[i], provs)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -133,6 +146,11 @@ stop = "s1"
 		}
 		if got := sb.Active(instant.In(sb.Location)); got != tt.active {
 			t.Errorf("board %s: active = %v, want %v", sb.Name, got, tt.active)
+		}
+		// 00:30 in Lisbon is 09:30 in Tokyo.
+		night := time.Date(2026, 11, 24, 0, 30, 0, 0, time.UTC)
+		if sb.Quiet(instant.In(sb.Location)) || !sb.Quiet(night.In(sb.Location)) {
+			t.Errorf("board %s: quiet hours do not follow the top-level time zone", sb.Name)
 		}
 	}
 }

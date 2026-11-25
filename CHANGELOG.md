@@ -17,15 +17,30 @@ version may break configuration.
   it in `/data`, so mount a volume there. Boards removed before this version
   have to be deleted once in the clock's web UI.
 - Names with accents, such as "São Sebastião", use the `matrix-light6` font,
-  because the `small` font runs accents into their letters. This needs
-  AWTRIX NG 1.2.2 or later; on older firmware set `name_font = "small"`.
+  because the `small` font runs accents into their letters. Set
+  `name_font = "small"` to keep the old look.
+- A board that cannot be hidden because the clock is unreachable is no longer
+  retried on every poll after its app has expired.
+- Stopping the service no longer logs a publish warning.
+- A board is no longer shown after its `active_hours` end because a fetch was
+  still running, and is hidden even if its last push reported an error.
 
 ### Added
 
+- `quiet_hours`, a night mode: every board is hidden during a daily window,
+  and the service makes no requests except to hide them.
+- The README explains what happens outside `active_hours`.
 - `name_font` in `[boards.clock]` sets the font of destination names.
 - Logs say which boards and stops are configured at startup, and when a
-  board is first shown, loses all usable data, recovers, or is outside its
-  active hours. `--log-level debug` also logs every fetch and push.
+  board is first shown, loses all usable data, recovers, or is hidden and why.
+  `--log-level debug` also logs every fetch and push.
+- The README states the minimum firmware, AWTRIX NG 1.2.2: earlier releases
+  have no layouts.
+
+### Removed
+
+- `awtrix.Client.DeleteApp`, which also erased a script of the same name. Use
+  `ExpireApp`.
 
 ## [0.3.0] - 2026-11-24
 

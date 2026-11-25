@@ -3,8 +3,10 @@ package clockout_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
@@ -21,16 +23,17 @@ var now = time.Date(2026, 11, 22, 8, 0, 0, 0, time.UTC)
 type fakePusher struct {
 	pushed  map[string]awtrix.App
 	expired []string
+	err     error
 }
 
 func (p *fakePusher) PushApp(_ context.Context, name string, app awtrix.App) error {
 	p.pushed[name] = app
-	return nil
+	return p.err
 }
 
 func (p *fakePusher) ExpireApp(_ context.Context, name string) error {
 	p.expired = append(p.expired, name)
-	return nil
+	return p.err
 }
 
 // snapshot has one source whose last fetch failed, with one predicted
@@ -92,8 +95,61 @@ func TestWithdrawExpiresApp(t *testing.T) {
 		t.Fatal(err)
 	}
 	if diff := cmp.Diff([]string{"metro"}, p.expired); diff != "" {
-		t.Errorf("deleted (-want +got):\n%s", diff)
+		t.Errorf("expired (-want +got):\n%s", diff)
 	}
+}
+
+// An app whose lifetime has passed left the clock by itself, so a clock that
+// stays unreachable is not asked again.
+func TestWithdrawStopsOnceTheAppHasExpired(t *testing.T) {
+	offline := errors.New("clock offline")
+	tests := map[string]struct {
+		lifetime time.Duration
+		pushErr  error
+		after    time.Duration
+		want     int
+	}{
+		"within the lifetime":  {3 * time.Minute, nil, 2 * time.Minute, 1},
+		"past the lifetime":    {3 * time.Minute, nil, 4 * time.Minute, 0},
+		"after a failed push":  {3 * time.Minute, offline, 2 * time.Minute, 1},
+		"without any lifetime": {0, nil, 24 * time.Hour, 1},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				p := &fakePusher{pushed: map[string]awtrix.App{}, err: tt.pushErr}
+				o := clockout.New(p, map[string]clockout.Board{"metro": {Lifetime: tt.lifetime}})
+				if err := o.Publish(t.Context(), snapshot()); !errors.Is(err, tt.pushErr) {
+					t.Fatalf("Publish: %v", err)
+				}
+				time.Sleep(tt.after)
+				p.err = offline
+				err := o.Withdraw(t.Context(), "metro")
+				if len(p.expired) != tt.want || (err != nil) != (tt.want > 0) {
+					t.Errorf("requests = %d, err = %v; want %d requests", len(p.expired), err, tt.want)
+				}
+			})
+		})
+	}
+}
+
+// A failed push may still have reached the clock, so it counts too.
+func TestFailedPushRestartsTheLifetime(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		p := &fakePusher{pushed: map[string]awtrix.App{}}
+		o := clockout.New(p, map[string]clockout.Board{"metro": {Lifetime: 3 * time.Minute}})
+		if err := o.Publish(t.Context(), snapshot()); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(2 * time.Minute)
+		p.err = errors.New("timeout")
+		_ = o.Publish(t.Context(), snapshot())
+		time.Sleep(2 * time.Minute)
+		_ = o.Withdraw(t.Context(), "metro")
+		if len(p.expired) != 1 {
+			t.Errorf("requests = %d, want 1", len(p.expired))
+		}
+	})
 }
 
 func TestAppNeedsBoardSettings(t *testing.T) {

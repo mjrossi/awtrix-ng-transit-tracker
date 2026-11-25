@@ -103,8 +103,9 @@ func (c *Client) PushApp(ctx context.Context, name string, app App) error {
 }
 
 // ExpireApp removes the pushed app called name by replacing it with one that
-// expires at once. Unlike DeleteApp, it cannot touch a script of that name.
-// The name keeps its place in the rotation; see ForgetApps.
+// expires at once. It does not use DELETE /api/v1/apps/{name}, which also
+// erases the source and data of a script of that name. The name keeps its
+// place in the rotation; see ForgetApps.
 func (c *Client) ExpireApp(ctx context.Context, name string) error {
 	return c.PushApp(ctx, name, App{LifetimeMs: 1, LifetimeExpiry: ExpiryRemove})
 }
@@ -115,20 +116,6 @@ func (c *Client) Host() string { return strings.ToLower(c.base.Host) }
 // ID tells clocks apart: the host, and the path for clocks that share one
 // behind a proxy.
 func (c *Client) ID() string { return c.Host() + strings.TrimRight(c.base.Path, "/") }
-
-// DeleteApp removes whatever is called name, including a script's source and
-// data; use ExpireApp for a pushed app. An app that is already gone counts
-// as removed. The name of a pushed app keeps its place in the rotation.
-func (c *Client) DeleteApp(ctx context.Context, name string) error {
-	if !ValidAppName(name) {
-		return fmt.Errorf("awtrix: invalid app name %q", name)
-	}
-	err := c.do(ctx, http.MethodDelete, "/api/v1/apps/"+name, nil, nil)
-	if apiErr, ok := errors.AsType[*APIError](err); ok && apiErr.Status == http.StatusNotFound {
-		return nil
-	}
-	return err
-}
 
 // maxReply bounds a decoded answer; a full app list is a few kilobytes.
 const maxReply = 1 << 20

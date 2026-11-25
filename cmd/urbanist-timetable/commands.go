@@ -56,7 +56,8 @@ func runCommand() *cli.Command {
 			log.InfoContext(ctx, "starting",
 				slog.String("version", version),
 				slog.Int("boards", len(runners)),
-				slog.String("clock", clock.Host()))
+				slog.String("clock", clock.Host()),
+				slog.Any("quiet_hours", cfg.QuietHours))
 			for _, b := range cfg.Boards {
 				stops := make([]string, len(b.Stops))
 				for i, s := range b.Stops {
@@ -65,6 +66,7 @@ func runCommand() *cli.Command {
 				log.InfoContext(ctx, "board configured",
 					slog.String("board", b.Name),
 					slog.Any("stops", stops),
+					slog.Any("active_hours", b.ActiveHours),
 					slog.Duration("poll_interval", b.PollInterval.D()),
 					slog.Duration("lifetime", b.Clock.Lifetime.D()))
 			}

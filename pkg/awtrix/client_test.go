@@ -77,27 +77,6 @@ func TestPushApp(t *testing.T) {
 	}
 }
 
-func TestDeleteApp(t *testing.T) {
-	c, got := newServer(t, http.StatusNoContent, "")
-	if err := c.DeleteApp(t.Context(), "metro"); err != nil {
-		t.Fatal(err)
-	}
-	if r := (*got)[0]; r.Method != http.MethodDelete || r.Path != "/api/v1/apps/metro" {
-		t.Errorf("got %s %s", r.Method, r.Path)
-	}
-}
-
-func TestDeleteMissingAppSucceeds(t *testing.T) {
-	c, _ := newServer(t, http.StatusNotFound, `{"error":{"code":"notFound","message":"no app"}}`)
-	if err := c.DeleteApp(t.Context(), "metro"); err != nil {
-		t.Errorf("DeleteApp of a missing app: %v", err)
-	}
-	c, _ = newServer(t, http.StatusUnauthorized, "")
-	if err := c.DeleteApp(t.Context(), "metro"); err == nil {
-		t.Error("DeleteApp succeeded on 401")
-	}
-}
-
 func TestAPIError(t *testing.T) {
 	c, _ := newServer(t, http.StatusUnprocessableEntity,
 		`{"error":{"code":"validationFailed","message":"outside the display","field":"layout.regions[0].box"}}`)

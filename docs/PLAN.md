@@ -146,8 +146,9 @@ providers). Each widens who the project works for.
 - Still to confirm on the maintainer's TC002:
   - stopping the service removes the app after its lifetime (three polls);
   - after a clock reboot the app returns within one poll;
-  - outside active hours the app leaves at once, by a push that expires
-    after 1 ms;
+  - outside active hours and in quiet hours the app leaves at once, by a
+    push that expires after 1 ms, and an arranged board returns to its place,
+    also if the clock rebooted meanwhile;
   - a removed board leaves the app list, and the rest of the rotation,
     scripts included, stays as it was;
   - names in `matrix-light6` next to boards in `small`, and that a name

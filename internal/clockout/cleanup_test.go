@@ -71,6 +71,46 @@ func TestCleanupBacksOffUntilForgotten(t *testing.T) {
 	})
 }
 
+func TestCleanupWaitsOutQuietHours(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	synctest.Test(t, func(t *testing.T) {
+		begin := time.Now()
+		f := &fakeForgetter{errs: []error{errors.New("clock offline")}}
+		c := cleanup(path, "clock.lan", f, "b65")
+		c.Run(t.Context())
+		c.Boards = []string{"saldanha"}
+		// Quiet at the start, and again around the first retry.
+		c.Quiet = func(now time.Time) bool {
+			d := now.Sub(begin)
+			return d < 10*time.Minute || d >= 11*time.Minute && d < 20*time.Minute
+		}
+		c.Run(t.Context())
+		var at []time.Duration
+		for _, tm := range f.times {
+			at = append(at, tm.Sub(begin))
+		}
+		if diff := cmp.Diff([]time.Duration{10 * time.Minute, 20 * time.Minute}, at); diff != "" {
+			t.Errorf("attempts (-want +got):\n%s", diff)
+		}
+	})
+}
+
+// Stopping the service does not have to wait for the end of quiet hours.
+func TestCleanupStopsDuringQuietHours(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	f := &fakeForgetter{}
+	c := cleanup(path, "clock.lan", f, "b65")
+	c.Run(t.Context())
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	c.Boards = []string{"saldanha"}
+	c.Quiet = func(time.Time) bool { return true }
+	c.Run(ctx)
+	if len(f.calls) != 0 {
+		t.Errorf("forgot %v in quiet hours", f.calls)
+	}
+}
+
 // A service stopped before it reached the clock still owes the cleanup.
 func TestCleanupResumesAfterRestart(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state.json")
@@ -93,9 +133,17 @@ func TestCleanupIgnoresAnotherClocksApps(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state.json")
 	f := &fakeForgetter{}
 	cleanup(path, "old.lan", f, "b65").Run(t.Context())
-	cleanup(path, "new.lan", f, "saldanha").Run(t.Context())
+	var logs strings.Builder
+	c := cleanup(path, "new.lan", f, "saldanha")
+	c.Log = slog.New(slog.NewTextHandler(&logs, nil))
+	c.Run(t.Context())
 	if len(f.calls) != 0 {
 		t.Errorf("forgot %v on a different clock", f.calls)
+	}
+	for _, want := range []string{"level=INFO", "old.lan", "new.lan", "b65"} {
+		if !strings.Contains(logs.String(), want) {
+			t.Errorf("logs = %q, want %q in them", logs.String(), want)
+		}
 	}
 }
 

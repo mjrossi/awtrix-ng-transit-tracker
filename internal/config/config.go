@@ -32,13 +32,16 @@ const (
 
 // Config is the whole file.
 type Config struct {
-	// Timezone is the IANA name for active hours on boards that set none.
-	// Empty means the process's local zone (the TZ environment variable in
-	// Docker).
-	Timezone  string                    `toml:"timezone"`
-	Clock     Clock                     `toml:"clock"`
-	Providers map[string]map[string]any `toml:"providers"`
-	Boards    []Board                   `toml:"boards"`
+	// Timezone is the IANA name for quiet hours, and for active hours on
+	// boards that set none. Empty means the process's local zone (the TZ
+	// environment variable in Docker).
+	Timezone string `toml:"timezone"`
+	// QuietHours is when the service hides every board and starts no other
+	// requests; see Quiet.
+	QuietHours DailyWindow               `toml:"quiet_hours"`
+	Clock      Clock                     `toml:"clock"`
+	Providers  map[string]map[string]any `toml:"providers"`
+	Boards     []Board                   `toml:"boards"`
 
 	location *time.Location
 }
@@ -54,10 +57,12 @@ type Clock struct {
 // is one pushed app, named after the board.
 type Board struct {
 	// Name identifies the board, and is its app name on the clock.
-	Name         string      `toml:"name"`
-	PollInterval Duration    `toml:"poll_interval"`
-	Window       Duration    `toml:"window"`
-	ActiveHours  ActiveHours `toml:"active_hours"`
+	Name         string   `toml:"name"`
+	PollInterval Duration `toml:"poll_interval"`
+	Window       Duration `toml:"window"`
+	// ActiveHours is when the board is polled and shown, not when the agency
+	// runs. Unset means all day.
+	ActiveHours DailyWindow `toml:"active_hours"`
 	// Timezone is the IANA name for active hours; empty uses the top-level
 	// timezone.
 	Timezone string `toml:"timezone"`
@@ -112,6 +117,11 @@ func (c BoardClock) options() render.Options {
 	}
 }
 
+// Active reports whether t, in the board's location, is in its active hours.
+func (b Board) Active(t time.Time) bool {
+	return !b.ActiveHours.IsSet() || b.ActiveHours.Contains(t)
+}
+
 // Location is the board's resolved time zone.
 func (b Board) Location() *time.Location { return orLocal(b.location) }
 
@@ -146,6 +156,12 @@ func (s Stop) Filter() transit.Filter {
 	}
 }
 
+// Quiet reports whether t is in the quiet hours, which follow the top-level
+// time zone even for boards with their own.
+func (c *Config) Quiet(t time.Time) bool {
+	return c.QuietHours.IsSet() && c.QuietHours.Contains(t.In(c.Location()))
+}
+
 // Location is the resolved time zone.
 func (c *Config) Location() *time.Location { return orLocal(c.location) }
 
@@ -169,6 +185,10 @@ func Parse(b []byte, lookup func(string) (string, bool)) (*Config, error) {
 		var strict *toml.StrictMissingError
 		if errors.As(err, &strict) {
 			return nil, fmt.Errorf("config: %s", strict.String())
+		}
+		var de *toml.DecodeError
+		if errors.As(err, &de) && len(de.Key()) > 0 {
+			return nil, fmt.Errorf("config: %s: %w", strings.Join(de.Key(), "."), err)
 		}
 		return nil, fmt.Errorf("config: %w", err)
 	}
@@ -245,6 +265,9 @@ func (c *Config) validate() error {
 			c.location = loc
 		}
 	}
+	if err := c.QuietHours.Validate(); err != nil {
+		errs = append(errs, fmt.Errorf("quiet_hours: %w", err))
+	}
 	if c.Clock.URL == "" {
 		errs = append(errs, errors.New("clock.url is required"))
 	}
@@ -302,6 +325,9 @@ func (b *Board) validate(providers map[string]map[string]any) error {
 	var errs []error
 	if !awtrix.ValidAppName(b.Name) {
 		errs = append(errs, fmt.Errorf("name %q must be 1-32 letters, digits, - or _", b.Name))
+	}
+	if err := b.ActiveHours.Validate(); err != nil {
+		errs = append(errs, fmt.Errorf("active_hours: %w", err))
 	}
 	if b.PollInterval.D() < MinPollInterval {
 		errs = append(errs, fmt.Errorf("poll_interval must be at least %s", MinPollInterval))
