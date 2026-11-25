@@ -116,7 +116,8 @@ func (p *Provider) Departures(ctx context.Context, q transit.Query) ([]transit.D
 		}
 		out = append(out, l.departures(q.StopID, q.Now, end)...)
 	}
-	return transit.SortAndLimit(out, q.Limit), nil
+	transit.SortByTime(out)
+	return out, nil
 }
 
 // departures lists scheduled times on the grid offset + k*headway (counted

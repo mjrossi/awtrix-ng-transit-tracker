@@ -17,6 +17,18 @@ version may break configuration.
   Transitland key, adding up blocks that share one, and warns when they
   exceed `monthly_quota`; `run` logs the same at startup.
 
+### Changed
+
+- For programs that import `pkg/transit`: `Query.Limit` and `Stop.Modes`,
+  which the service never used, are removed, and `SortAndLimit` is now
+  `SortByTime`. Providers return `transit.ErrUnknownStop` instead of an
+  error of their own.
+
+### Fixed
+
+- The notes for `sf-bart` name the labels table correctly,
+  `[boards.clock.labels]`.
+
 ## [0.4.0] - 2026-11-25
 
 ### Changed

@@ -244,9 +244,9 @@ func TestErrors(t *testing.T) {
 		"forbidden":     {status: http.StatusForbidden, stop: "HC", want: "check api_key"},
 		"quota":         {status: http.StatusTooManyRequests, stop: "HC", want: "quota"},
 		"server error":  {status: http.StatusBadGateway, stop: "HC", want: "502"},
-		"not found":     {status: http.StatusNotFound, stop: "HC", is: transitland.ErrUnknownStop},
-		"unknown stop":  {stop: "NOPE", is: transitland.ErrUnknownStop},
-		"stop not sent": {stop: "", is: transitland.ErrUnknownStop},
+		"not found":     {status: http.StatusNotFound, stop: "HC", is: transit.ErrUnknownStop},
+		"unknown stop":  {stop: "NOPE", is: transit.ErrUnknownStop},
+		"stop not sent": {stop: "", is: transit.ErrUnknownStop},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -279,7 +279,7 @@ func TestEmptyStopsListIsUnknown(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := p.Departures(t.Context(), query("f-x:1", time.Hour)); !errors.Is(err, transitland.ErrUnknownStop) {
+	if _, err := p.Departures(t.Context(), query("f-x:1", time.Hour)); !errors.Is(err, transit.ErrUnknownStop) {
 		t.Errorf("err = %v, want ErrUnknownStop", err)
 	}
 }
@@ -296,7 +296,7 @@ func TestNew(t *testing.T) {
 		"no key":        {cfg: transitland.Config{}, wantErr: "api_key"},
 		"blank key":     {cfg: transitland.Config{APIKey: "  "}, wantErr: "api_key"},
 		"too fast":      {cfg: transitland.Config{APIKey: "k", RefreshInterval: "30s"}, wantErr: "at least 1m"},
-		"too slow":      {cfg: transitland.Config{APIKey: "k", RefreshInterval: "6h"}, wantErr: "at most 1h"},
+		"too slow":      {cfg: transitland.Config{APIKey: "k", RefreshInterval: "11m"}, wantErr: "at most 10m"},
 		"base query":    {cfg: transitland.Config{APIKey: "k", BaseURL: "https://x/?token=1"}, wantErr: "base_url"},
 		"bad duration":  {cfg: transitland.Config{APIKey: "k", RefreshInterval: "5"}, wantErr: "refresh_interval"},
 		"neg quota":     {cfg: transitland.Config{APIKey: "k", MonthlyQuota: -1}, wantErr: "monthly_quota"},
@@ -355,59 +355,16 @@ func TestSearchStops(t *testing.T) {
 	}
 }
 
-func TestFailureAfterData(t *testing.T) {
-	const refresh = 10 * time.Minute
-	tests := map[string]struct {
-		after time.Duration
-		// wantPartial expects departures with a *transit.PartialError;
-		// otherwise only an error.
-		wantPartial bool
-	}{
-		"one refresh missed":  {after: refresh, wantPartial: true},
-		"just before the end": {after: 2*refresh - time.Second, wantPartial: true},
-		"too old":             {after: 2 * refresh},
-	}
-	for name, tt := range tests {
-		t.Run(name, func(t *testing.T) {
-			s := newServer(t)
-			p := newProvider(t, s, transitland.Config{Feed: feed, RefreshInterval: refresh.String()})
-			if _, err := p.Departures(t.Context(), query("HC", 2*time.Hour)); err != nil {
-				t.Fatal(err)
-			}
-			s.status.Store(http.StatusBadGateway)
-			q := query("HC", 2*time.Hour)
-			q.Now = now.Add(tt.after)
-			deps, err := p.Departures(t.Context(), q)
-			var partial *transit.PartialError
-			if got := errors.As(err, &partial); got != tt.wantPartial {
-				t.Fatalf("err = %v, partial = %v, want %v", err, got, tt.wantPartial)
-			}
-			if err == nil {
-				t.Fatal("no error")
-			}
-			if !tt.wantPartial {
-				return
-			}
-			transittest.CheckDepartures(t, q, deps)
-			for _, d := range deps {
-				if d.Realtime() {
-					t.Errorf("%s at %s is still live after a failed fetch", d.Line.ShortName, d.Time())
-				}
-			}
-		})
-	}
-}
-
-func TestFailedRefreshRetriesSoonerThanRefresh(t *testing.T) {
+// Earlier data is the scheduler's to reuse, so a failure is only an error.
+func TestFailedRefresh(t *testing.T) {
 	s := newServer(t)
-	p := newProvider(t, s, transitland.Config{Feed: feed, RefreshInterval: "30m"})
-	poll := func(after time.Duration) error {
+	p := newProvider(t, s, transitland.Config{Feed: feed, RefreshInterval: "10m"})
+	poll := func(after time.Duration) ([]transit.Departure, error) {
 		q := query("HC", 2*time.Hour)
 		q.Now = now.Add(after)
-		_, err := p.Departures(t.Context(), q)
-		return err
+		return p.Departures(t.Context(), q)
 	}
-	if err := poll(0); err != nil {
+	if _, err := poll(0); err != nil {
 		t.Fatal(err)
 	}
 	s.status.Store(http.StatusBadGateway)
@@ -415,68 +372,38 @@ func TestFailedRefreshRetriesSoonerThanRefresh(t *testing.T) {
 		after time.Duration
 		calls int32
 	}{
-		{30 * time.Minute, 2},
-		{34 * time.Minute, 2},
-		{35 * time.Minute, 3},
+		{10 * time.Minute, 2},
+		{10*time.Minute + 59*time.Second, 2},
+		{11 * time.Minute, 3},
 	}
 	for _, st := range steps {
-		if err := poll(st.after); err == nil {
-			t.Fatalf("after %s: no error", st.after)
+		deps, err := poll(st.after)
+		var partial *transit.PartialError
+		if err == nil || errors.As(err, &partial) || deps != nil {
+			t.Fatalf("after %s: %d departures, err %v; want only an error", st.after, len(deps), err)
 		}
 		if got := s.calls.Load(); got != st.calls {
 			t.Fatalf("after %s: %d requests, want %d", st.after, got, st.calls)
 		}
 	}
 	s.status.Store(0)
-	if err := poll(40 * time.Minute); err != nil {
+	if _, err := poll(12 * time.Minute); err != nil {
 		t.Fatalf("after recovery: %v", err)
 	}
 }
 
 func TestUnknownStopIsCached(t *testing.T) {
 	s := newServer(t)
-	p := newProvider(t, s, transitland.Config{Feed: feed, RefreshInterval: "30m"})
-	for after := time.Duration(0); after < 30*time.Minute; after += time.Minute {
+	p := newProvider(t, s, transitland.Config{Feed: feed, RefreshInterval: "10m"})
+	for after := time.Duration(0); after < 10*time.Minute; after += time.Minute {
 		q := query("NOPE", time.Hour)
 		q.Now = now.Add(after)
-		if _, err := p.Departures(t.Context(), q); !errors.Is(err, transitland.ErrUnknownStop) {
+		if _, err := p.Departures(t.Context(), q); !errors.Is(err, transit.ErrUnknownStop) {
 			t.Fatalf("after %s: err = %v", after, err)
 		}
 	}
 	if got := s.calls.Load(); got != 1 {
 		t.Errorf("%d requests for a mistyped stop, want 1", got)
-	}
-}
-
-func TestOldPredictionsAreNotLive(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write(departuresJSON(r, now, 60))
-	}))
-	t.Cleanup(srv.Close)
-	p, err := transitland.New(transitland.Config{APIKey: "k", BaseURL: srv.URL, RefreshInterval: "30m"}, srv.Client())
-	if err != nil {
-		t.Fatal(err)
-	}
-	steps := []struct {
-		after time.Duration
-		want  bool
-	}{{0, true}, {10 * time.Minute, true}, {11 * time.Minute, false}, {29 * time.Minute, false}}
-	for _, st := range steps {
-		after, want := st.after, st.want
-		q := query("f-x:1", time.Hour)
-		q.Now = now.Add(after)
-		deps, err := p.Departures(t.Context(), q)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(deps) == 0 {
-			t.Fatalf("after %s: no departures", after)
-		}
-		for _, d := range deps {
-			if d.Realtime() != want {
-				t.Fatalf("after %s: live = %v, want %v", after, d.Realtime(), want)
-			}
-		}
 	}
 }
 

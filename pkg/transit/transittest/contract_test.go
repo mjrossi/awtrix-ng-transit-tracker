@@ -23,7 +23,7 @@ func (r *recorder) Errorf(format string, args ...any) {
 
 func TestCheckDeparturesCatchesViolations(t *testing.T) {
 	now := time.Date(2026, 11, 22, 8, 0, 0, 0, time.UTC)
-	q := transit.Query{StopID: "s1", Now: now, Window: 30 * time.Minute, Limit: 2}
+	q := transit.Query{StopID: "s1", Now: now, Window: 30 * time.Minute}
 	good := transit.Departure{
 		Line: transit.Line{ID: "a", Mode: transit.ModeBus}, StopID: "s1",
 		Scheduled: now.Add(5 * time.Minute), Status: transit.StatusScheduled,
@@ -35,7 +35,6 @@ func TestCheckDeparturesCatchesViolations(t *testing.T) {
 		want   string
 	}{
 		{"valid", func(d []transit.Departure) []transit.Departure { return d }, ""},
-		{"over limit", func(d []transit.Departure) []transit.Departure { return append(d, d[1], d[1]) }, "limit"},
 		{"wrong stop", func(d []transit.Departure) []transit.Departure { d[0].StopID = "s2"; return d }, "stop"},
 		{"no line id", func(d []transit.Departure) []transit.Departure { d[0].Line.ID = ""; return d }, "line ID"},
 		{"zero prediction", func(d []transit.Departure) []transit.Departure { d[0].Predicted = &zero; return d }, "predicted"},

@@ -151,7 +151,7 @@ func (p *Provider) Departures(ctx context.Context, q transit.Query) ([]transit.D
 		return nil, errors.Join(problems...)
 	}
 
-	out = transit.SortAndLimit(out, q.Limit)
+	transit.SortByTime(out)
 	if staticErr != nil {
 		problems = append(problems, staticErr)
 	}

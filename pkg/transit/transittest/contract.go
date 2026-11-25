@@ -22,8 +22,8 @@ type Case struct {
 	WantEmpty bool
 }
 
-// Run checks p against every case, then checks limit, concurrent use and
-// cancellation handling using the first non-empty case.
+// Run checks p against every case, then checks concurrent use and cancellation
+// handling using the first non-empty case.
 func Run(t *testing.T, p transit.Provider, cases []Case) {
 	t.Helper()
 	if len(cases) == 0 {
@@ -60,18 +60,6 @@ func Run(t *testing.T, p transit.Provider, cases []Case) {
 		return
 	}
 
-	t.Run("respects limit", func(t *testing.T) {
-		q := base.Query
-		q.Limit = 1
-		deps, err := p.Departures(t.Context(), q)
-		if err != nil {
-			t.Fatalf("Departures: %v", err)
-		}
-		if len(deps) != 1 {
-			t.Fatalf("got %d departures with Limit 1, want 1", len(deps))
-		}
-	})
-
 	// Boards share one provider and poll it from their own goroutines, so
 	// this only catches data races under the race detector.
 	t.Run("safe for concurrent use", func(t *testing.T) {
@@ -103,9 +91,6 @@ func Run(t *testing.T, p transit.Provider, cases []Case) {
 // CheckDepartures reports every way deps breaks the Provider rules for q.
 func CheckDepartures(t testing.TB, q transit.Query, deps []transit.Departure) {
 	t.Helper()
-	if q.Limit > 0 && len(deps) > q.Limit {
-		t.Errorf("got %d departures, limit is %d", len(deps), q.Limit)
-	}
 	end := q.Now.Add(q.Window)
 	for i, d := range deps {
 		if d.StopID != q.StopID {

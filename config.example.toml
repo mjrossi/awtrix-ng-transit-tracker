@@ -55,7 +55,7 @@ url = "http://awtrixng-a1b2c3.local"
 # type = "transitland"
 # api_key = "${TRANSITLAND_API_KEY}"
 # feed = "f-drt-mbta"
-# refresh_interval = "2m"   # one request per stop per interval, 1m to 1h; default 5m
+# refresh_interval = "2m"   # one request per stop per interval, 1m to 10m; default 5m
 # monthly_quota = 50000     # Hobbyist/Academic plan; default 10000 (free plan)
 
 # Metro de Lisboa: needs an application subscribed to EstadoServicoML at

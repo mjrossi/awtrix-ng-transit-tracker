@@ -18,33 +18,30 @@ type Query struct {
 	Now time.Time
 	// Window is how far ahead of Now to look.
 	Window time.Duration
-	// Limit caps the number of departures returned. Zero means no limit.
-	Limit int
 }
 
 // Provider returns departures from one data source.
 //
 // Implementations must return departures for q.StopID only, sorted by
-// Departure.Time ascending, with every Time in [q.Now, q.Now+q.Window], at
-// most q.Limit of them, and must return promptly with ctx.Err() once ctx is
-// done. Implementations must be safe for concurrent use, because boards
-// that name the same provider share one instance and poll it from their own
-// goroutines. The transittest package checks these rules. A provider that can
-// still answer despite a problem returns its departures with a
-// *PartialError.
+// Departure.Time ascending, with every Time in [q.Now, q.Now+q.Window], and
+// must return promptly with ctx.Err() once ctx is done. Implementations must
+// be safe for concurrent use, because boards that name the same provider
+// share one instance and poll it from their own goroutines. The transittest
+// package checks these rules. A provider that can still answer despite a
+// problem returns its departures with a *PartialError, and one that can tell
+// a stop does not exist returns ErrUnknownStop.
 type Provider interface {
 	Departures(ctx context.Context, q Query) ([]Departure, error)
 }
 
-// SortAndLimit sorts deps by Departure.Time, keeping ties in input order,
-// and returns at most limit of them (zero means no limit), as the Provider
-// contract requires. It sorts deps in place.
-func SortAndLimit(deps []Departure, limit int) []Departure {
+// ErrUnknownStop is returned, wrapped, for a stop ID the source does not
+// know.
+var ErrUnknownStop = errors.New("unknown stop")
+
+// SortByTime sorts deps in place by Departure.Time, keeping ties in input
+// order, as the Provider contract requires.
+func SortByTime(deps []Departure) {
 	slices.SortStableFunc(deps, func(a, b Departure) int { return a.Time().Compare(b.Time()) })
-	if limit > 0 && len(deps) > limit {
-		return deps[:limit]
-	}
-	return deps
 }
 
 // PartialError reports a problem that did not stop a provider from
@@ -62,8 +59,6 @@ func (e *PartialError) Unwrap() error { return e.Err }
 type Stop struct {
 	ID   string
 	Name string
-	// Modes served at the stop, if the provider knows them.
-	Modes []Mode
 }
 
 // StopSearcher is implemented by providers that can look up stops by name.

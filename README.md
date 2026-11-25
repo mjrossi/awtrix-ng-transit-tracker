@@ -291,13 +291,9 @@ monthly_quota = 50000      # your plan's REST quota; default 10000 (free plan)
 
 Every request counts against your plan's monthly quota (10,000 on the free
 plan, 50,000 on Hobbyist/Academic, which is free for non-commercial use).
-Each stop is fetched once per `refresh_interval` (1 minute to 1 hour), and
-boards still count minutes down between fetches. A prediction more than 10
-minutes old is shown as scheduled, not live. Boards with different `window`s
-on one stop fetch separately. If a fetch fails, boards keep the last
-timetable, shown as scheduled, for up to one more `refresh_interval`, and
-`max_stale` counts from there; the fetch is retried every 5 minutes, or
-every `refresh_interval` if that is shorter. Requests a month are about
+Each stop is fetched once per `refresh_interval` (1 to 10 minutes), and
+boards still count minutes down between fetches. Boards with different
+`window`s on one stop fetch separately. Requests a month are about
 
     31 × stops × active hours a day × 60 ÷ refresh minutes
 

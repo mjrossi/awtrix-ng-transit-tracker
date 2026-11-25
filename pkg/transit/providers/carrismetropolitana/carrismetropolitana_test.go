@@ -130,7 +130,7 @@ func TestDepartures(t *testing.T) {
 func TestUnknownStop(t *testing.T) {
 	p := newProvider(t, newServer(t))
 	_, err := p.Departures(t.Context(), transit.Query{StopID: "999999", Now: recorded, Window: time.Hour})
-	if !errors.Is(err, carrismetropolitana.ErrUnknownStop) {
+	if !errors.Is(err, transit.ErrUnknownStop) {
 		t.Fatalf("got %v, want ErrUnknownStop", err)
 	}
 }

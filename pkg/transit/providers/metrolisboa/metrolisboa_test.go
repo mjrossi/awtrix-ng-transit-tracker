@@ -202,7 +202,7 @@ func TestStaleTimestampsDropped(t *testing.T) {
 func TestUnknownStation(t *testing.T) {
 	p := newProvider(t, newFakeAPI(t))
 	_, err := p.Departures(t.Context(), transit.Query{StopID: "ZZ", Now: recorded, Window: time.Hour})
-	if !errors.Is(err, metrolisboa.ErrUnknownStop) {
+	if !errors.Is(err, transit.ErrUnknownStop) {
 		t.Fatalf("got %v, want ErrUnknownStop", err)
 	}
 }

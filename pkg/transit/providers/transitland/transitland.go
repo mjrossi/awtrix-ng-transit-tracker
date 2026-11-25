@@ -6,7 +6,7 @@
 // plan, 50,000 on the Hobbyist/Academic plan), so the provider fetches each
 // stop and window once per refresh interval and answers polls in between
 // from that response. Boards still tick at their own poll interval, so
-// minutes count down between fetches. Failed fetches are retried sooner.
+// minutes count down between fetches.
 package transitland
 
 import (
@@ -41,18 +41,16 @@ const (
 	// MinRefreshInterval stops a typo from spending a month's quota in a
 	// day.
 	MinRefreshInterval = time.Minute
-	// MaxRefreshInterval keeps cancellations and timetable changes from
-	// going unseen for hours.
-	MaxRefreshInterval = time.Hour
+	// MaxRefreshInterval bounds how old a prediction shown as live can be: a
+	// cached answer counts as a fresh fetch to the scheduler.
+	MaxRefreshInterval = 10 * time.Minute
 	// DefaultMonthlyQuota is the free plan's REST quota.
 	DefaultMonthlyQuota = 10_000
 
-	// maxPredictionAge is when a prediction stops counting as live, though it
-	// stays the best estimate of the time.
-	maxPredictionAge = 10 * time.Minute
-	// retryInterval is how soon a failed fetch is repeated while earlier data
-	// is served, if the refresh interval is not shorter.
-	retryInterval = 5 * time.Minute
+	// retryInterval spaces out requests after a failure. It must be short: a
+	// retry answered with the remembered failure doubles the caller's backoff,
+	// and a board goes blank if that outlasts its max_stale.
+	retryInterval = time.Minute
 
 	// lateLookback is how late a vehicle can run and still be shown.
 	lateLookback = 30 * time.Minute
@@ -66,9 +64,6 @@ const (
 	searchLimit    = 50
 	maxBody        = 16 << 20
 )
-
-// ErrUnknownStop is returned when Transitland does not know a stop key.
-var ErrUnknownStop = errors.New("unknown stop")
 
 // Config is the provider's configuration block.
 type Config struct {
@@ -120,10 +115,9 @@ type timetable struct {
 	// unknown records that the stop does not exist, so a mistyped stop is
 	// not asked for on every poll.
 	unknown bool
-	at      time.Time
-	// until is how far the departures are complete.
-	until     time.Time
-	truncated bool
+	// until is the last departure of a list cut off at departureLimit, or
+	// zero when the answer is complete.
+	until time.Time
 }
 
 type stopWindow struct {
@@ -221,19 +215,12 @@ func (p *Provider) Departures(ctx context.Context, q transit.Query) ([]transit.D
 		return nil, err
 	}
 	tt, err := p.cacheFor(q).Get(ctx, q.Now)
-	if ctxErr := ctx.Err(); ctxErr != nil {
-		return nil, ctxErr
-	}
-	age := q.Now.Sub(tt.at)
-	// One missed refresh leaves a timetable worth showing. Past that, report
-	// the failure so the board's max_stale decides.
-	if err != nil && (tt.at.IsZero() || age >= 2*p.refresh) {
+	if err != nil {
 		return nil, err
 	}
 	if tt.unknown {
-		return nil, fmt.Errorf("%w %q", ErrUnknownStop, p.stopKey(q.StopID))
+		return nil, fmt.Errorf("%w %q", transit.ErrUnknownStop, p.stopKey(q.StopID))
 	}
-	live := err == nil && age <= maxPredictionAge
 	end := q.Now.Add(q.Window)
 	out := make([]transit.Departure, 0, len(tt.deps))
 	for _, d := range tt.deps {
@@ -244,23 +231,17 @@ func (p *Provider) Departures(ctx context.Context, q transit.Query) ([]transit.D
 		d.Scheduled = d.Scheduled.In(q.Now.Location())
 		if d.Predicted != nil {
 			t := d.Predicted.In(q.Now.Location())
-			if live {
-				d.Predicted = &t
-			} else {
-				d.Scheduled, d.Predicted = t, nil
-			}
+			d.Predicted = &t
 		}
 		out = append(out, d)
 	}
-	out = transit.SortAndLimit(out, q.Limit)
-	if err == nil && tt.truncated && tt.until.Before(end) {
-		err = fmt.Errorf("%s: %s has more departures than one request returns; shorten window or refresh_interval", Name, p.stopKey(q.StopID))
-	}
-	if err == nil {
+	transit.SortByTime(out)
+	if tt.until.IsZero() || !tt.until.Before(end) {
 		return out, nil
 	}
-	// Empty because the data ran out does not mean there is no service.
-	if len(out) == 0 && tt.until.Before(end) {
+	err = fmt.Errorf("%s: %s has more departures than one request returns; shorten window or refresh_interval", Name, p.stopKey(q.StopID))
+	// Empty because the list was cut off does not mean there is no service.
+	if len(out) == 0 {
 		return nil, err
 	}
 	return out, &transit.PartialError{Err: err}
@@ -277,7 +258,7 @@ func (p *Provider) cacheFor(q transit.Query) *upstream.Cache[timetable] {
 		span := q.Window + p.refresh
 		c = upstream.NewCacheAt(upstream.Policy{
 			TTL:               p.refresh,
-			Retry:             min(p.refresh, retryInterval),
+			Retry:             retryInterval,
 			RetryOnlyWithData: true,
 		}, func(ctx context.Context, now time.Time) (timetable, error) {
 			return p.fetch(ctx, k.key, now, span)
@@ -337,59 +318,87 @@ type wireEvent struct {
 	EstimatedUTC *time.Time `json:"estimated_utc"`
 }
 
+// lists returns every departure list in the answer: each stop's own and its
+// platforms'.
+func (r departuresResponse) lists() [][]wireDeparture {
+	var out [][]wireDeparture
+	for _, s := range r.Stops {
+		out = append(out, s.Departures)
+		for _, c := range s.Children {
+			out = append(out, c.Departures)
+		}
+	}
+	return out
+}
+
 func (p *Provider) fetch(ctx context.Context, key string, now time.Time, span time.Duration) (timetable, error) {
+	var resp departuresResponse
+	err := p.get(ctx, "stops/"+url.PathEscape(key)+"/departures", p.departureParams(key, now, span), &resp)
+	switch {
+	case errors.Is(err, errNotFound), err == nil && len(resp.Stops) == 0:
+		return timetable{unknown: true}, nil
+	case err != nil:
+		return timetable{}, err
+	}
+	lists := resp.lists()
+	p.learnOffset(key, lists, now)
+	return newTimetable(lists), nil
+}
+
+// departureParams asks for departures in the span from now, and from
+// lateLookback before it once the stop's offset is known. The server filters
+// by scheduled time, so without the lookback a late vehicle that has not come
+// yet is left out.
+func (p *Provider) departureParams(key string, now time.Time, span time.Duration) url.Values {
 	params := url.Values{
 		"limit": {strconv.Itoa(departureLimit)},
 		// The default falls back to a typical day's timetable when the feed
 		// has expired, which would show trips that do not run.
 		"use_service_window": {"false"},
 	}
-	// The server filters by scheduled time, so next leaves out a late vehicle
-	// that has not come yet. Asking for earlier times needs the stop's
-	// offset, which the first answer gives.
 	p.mu.Lock()
 	offset, ok := p.offsets[key]
 	p.mu.Unlock()
-	if age := now.Sub(offset.at).Abs(); ok && age <= offsetMaxAge {
-		from := now.Add(offset.ahead - lateLookback).UTC()
-		start := from.Sub(from.Truncate(24 * time.Hour))
-		params.Set("date", from.Format(time.DateOnly))
-		params.Set("start_time", gtfsTime(start))
-		params.Set("end_time", gtfsTime(start+lateLookback+span))
-	} else {
+	if !ok || now.Sub(offset.at).Abs() > offsetMaxAge {
 		params.Set("next", strconv.Itoa(int(span/time.Second)))
+		return params
 	}
-	var resp departuresResponse
-	if err := p.get(ctx, "stops/"+url.PathEscape(key)+"/departures", params, &resp); err != nil {
-		if errors.Is(err, errNotFound) {
-			return timetable{unknown: true, at: now}, nil
-		}
-		return timetable{}, err
-	}
-	if len(resp.Stops) == 0 {
-		return timetable{unknown: true, at: now}, nil
-	}
+	from := now.Add(offset.ahead - lateLookback).UTC()
+	start := from.Sub(from.Truncate(24 * time.Hour))
+	params.Set("date", from.Format(time.DateOnly))
+	params.Set("start_time", gtfsTime(start))
+	params.Set("end_time", gtfsTime(start+lateLookback+span))
+	return params
+}
 
+// learnOffset records the stop's service-day offset for later requests.
+func (p *Provider) learnOffset(key string, lists [][]wireDeparture, now time.Time) {
+	for _, list := range lists {
+		for _, w := range list {
+			if ahead, ok := offsetOf(w); ok {
+				p.mu.Lock()
+				p.offsets[key] = serviceOffset{ahead, now}
+				p.mu.Unlock()
+				return
+			}
+		}
+	}
+}
+
+// newTimetable converts an answer's departure lists, dropping trips listed
+// twice.
+func newTimetable(lists [][]wireDeparture) timetable {
 	type seen struct {
 		trip string
 		at   time.Time
 	}
 	dup := map[seen]bool{}
-	out := timetable{at: now, until: now.Add(span)}
-	learned := false
-	add := func(list []wireDeparture) {
+	var out timetable
+	for _, list := range lists {
 		// The server lists added trips on top of the limit.
 		scheduled := 0
 		var last time.Time
 		for _, w := range list {
-			if !learned {
-				if ahead, ok := offsetOf(w); ok {
-					learned = true
-					p.mu.Lock()
-					p.offsets[key] = serviceOffset{ahead, now}
-					p.mu.Unlock()
-				}
-			}
 			if at := w.Departure.ScheduledUTC; at != nil {
 				scheduled++
 				if at.After(last) {
@@ -407,20 +416,11 @@ func (p *Provider) fetch(ctx context.Context, key string, now time.Time, span ti
 			dup[k] = true
 			out.deps = append(out.deps, d)
 		}
-		if scheduled >= departureLimit {
-			out.truncated = true
-			if last.Before(out.until) {
-				out.until = last
-			}
+		if scheduled >= departureLimit && (out.until.IsZero() || last.Before(out.until)) {
+			out.until = last
 		}
 	}
-	for _, s := range resp.Stops {
-		add(s.Departures)
-		for _, c := range s.Children {
-			add(c.Departures)
-		}
-	}
-	return out, nil
+	return out
 }
 
 func gtfsTime(d time.Duration) string {

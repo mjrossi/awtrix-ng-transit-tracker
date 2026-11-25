@@ -43,9 +43,6 @@ const (
 	maxBody = 32 << 20
 )
 
-// ErrUnknownStop is returned when the API does not know a stop ID.
-var ErrUnknownStop = errors.New("unknown stop")
-
 // Config is the provider's configuration block.
 type Config struct {
 	// BaseURL overrides the API address, for tests or a mirror.
@@ -111,7 +108,7 @@ func (p *Provider) Departures(ctx context.Context, q transit.Query) ([]transit.D
 	var arrivals []arrival
 	if err := p.get(ctx, "arrivals/by_stop/"+url.PathEscape(q.StopID), &arrivals); err != nil {
 		if errors.Is(err, errNotFound) {
-			return nil, fmt.Errorf("%w %q", ErrUnknownStop, q.StopID)
+			return nil, fmt.Errorf("%w %q", transit.ErrUnknownStop, q.StopID)
 		}
 		return nil, err
 	}
@@ -139,7 +136,8 @@ func (p *Provider) Departures(ctx context.Context, q transit.Query) ([]transit.D
 		}
 		out = append(out, d)
 	}
-	return transit.SortAndLimit(out, q.Limit), nil
+	transit.SortByTime(out)
+	return out, nil
 }
 
 // feedPrefix matches the "[A2L1N]" namespace the live API puts in front of
@@ -214,7 +212,7 @@ func (p *Provider) allStops(ctx context.Context) ([]transit.Stop, error) {
 	}
 	stops := make([]transit.Stop, 0, len(wire))
 	for _, s := range wire {
-		stops = append(stops, transit.Stop{ID: s.ID, Name: s.LongName, Modes: []transit.Mode{transit.ModeBus}})
+		stops = append(stops, transit.Stop{ID: s.ID, Name: s.LongName})
 	}
 	slices.SortFunc(stops, func(a, b transit.Stop) int { return strings.Compare(a.ID, b.ID) })
 	p.mu.Lock()

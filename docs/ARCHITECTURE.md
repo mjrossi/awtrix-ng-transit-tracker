@@ -33,7 +33,7 @@ It listens on no ports.
 
 | Package | Owns | Imports (project) |
 |---|---|---|
-| `pkg/transit` | `Departure`, `Line`, `Provider`, `Query`, `PartialError`, `Metered`, `Filter`, `Group`, `Registry`, `MatchesSearch`, `ModeForRouteType` | none |
+| `pkg/transit` | `Departure`, `Line`, `Provider`, `Query`, `PartialError`, `ErrUnknownStop`, `Metered`, `Filter`, `Group`, `Registry`, `MatchesSearch`, `ModeForRouteType` | none |
 | `pkg/transit/transittest` | the provider contract suite | `transit` |
 | `pkg/transit/providers/<name>` | one data source each | `transit` only |
 | `pkg/transit/providers` | the built-in registry | every provider |
@@ -82,7 +82,7 @@ Rules, from [CLAUDE.md](../CLAUDE.md):
   | `metrolisboa` | OAuth token | until 1 min before expiry | refetched on 401 once |
   | `carrismetropolitana` | lines | 24 h | keep last, retry in 15 min |
   | `carrismetropolitana` | stop list (search only) | process lifetime | not cached |
-  | `transitland` | each stop's departures, per window | `refresh_interval` (5 min) | keep last without predictions for one more `refresh_interval`, retry in `refresh_interval` or 5 min, whichever is shorter; with no data yet, retry next poll; an unknown stop counts as an answer |
+  | `transitland` | each stop's departures, per window | `refresh_interval` (5 min) | failure cached for 1 min; with no data yet, retry next poll; an unknown stop counts as an answer |
 
   Every row except the token and stop list uses `upstream.Cache`
   (`pkg/transit/internal/upstream`), which is single-flight: one download
@@ -97,11 +97,11 @@ Rules, from [CLAUDE.md](../CLAUDE.md):
   `Query.Now`, so boards keep their own poll interval. Providers with a
   quota implement `transit.Metered`; `config validate` and `run` pass their
   refresh intervals to `Config.EstimateRequests`, add up the blocks with the
-  same `QuotaAccount`, and warn above the quota. Because an answer from the
-  cache looks fresh to the scheduler, the provider itself stops marking
-  predictions live after 10 minutes, and reports a failed fetch as a
-  `*transit.PartialError` while the last timetable is less than two
-  intervals old. Transitland filters by scheduled time, so to keep late
+  same `QuotaAccount`, and warn above the quota. An answer from the cache
+  looks fresh to the scheduler, so `refresh_interval` is at most 10 minutes,
+  which bounds how old a prediction shown as live can be. A failed fetch is
+  only an error, and the scheduler reuses its own last good data.
+  Transitland filters by scheduled time, so to keep late
   vehicles the provider asks from 30 minutes back, in the agency's zone. It
   learns that zone's offset from each answer, so a first request uses
   `next`, without the lookback.

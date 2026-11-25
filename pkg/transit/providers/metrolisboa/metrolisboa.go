@@ -69,9 +69,6 @@ var lines = map[string]transit.Line{
 	"Vermelha": {ID: "vermelha", ShortName: "Vermelha", Color: "#E4002B", Mode: transit.ModeMetro},
 }
 
-// ErrUnknownStop is returned for a station ID not in the station list.
-var ErrUnknownStop = errors.New("unknown station")
-
 // Config is the provider's configuration block.
 type Config struct {
 	ClientID     string `toml:"client_id"`
@@ -221,7 +218,7 @@ func (p *Provider) Departures(ctx context.Context, q transit.Query) ([]transit.D
 	}
 	st, ok := stations[q.StopID]
 	if !ok {
-		return nil, fmt.Errorf("%w %q", ErrUnknownStop, q.StopID)
+		return nil, fmt.Errorf("%w %q", transit.ErrUnknownStop, q.StopID)
 	}
 
 	// A failed destination list keeps the previous one; without one,
@@ -283,7 +280,7 @@ func (p *Provider) Departures(ctx context.Context, q transit.Query) ([]transit.D
 	if loaded == 0 && len(problems) > 0 {
 		return nil, errors.Join(problems...)
 	}
-	out = transit.SortAndLimit(out, q.Limit)
+	transit.SortByTime(out)
 	if len(problems) > 0 {
 		return out, &transit.PartialError{Err: errors.Join(problems...)}
 	}
@@ -386,10 +383,10 @@ func (p *Provider) SearchStops(ctx context.Context, search string) ([]transit.St
 	var out []transit.Stop
 	for id, s := range stations {
 		if strings.EqualFold(id, search) {
-			return []transit.Stop{{ID: id, Name: s.name, Modes: []transit.Mode{transit.ModeMetro}}}, nil
+			return []transit.Stop{{ID: id, Name: s.name}}, nil
 		}
 		if transit.MatchesSearch(s.name, search) {
-			out = append(out, transit.Stop{ID: id, Name: s.name, Modes: []transit.Mode{transit.ModeMetro}})
+			out = append(out, transit.Stop{ID: id, Name: s.name})
 		}
 	}
 	slices.SortFunc(out, func(a, b transit.Stop) int { return strings.Compare(a.Name, b.Name) })
