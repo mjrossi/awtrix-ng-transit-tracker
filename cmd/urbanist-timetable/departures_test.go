@@ -208,7 +208,6 @@ func TestDeparturesUsageErrors(t *testing.T) {
 		args []string
 		want string
 	}{
-		"no arguments":       {[]string{"departures"}, "stop IDs"},
 		"no stop":            {[]string{"departures", "demo"}, "stop IDs"},
 		"watch and json":     {[]string{"departures", "--watch", "--json", "demo", "s1"}, "--json"},
 		"watch, no terminal": {[]string{"departures", "--watch", "demo", "s1"}, "terminal"},
@@ -277,7 +276,10 @@ func TestServerTextCannotDriveTheTerminal(t *testing.T) {
 	hostile := errors.New("GET x: 500 a\x1b]0;pwned\x07b\u202e")
 	now := time.Date(2026, 11, 25, 8, 0, 0, 0, time.UTC)
 	var warnings bytes.Buffer
-	q := query{provider: failing{err: hostile, partial: true}, source: "x", stops: []string{"s"}, window: time.Hour, warnings: &warnings}
+	q := query{boards: []boardQuery{{
+		source: "x", window: time.Hour,
+		stops: []stopSource{{block: "x", provider: failing{err: hostile, partial: true}, stop: "s"}},
+	}}, warnings: &warnings}
 	if _, err := q.show(t.Context(), now); err != nil {
 		t.Fatal(err)
 	}

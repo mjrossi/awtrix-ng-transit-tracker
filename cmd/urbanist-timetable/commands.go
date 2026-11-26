@@ -246,6 +246,9 @@ func configCommand() *cli.Command {
 				}
 				w := c.Root().Writer
 				fmt.Fprintf(w, "%s: OK (%d providers, %d boards)\n", c.String("config"), len(cfg.Providers), len(cfg.Boards))
+				if cfg.Clock.URL == "" && len(cfg.Boards) > 0 {
+					fmt.Fprintln(w, "no [clock]: boards show in `departures`; add one for `clock run`")
+				}
 				writeQuotaUses(w, cfg.QuotaUses(provs))
 				return nil
 			},

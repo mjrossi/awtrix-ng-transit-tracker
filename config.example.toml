@@ -14,6 +14,7 @@ timezone = "Europe/Lisbon"
 # stays on.
 # quiet_hours = "23:30-06:30"
 
+# Needed only for the `clock` commands; `departures` shows boards without it.
 [clock]
 # Your AWTRIX NG clock: its IP address or awtrixng-<last 6 MAC hex>.local.
 url = "http://awtrixng-a1b2c3.local"
@@ -88,8 +89,12 @@ headsign = "Telheiras"
 headway = "8m"
 offset = "3m"
 
-# Each [[boards]] entry is one app on the clock, and the clock rotates
-# through its apps. With the default "departure" layout a board shows one
+# Each [[boards]] entry is a set of stops to show. `urbanist-timetable
+# departures` prints every board, and `departures NAME` one of them; its
+# filters and window apply there too.
+#
+# On the clock, each board is one app, and the clock rotates through its
+# apps. With the default "departure" layout a board shows one
 # line and direction like a platform sign:
 #
 #   Sta Apolónia
@@ -99,7 +104,7 @@ offset = "3m"
 # board per direction you want. Unpinned, it keeps to the first line and
 # direction in name order that has departures.
 [[boards]]
-# App name on the clock: 1-32 letters, digits, - or _.
+# Its name, and the app's name on the clock: 1-32 letters, digits, - or _.
 name = "azul"
 # How often to fetch and push. Minimum 15s.
 poll_interval = "45s"

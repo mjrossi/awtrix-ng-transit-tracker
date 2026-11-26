@@ -14,6 +14,10 @@ version may break configuration.
   name given where an ID belongs gets the `stops search` command that
   finds its ID. A provider that needs settings gets a pointer to where they
   go.
+- `departures` with no arguments shows every board in the configuration,
+  and `departures NAME` one board, with the board's filters, `window` and
+  `per_row`; flags given on the command line replace them. Boards no longer
+  need a `[clock]`, so the configuration can serve the terminal alone.
 - Shell completion for bash, zsh and fish (`completion`), covering
   commands, flags, systems, provider blocks and board names.
 - `config example` prints the annotated example configuration.
@@ -40,6 +44,10 @@ version may break configuration.
   commands that work without a configuration.
 - `stops search` aligns its IDs to the longest one, and at a terminal
   prints the `departures` command to use next.
+- Configuration: `[[boards]]` without `[clock]`, or `[clock]` without
+  boards, is valid; `clock run` and `clock preview` still require both.
+- `departures --json` for configured boards prints an array of boards,
+  each with a `board` name.
 - `--log-format` is `text` by default when stderr is a terminal, and
   `json` otherwise.
 

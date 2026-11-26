@@ -64,6 +64,25 @@ urbanist-timetable departures --static https://example.org/gtfs.zip \
   --realtime https://example.org/tripupdates.pb STOP_ID
 ```
 
+To see the same stops without typing them each time, save them as boards
+in the configuration file, and `departures` with no arguments shows them
+all; `departures NAME` shows one:
+
+```toml
+[providers.nyc]
+system = "nyc-subway"
+
+[[boards]]
+name = "uptown"
+
+[[boards.stops]]
+provider = "nyc"
+stop = "127N"
+lines = ["1", "2", "3"]
+```
+
+The clock shows the same boards, but a terminal needs no `[clock]`.
+
 Schedules are downloaded once a day into your cache directory (`--cache-dir`;
 `off` turns it off), so later commands are quick. `--json` prints JSON for
 scripts; its shape may change before 1.0. Times marked `*` are from the

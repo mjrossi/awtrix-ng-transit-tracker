@@ -18,7 +18,11 @@ import (
 
 // Board is what one query shows: the departures at one or more stops.
 type Board struct {
-	// Source is the provider block, system or type that was queried.
+	// Name is the configured board shown, or empty for stops given on the
+	// command line.
+	Name string
+	// Source is the provider block, system or type that was queried, or a
+	// comma-separated list of them.
 	Source string
 	// Title names the stops, or gives their IDs.
 	Title  string
@@ -182,6 +186,7 @@ func cmpOr(a, b string) string {
 }
 
 type jsonBoard struct {
+	Board      string          `json:"board,omitempty"`
 	Source     string          `json:"source"`
 	At         time.Time       `json:"at"`
 	Partial    bool            `json:"partial"`
@@ -208,9 +213,29 @@ type jsonDeparture struct {
 // JSON writes b as one indented JSON object, departures soonest first. The
 // shape may change before 1.0.
 func JSON(w io.Writer, b Board) error {
+	return encode(w, jsonFor(b))
+}
+
+// JSONList writes boards as an indented JSON array of the objects JSON
+// writes.
+func JSONList(w io.Writer, boards []Board) error {
+	out := make([]jsonBoard, len(boards))
+	for i, b := range boards {
+		out[i] = jsonFor(b)
+	}
+	return encode(w, out)
+}
+
+func encode(w io.Writer, v any) error {
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(v)
+}
+
+func jsonFor(b Board) jsonBoard {
 	deps := slices.Clone(b.Departures)
 	transit.SortByTime(deps)
-	out := jsonBoard{Source: b.Source, At: b.At, Partial: b.Partial, Departures: []jsonDeparture{}}
+	out := jsonBoard{Board: b.Name, Source: b.Source, At: b.At, Partial: b.Partial, Departures: []jsonDeparture{}}
 	for _, d := range deps {
 		out.Departures = append(out.Departures, jsonDeparture{
 			Stop:      d.StopID,
@@ -222,7 +247,5 @@ func JSON(w io.Writer, b Board) error {
 			Minutes:   d.MinutesUntil(b.At),
 		})
 	}
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	return enc.Encode(out)
+	return out
 }

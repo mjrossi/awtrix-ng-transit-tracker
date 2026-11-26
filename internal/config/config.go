@@ -355,11 +355,6 @@ func (c *Config) validate() error {
 	if err := c.QuietHours.Validate(); err != nil {
 		errs = append(errs, fmt.Errorf("quiet_hours: %w", err))
 	}
-	// The clock and boards are optional together, for commands that only
-	// query providers. One without the other is a mistake worth reporting.
-	if c.Clock != (Clock{}) || len(c.Boards) > 0 {
-		errs = append(errs, c.RequireClock())
-	}
 	for name, raw := range c.Providers {
 		if _, _, err := catalog.Resolve(name, raw); err != nil {
 			errs = append(errs, fmt.Errorf("providers.%s: %w", name, err))
