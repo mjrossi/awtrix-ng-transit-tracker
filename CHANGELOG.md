@@ -7,6 +7,12 @@ version may break configuration.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-26
+
+Upgrading: catalog systems have new IDs, such as `mta-subway` for
+`nyc-subway`, and Metro de Lisboa's environment variables are now
+`METRO_LISBOA_*`; see Changed.
+
 ### Added
 
 - `agencies search <words>` finds agencies by name or place, each with the
@@ -18,12 +24,12 @@ version may break configuration.
   names it after the feed rather than one of its agencies. A Transitland
   result whose agency publishes predictions reads `realtime?`, since
   Transitland does not always pass them on; `systems show` says whether
-  a system is read through Transitland. Every ID the
-  Mobility Database uses works, including `ntd-`, `tdg-`, `jbda-` and
-  `odpt-` ones, while a mistyped verified ID such as `bart-2` still gets
-  a "did you mean" at once. A result's ID,
-  such as `mdb-2929` or `f-eyc-cp`, works in `departures`, `stops search`
-  and `systems show` without a configuration file. `systems show` prints
+  a system is read through Transitland. Every ID the Mobility Database
+  uses works, including `ntd-`, `tdg-`, `jbda-` and `odpt-` ones, while a
+  mistyped verified ID such as `bart-2` still gets a "did you mean" at
+  once. A result's ID, such as `mdb-2929` or `f-eyc-cp`, works in
+  `departures`, `stops search` and `systems show` without a configuration
+  file. `systems show` prints
   its `[providers]` block, with `${NAME}` for any key the feeds need and
   where to get one, and warns about schedules too large for a small
   machine. Where Transitland lists the feed URLs and they need no key, the
@@ -31,6 +37,15 @@ version may break configuration.
   working that out takes two or more Transitland requests, kept a week in
   the cache directory. `cache clear` also removes the saved feed list and
   these lookups.
+- `config init` writes a starting configuration. At a terminal it asks for
+  an agency or city and searches for systems as `agencies search` does,
+  then searches for your stop, offers to keep some of its lines, and saves
+  a board; `--system` and `--stop` do the same without questions. A
+  system found in the Mobility Database or Transitland is written out in
+  full, named after the agency you picked (or its ID, for a name without
+  Latin letters, or its place, for a list of agencies) and `${NAME}` for
+  any key, so the file does not depend on the search. A schedule too large for a small machine is
+  warned about before it is downloaded.
 - `gtfsrt` shows timetabled trips from the schedule, with the realtime
   prediction where a feed has one, so a stop no longer reads "No
   departures" while a scheduled bus is 20 minutes away, and a realtime
@@ -47,6 +62,11 @@ version may break configuration.
   rather than an empty board.
   The first query for a stop reads the schedule's `stop_times.txt` (about
   5 seconds for HSL), and the result is saved in the cache directory.
+- `departures` with no arguments shows every board in the configuration,
+  and `departures NAME` one board, with the board's filters, `window` and
+  `per_row`; flags given on the command line replace them. Boards no longer
+  need a `[clock]`, so the configuration can serve the terminal alone.
+  Boards and stops are fetched at the same time.
 - Release binaries for Linux, macOS and Windows (amd64 and arm64), with
   checksums and build provenance, on each GitHub release. Install with
   `mise use -g github:mjrossi/urbanist-timetable` or from the release page.
@@ -63,21 +83,6 @@ version may break configuration.
   name given where an ID belongs gets the `stops search` command that
   finds its ID. A provider that needs settings gets a pointer to where they
   go.
-- `config init` writes a starting configuration. At a terminal it asks for
-  an agency or city and searches for systems as `agencies search` does,
-  then searches for your stop, offers to keep some of its lines, and saves
-  a board; `--system` and `--stop` do the same without questions. A
-  system found in the Mobility Database or Transitland is written out in
-  full, named after the agency you picked (or its ID, for a name
-  without Latin letters, or its place, for a list of agencies) and
-  `${NAME}` for any key, so the file does not
-  depend on the search. A schedule too large for a small machine is
-  warned about before it is downloaded.
-- `departures` with no arguments shows every board in the configuration,
-  and `departures NAME` one board, with the board's filters, `window` and
-  `per_row`; flags given on the command line replace them. Boards no longer
-  need a `[clock]`, so the configuration can serve the terminal alone.
-  Boards and stops are fetched at the same time.
 - Shell completion for bash, zsh and fish (`completion`), covering
   commands, flags, systems, provider blocks and board names.
 - `config example` prints the annotated example configuration.
@@ -354,7 +359,8 @@ First release: live departures on an AWTRIX NG clock (Ulanzi TC002).
   Metropolitana, Lisbon Metro, NYC Subway and SF BART.
 - Commands: `run`, `preview`, `config validate`, `systems`, `stops search`.
 
-[Unreleased]: https://github.com/mjrossi/urbanist-timetable/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/mjrossi/urbanist-timetable/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/mjrossi/urbanist-timetable/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/mjrossi/urbanist-timetable/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/mjrossi/urbanist-timetable/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/mjrossi/urbanist-timetable/compare/v0.3.0...v0.4.0
