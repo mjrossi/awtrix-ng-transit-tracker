@@ -85,7 +85,7 @@ func runBoards(ctx context.Context, c *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	provs, err := buildProviders(cfg, cacheOptions(c)...)
+	provs, err := buildProviders(cfg.Providers, cacheOptions(c)...)
 	if err != nil {
 		return err
 	}
@@ -174,7 +174,7 @@ func preview(ctx context.Context, c *cli.Command) error {
 		}
 	}
 	out := newClockOutput(cfg, pusher)
-	provs, err := buildProviders(cfg, cacheOptions(c)...)
+	provs, err := buildProviders(cfg.Providers, cacheOptions(c)...)
 	if err != nil {
 		return err
 	}
@@ -235,7 +235,7 @@ func configCommand() *cli.Command {
 				if err != nil {
 					return err
 				}
-				provs, err := buildProviders(cfg, cacheOptions(c)...)
+				provs, err := buildProviders(cfg.Providers, cacheOptions(c)...)
 				if err != nil {
 					return err
 				}
@@ -403,26 +403,30 @@ func openSource(path, name string, opts ...providers.Option) (transit.Provider, 
 	if found {
 		return providers.Open(name, settings, opts...)
 	}
-	settings = map[string]any{}
 	if sys, ok := catalog.Get(name); ok {
-		settings["system"] = name
-		for _, k := range sys.RequiredOptions {
-			if v := os.Getenv(sys.EnvName(k)); v != "" {
-				settings[k] = v
-			}
-		}
-		return providers.Open(name, settings, opts...)
+		return providers.Open(name, envSettings(sys), opts...)
 	}
-	p, err := providers.Open(name, settings, opts...)
+	p, err := providers.Open(name, map[string]any{}, opts...)
 	if err == nil {
 		return p, nil
 	}
 	serr := &sourceError{name: name, configPath: path, err: err}
 	if errors.Is(err, registry.ErrUnknownProvider) {
-		serr.unknown = true
 		serr.suggestion = closest(name, sourceNames(path, false))
 	}
 	return nil, serr
+}
+
+// envSettings is the settings block for sys, with each required option
+// that is set in the environment.
+func envSettings(sys catalog.System) map[string]any {
+	settings := map[string]any{"system": sys.ID}
+	for _, k := range sys.RequiredOptions {
+		if v := os.Getenv(sys.EnvName(k)); v != "" {
+			settings[k] = v
+		}
+	}
+	return settings
 }
 
 // sourceNames lists what can name a source: the file's provider blocks,
@@ -443,29 +447,13 @@ func sourceNames(path string, boards bool) []string {
 func writeStops(c *cli.Command, source string, stops []transit.Stop) error {
 	w := c.Root().Writer
 	if c.Bool("json") {
-		type jsonStop struct {
-			ID   string `json:"id"`
-			Name string `json:"name"`
-		}
-		out := make([]jsonStop, len(stops))
-		for i, s := range stops {
-			out[i] = jsonStop{ID: s.ID, Name: s.Name}
-		}
-		enc := json.NewEncoder(w)
-		enc.SetIndent("", "  ")
-		return enc.Encode(out)
+		return termout.StopsJSON(w, stops)
 	}
 	if len(stops) == 0 {
 		fmt.Fprintln(w, "no stops found")
 		return nil
 	}
-	width := 0
-	for _, s := range stops {
-		width = max(width, len(termout.Clean(s.ID)))
-	}
-	for _, s := range stops {
-		fmt.Fprintf(w, "%-*s  %s\n", width, termout.Clean(s.ID), termout.Clean(s.Name))
-	}
+	termout.Stops(w, stops, false)
 	if isTerminal(w) {
 		fmt.Fprintf(c.Root().ErrWriter, "\nnext: urbanist-timetable departures %s <ID>\n", source)
 	}
@@ -512,11 +500,7 @@ func printRows(w io.Writer, b config.Board, rows []transit.Row, now time.Time) {
 }
 
 func unknownSystemError(id string) error {
-	err := fmt.Errorf("%w %q", catalog.ErrUnknownSystem, id)
-	if s := closest(id, systemIDs()); s != "" {
-		return fmt.Errorf("%w; did you mean %q?", err, s)
-	}
-	return err
+	return fmt.Errorf("%w %q%s", catalog.ErrUnknownSystem, id, didYouMean(id, systemIDs()))
 }
 
 // unknownSystemsArgument answers `systems ID`, which is most often meant as

@@ -17,6 +17,7 @@ import (
 	"github.com/urfave/cli/v3"
 
 	"github.com/mjrossi/urbanist-timetable/internal/config"
+	"github.com/mjrossi/urbanist-timetable/internal/fold"
 	"github.com/mjrossi/urbanist-timetable/internal/termout"
 	"github.com/mjrossi/urbanist-timetable/pkg/awtrix"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit"
@@ -136,13 +137,11 @@ func initFromFlags(c *cli.Command) (initAnswers, error) {
 
 // missingEnv lists the environment variables sys needs that are not set.
 func missingEnv(sys catalog.System) []string {
-	var out []string
-	for _, k := range sys.RequiredOptions {
-		if os.Getenv(sys.EnvName(k)) == "" {
-			out = append(out, sys.EnvName(k))
-		}
+	missing := sys.Missing(envSettings(sys))
+	for i, k := range missing {
+		missing[i] = sys.EnvName(k)
 	}
-	return out
+	return missing
 }
 
 // errInputEnded is returned when the person stops answering, such as with
@@ -237,13 +236,7 @@ func (p prompter) askStop(ctx context.Context, prov transit.Provider) (transit.S
 			continue
 		}
 		shown := stops[:min(len(stops), maxListed)]
-		width := 0
-		for _, s := range shown {
-			width = max(width, len(termout.Clean(s.ID)))
-		}
-		for i, s := range shown {
-			fmt.Fprintf(p.out, "  %d  %-*s  %s\n", i+1, width, termout.Clean(s.ID), termout.Clean(s.Name))
-		}
+		termout.Stops(p.out, shown, true)
 		if len(stops) > len(shown) {
 			fmt.Fprintf(p.out, "  … and %d more; search with more words to narrow them.\n", len(stops)-len(shown))
 		}
@@ -265,16 +258,9 @@ func (p prompter) askStop(ctx context.Context, prov transit.Provider) (transit.S
 func (p prompter) askLines(ctx context.Context, prov transit.Provider, stop string) ([]string, error) {
 	fmt.Fprintln(p.out)
 	if prov != nil {
-		// Departures come with an error only when they are partial.
+		// A failed fetch only loses the hint, so its error is ignored.
 		deps, _ := prov.Departures(ctx, transit.Query{StopID: stop, Now: clock(), Window: config.DefaultWindow})
-		var names []string
-		for _, d := range deps {
-			if n := termout.Clean(cmp.Or(d.Line.ShortName, d.Line.ID)); n != "" && !slices.Contains(names, n) {
-				names = append(names, n)
-			}
-		}
-		if len(names) > 0 {
-			slices.Sort(names)
+		if names := lineNames(deps); len(names) > 0 {
 			fmt.Fprintf(p.out, "Lines here now: %s.\n", strings.Join(names, ", "))
 		}
 	}
@@ -328,19 +314,17 @@ func (p prompter) line(ctx context.Context, prompt string) (string, error) {
 		s, err := p.in.ReadString('\n')
 		read <- result{s, err}
 	}()
-	var r result
 	select {
 	case <-ctx.Done():
 		fmt.Fprintln(p.out)
 		return "", ctx.Err()
-	case r = <-read:
+	case r := <-read:
+		if r.err != nil && (r.s == "" || !errors.Is(r.err, io.EOF)) {
+			fmt.Fprintln(p.out)
+			return "", errInputEnded
+		}
+		return strings.TrimSpace(r.s), nil
 	}
-	s, err := r.s, r.err
-	if err != nil && (s == "" || !errors.Is(err, io.EOF)) {
-		fmt.Fprintln(p.out)
-		return "", errInputEnded
-	}
-	return strings.TrimSpace(s), nil
 }
 
 // required asks until the answer is not empty.
@@ -428,10 +412,7 @@ func tomlString(s string) string {
 func slug(s string) string {
 	var b strings.Builder
 	dash := false
-	for _, r := range strings.ToLower(s) {
-		if base, ok := unaccented[r]; ok {
-			r = base
-		}
+	for _, r := range fold.String(s) {
 		if r < unicode.MaxASCII && (unicode.IsLetter(r) || unicode.IsDigit(r)) {
 			b.WriteRune(r)
 			dash = false
@@ -449,18 +430,3 @@ func slug(s string) string {
 	}
 	return out
 }
-
-// unaccented maps common accented Latin letters to their base letter, so
-// names such as "Marquês" make readable board names.
-var unaccented = func() map[rune]rune {
-	m := map[rune]rune{}
-	for base, accented := range map[rune]string{
-		'a': "áàâãäå", 'c': "ç", 'e': "éèêë", 'i': "íìîï", 'n': "ñ",
-		'o': "óòôõöø", 'u': "úùûü", 'y': "ýÿ",
-	} {
-		for _, r := range accented {
-			m[r] = base
-		}
-	}
-	return m
-}()

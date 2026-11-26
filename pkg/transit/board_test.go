@@ -1,6 +1,7 @@
 package transit_test
 
 import (
+	"reflect"
 	"testing"
 	"time"
 
@@ -96,6 +97,34 @@ func TestFilter(t *testing.T) {
 				t.Errorf("Apply mismatch (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+// TestFilterNarrows sets each field in turn, so a new field must be
+// classified here before the test passes.
+func TestFilterNarrows(t *testing.T) {
+	widens := map[string]bool{"KeepCanceled": true}
+	if (transit.Filter{}).Narrows() {
+		t.Error("zero Filter narrows")
+	}
+	typ := reflect.TypeFor[transit.Filter]()
+	for i := range typ.NumField() {
+		field := typ.Field(i)
+		var f transit.Filter
+		v := reflect.ValueOf(&f).Elem().Field(i)
+		switch v.Kind() {
+		case reflect.Slice:
+			v.Set(reflect.MakeSlice(v.Type(), 1, 1))
+		case reflect.Bool:
+			v.SetBool(true)
+		case reflect.Int64:
+			v.SetInt(1)
+		default:
+			t.Fatalf("field %s: kind %s not covered", field.Name, v.Kind())
+		}
+		if got, want := f.Narrows(), !widens[field.Name]; got != want {
+			t.Errorf("only %s set: Narrows() = %v, want %v", field.Name, got, want)
+		}
 	}
 }
 

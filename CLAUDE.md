@@ -57,7 +57,10 @@ Part of the Urbanist family with *The Urbanist Lexicon* (mjrossi.com) and
 - `pkg/awtrix/` — typed AWTRIX NG HTTP client.
 - `internal/config/` — TOML loading and validation.
 - `internal/render/` — departure rows to TC002 layouts.
-- `internal/termout/` — departures to terminal text and JSON.
+- `internal/termout/` — departures and stop lists to terminal text and
+  JSON.
+- `internal/fold/` — lowercase, unaccented text, shared by stop search
+  and board names.
 - `internal/scheduler/` — polling, active and quiet hours, backoff,
   last-good cache.
 - `docs/` — `ARCHITECTURE.md`, `rendering.md`, `PLAN.md` (roadmap only:

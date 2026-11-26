@@ -363,7 +363,7 @@ stop = "f-x:1"
 			if err != nil {
 				t.Fatal(err)
 			}
-			provs, err := buildProviders(cfg)
+			provs, err := buildProviders(cfg.Providers)
 			if err != nil {
 				t.Fatal(err)
 			}

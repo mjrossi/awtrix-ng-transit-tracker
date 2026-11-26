@@ -10,11 +10,13 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/urfave/cli/v3"
 
 	"github.com/mjrossi/urbanist-timetable/internal/config"
+	"github.com/mjrossi/urbanist-timetable/internal/scheduler"
 	"github.com/mjrossi/urbanist-timetable/internal/termout"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/providers"
@@ -139,7 +141,7 @@ func adHocQuery(c *cli.Command, source string, p transit.Provider, stops []strin
 	f := flagFilter(c, transit.Filter{})
 	bq := boardQuery{source: source, window: c.Duration("window"), perRow: c.Int("per-row")}
 	for _, stop := range dedupe(stops) {
-		bq.stops = append(bq.stops, stopSource{block: source, provider: p, stop: stop, filter: f})
+		bq.stops = append(bq.stops, scheduler.Source{Name: source + ":" + stop, Provider: p, StopID: stop, Filter: f})
 	}
 	return query{boards: []boardQuery{bq}}
 }
@@ -170,21 +172,24 @@ func boardsQuery(c *cli.Command, args []string) (query, error) {
 		return query{}, newUsageError(c, "no saved boards in %s; %s, or save boards with `urbanist-timetable config init`", path, departuresUsage)
 	}
 
-	used := *cfg
-	used.Providers = map[string]map[string]any{}
+	used := map[string]map[string]any{}
 	for _, b := range boards {
 		for _, s := range b.Stops {
-			used.Providers[s.Provider] = cfg.Providers[s.Provider]
+			used[s.Provider] = cfg.Providers[s.Provider]
 		}
 	}
-	provs, err := buildProviders(&used, cacheOptions(c)...)
+	provs, err := buildProviders(used, cacheOptions(c)...)
 	if err != nil {
 		return query{}, err
 	}
 
 	var q query
 	for _, b := range boards {
-		bq := boardQuery{name: b.Name, window: b.Window.D(), perRow: b.PerRow}
+		sb, err := boardFor(cfg, b, provs)
+		if err != nil {
+			return query{}, err
+		}
+		bq := boardQuery{name: sb.Name, stops: sb.Sources, window: sb.Window, perRow: sb.PerRow}
 		if c.IsSet("window") {
 			bq.window = c.Duration("window")
 		}
@@ -192,13 +197,11 @@ func boardsQuery(c *cli.Command, args []string) (query, error) {
 			bq.perRow = c.Int("per-row")
 		}
 		var blocks []string
-		for _, s := range b.Stops {
-			bq.stops = append(bq.stops, stopSource{block: s.Provider, provider: provs[s.Provider], stop: s.Stop, filter: flagFilter(c, s.Filter())})
-			if !slices.Contains(blocks, s.Provider) {
-				blocks = append(blocks, s.Provider)
-			}
+		for i, s := range b.Stops {
+			bq.stops[i].Filter = flagFilter(c, bq.stops[i].Filter)
+			blocks = append(blocks, s.Provider)
 		}
-		bq.source = strings.Join(blocks, ", ")
+		bq.source = strings.Join(dedupe(blocks), ", ")
 		q.boards = append(q.boards, bq)
 	}
 	q.list = true
@@ -211,11 +214,7 @@ func oneArgumentError(c *cli.Command, path, arg string) error {
 		return newUsageError(c, "give one or more stop IDs after %s; find them with `urbanist-timetable stops search %s <words>`", arg, arg)
 	}
 	boards, _ := config.Names(path)
-	msg := fmt.Sprintf("no board named %q in %s", arg, path)
-	if s := closest(arg, boards); s != "" {
-		msg += fmt.Sprintf("; did you mean %q?", s)
-	}
-	return newUsageError(c, "%s; %s", msg, departuresUsage)
+	return newUsageError(c, "no board named %q in %s%s; %s", arg, path, didYouMean(arg, boards), departuresUsage)
 }
 
 // flagFilter is f with the filter flags that were given in place of its
@@ -254,16 +253,9 @@ type boardQuery struct {
 	name string
 	// source names the provider blocks, systems or types queried.
 	source string
-	stops  []stopSource
+	stops  []scheduler.Source
 	window time.Duration
 	perRow int
-}
-
-type stopSource struct {
-	block    string
-	provider transit.Provider
-	stop     string
-	filter   transit.Filter
 }
 
 // show fetches every board and renders the result. It fails only when
@@ -274,11 +266,31 @@ func (q query) show(ctx context.Context, now time.Time) (string, error) {
 		boards []termout.Board
 		failed []error
 	)
-	for _, bq := range q.boards {
-		b, err := q.fetch(ctx, now, bq)
+	// Each board warns into its own buffer, so warnings print in board
+	// order although the boards are fetched at the same time.
+	type fetched struct {
+		board    termout.Board
+		err      error
+		warnings bytes.Buffer
+	}
+	results := make([]fetched, len(q.boards))
+	var wg sync.WaitGroup
+	for i := range q.boards {
+		wg.Go(func() {
+			r := &results[i]
+			one := q
+			one.warnings = &r.warnings
+			r.board, r.err = one.fetch(ctx, now, q.boards[i])
+		})
+	}
+	wg.Wait()
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	for i, bq := range q.boards {
+		b, err := results[i].board, results[i].err
+		_, _ = results[i].warnings.WriteTo(q.warnings)
 		switch {
-		case ctx.Err() != nil:
-			return "", ctx.Err()
 		case err != nil && len(q.boards) == 1:
 			return "", err
 		case err != nil:
@@ -322,31 +334,39 @@ func (q query) fetch(ctx context.Context, now time.Time, bq boardQuery) (termout
 		unknown  int
 		hidden   int
 		narrowed bool
-		lines    []string
+		seen     []transit.Departure
 	)
-	for _, s := range bq.stops {
-		deps, err := s.provider.Departures(ctx, transit.Query{StopID: s.stop, Now: now, Window: bq.window})
+	type result struct {
+		deps []transit.Departure
+		err  error
+	}
+	results := make([]result, len(bq.stops))
+	var wg sync.WaitGroup
+	for i, s := range bq.stops {
+		wg.Go(func() {
+			deps, err := s.Provider.Departures(ctx, transit.Query{StopID: s.StopID, Now: now, Window: bq.window})
+			results[i] = result{deps, err}
+		})
+	}
+	wg.Wait()
+	for i, s := range bq.stops {
+		deps, err := results[i].deps, results[i].err
 		var partial *transit.PartialError
 		switch {
 		case errors.As(err, &partial):
 			b.Partial = true
-			warn(q.warnings, fmt.Errorf("stop %s: %w", s.stop, err))
+			warn(q.warnings, fmt.Errorf("stop %s: %w", s.StopID, err))
 		case err != nil:
 			if errors.Is(err, transit.ErrUnknownStop) {
 				unknown++
 			}
-			failed = append(failed, fmt.Errorf("stop %s: %w", s.stop, err))
+			failed = append(failed, fmt.Errorf("stop %s: %w", s.StopID, err))
 			continue
 		}
-		kept := s.filter.Apply(now, deps)
+		kept := s.Filter.Apply(now, deps)
 		hidden += len(deps) - len(kept)
-		narrowed = narrowed || len(s.filter.Lines) > 0 || len(s.filter.Headsigns) > 0 || s.filter.MinLead > 0
-		for _, d := range deps {
-			name := cmp.Or(d.Line.ShortName, d.Line.ID)
-			if !slices.Contains(lines, name) {
-				lines = append(lines, name)
-			}
-		}
+		narrowed = narrowed || s.Filter.Narrows()
+		seen = append(seen, deps...)
 		b.Departures = append(b.Departures, kept...)
 	}
 	if len(failed) == len(bq.stops) {
@@ -354,7 +374,7 @@ func (q query) fetch(ctx context.Context, now time.Time, bq boardQuery) (termout
 		if unknown == len(bq.stops) && bq.name == "" {
 			stops := make([]string, len(bq.stops))
 			for i, s := range bq.stops {
-				stops[i] = s.stop
+				stops[i] = s.StopID
 			}
 			return b, &unknownStopsError{source: bq.source, stops: stops, err: err}
 		}
@@ -366,12 +386,11 @@ func (q query) fetch(ctx context.Context, now time.Time, bq boardQuery) (termout
 	}
 	b.Title = title(ctx, now, bq)
 	if len(b.Departures) == 0 && hidden > 0 && narrowed && !q.json {
-		slices.Sort(lines)
 		prefix := "note: "
 		if bq.name != "" {
 			prefix += "board " + bq.name + ": "
 		}
-		fmt.Fprintf(q.warnings, "%sthe filters hid %d departures; lines here: %s\n", prefix, hidden, termout.Clean(strings.Join(lines, ", ")))
+		fmt.Fprintf(q.warnings, "%sthe filters hid %d departures; lines here: %s\n", prefix, hidden, strings.Join(lineNames(seen), ", "))
 	}
 	return b, nil
 }
@@ -387,9 +406,9 @@ func warn(w io.Writer, err error) {
 func title(ctx context.Context, now time.Time, bq boardQuery) string {
 	names := make([]string, len(bq.stops))
 	for i, s := range bq.stops {
-		names[i] = s.stop
-		if namer, ok := s.provider.(transit.StopNamer); ok {
-			if n, ok := namer.StopName(ctx, s.stop, now); ok {
+		names[i] = s.StopID
+		if namer, ok := s.Provider.(transit.StopNamer); ok {
+			if n, ok := namer.StopName(ctx, s.StopID, now); ok {
 				names[i] = n
 			}
 		}
@@ -440,6 +459,19 @@ func isTerminal(f any) bool {
 	}
 	fi, err := file.Stat()
 	return err == nil && fi.Mode()&os.ModeCharDevice != 0
+}
+
+// lineNames lists the distinct lines of deps, cleaned for a terminal and
+// sorted.
+func lineNames(deps []transit.Departure) []string {
+	var names []string
+	for _, d := range deps {
+		if n := termout.Clean(cmp.Or(d.Line.ShortName, d.Line.ID)); n != "" {
+			names = append(names, n)
+		}
+	}
+	slices.Sort(names)
+	return slices.Compact(names)
 }
 
 func dedupe(stops []string) []string {

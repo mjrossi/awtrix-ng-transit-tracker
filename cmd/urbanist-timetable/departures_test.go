@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mjrossi/urbanist-timetable/internal/scheduler"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit"
 )
 
@@ -278,7 +279,7 @@ func TestServerTextCannotDriveTheTerminal(t *testing.T) {
 	var warnings bytes.Buffer
 	q := query{boards: []boardQuery{{
 		source: "x", window: time.Hour,
-		stops: []stopSource{{block: "x", provider: failing{err: hostile, partial: true}, stop: "s"}},
+		stops: []scheduler.Source{{Provider: failing{err: hostile, partial: true}, StopID: "s"}},
 	}}, warnings: &warnings}
 	if _, err := q.show(t.Context(), now); err != nil {
 		t.Fatal(err)

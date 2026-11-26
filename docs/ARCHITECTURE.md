@@ -46,7 +46,7 @@ schedules to the cache directory (`--cache-dir`).
 
 | Package | Owns | Imports (project) |
 |---|---|---|
-| `pkg/transit` | `Departure`, `Line`, `Provider`, `Query`, `PartialError`, `ErrUnknownStop`, `StopNamer`, `Metered`, `Quota`, `Filter`, `Group`, `MatchesSearch`, `ModeForRouteType` | none |
+| `pkg/transit` | `Departure`, `Line`, `Provider`, `Query`, `PartialError`, `ErrUnknownStop`, `StopNamer`, `Metered`, `Quota`, `Filter`, `Group`, `MatchesSearch`, `ModeForRouteType` | `internal/fold` |
 | `pkg/transit/registry` | building providers by name from configuration: `Registry`, `Options`, `RegisterConfig` | `transit` |
 | `pkg/transit/transittest` | the provider contract suite | `transit` |
 | `pkg/transit/providers/<name>` | one data source each | `transit`, `registry` |
@@ -55,7 +55,8 @@ schedules to the cache directory (`--cache-dir`).
 | `pkg/awtrix` | typed AWTRIX NG HTTP client and payload types | none |
 | `internal/render` | departure rows → TC002 `awtrix.Layout` | `transit`, `awtrix` |
 | `internal/scheduler` | polling, backoff, last-good cache, active and quiet hours, `Snapshot`, the `Output` interface | `transit` |
-| `internal/termout` | departures → aligned terminal text or JSON | `transit` |
+| `internal/termout` | departures and stop lists → aligned terminal text or JSON | `transit` |
+| `internal/fold` | lowercase, unaccented text for stop search and board names | none |
 | `internal/clockout` | the clock `Output`: snapshot → TC002 app → push or expire; cleanup of removed boards | `scheduler`, `render`, `awtrix` |
 | `internal/config` | TOML decoding, `${NAME}` expansion, validation, reading one provider block (`LoadProvider`), monthly request estimates | `transit`, `catalog`, `render`, `awtrix` |
 | `cmd/urbanist-timetable` | CLI commands and wiring (`wire.go`) | everything |

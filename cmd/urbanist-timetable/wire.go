@@ -16,10 +16,10 @@ import (
 
 // buildProviders constructs each configured provider once, so boards that
 // share a provider share its caches and connections.
-func buildProviders(cfg *config.Config, opts ...providers.Option) (map[string]transit.Provider, error) {
+func buildProviders(blocks map[string]map[string]any, opts ...providers.Option) (map[string]transit.Provider, error) {
 	reg := providers.Registry(opts...)
-	out := make(map[string]transit.Provider, len(cfg.Providers))
-	for name, raw := range cfg.Providers {
+	out := make(map[string]transit.Provider, len(blocks))
+	for name, raw := range blocks {
 		typ, opts, err := catalog.Resolve(name, raw)
 		if err != nil {
 			return nil, fmt.Errorf("providers.%s: %w", name, err)

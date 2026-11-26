@@ -1,6 +1,9 @@
 package main
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 // closest returns the candidate most like name, or "" when none is close
 // enough to be a likely typo.
@@ -17,6 +20,15 @@ func closest(name string, candidates []string) string {
 		return ""
 	}
 	return best
+}
+
+// didYouMean is "; did you mean X?" for the candidate closest to name, or
+// "" when none is close.
+func didYouMean(name string, candidates []string) string {
+	if s := closest(name, candidates); s != "" {
+		return fmt.Sprintf("; did you mean %q?", s)
+	}
+	return ""
 }
 
 // distance is the Levenshtein edit distance between a and b, by rune.

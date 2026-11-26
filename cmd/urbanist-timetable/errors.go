@@ -14,6 +14,7 @@ import (
 	"github.com/mjrossi/urbanist-timetable/internal/termout"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/catalog"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit/registry"
 )
 
 // usageError is a mistake in how a command was called. Its hint points at
@@ -35,7 +36,6 @@ func newUsageError(c *cli.Command, format string, args ...any) error {
 type sourceError struct {
 	name       string
 	configPath string
-	unknown    bool
 	suggestion string
 	err        error
 }
@@ -118,7 +118,7 @@ func hint(err error) string {
 		return "create one with `urbanist-timetable config init`, or see `urbanist-timetable config example`"
 	case errors.As(err, &missing):
 		return "run `urbanist-timetable systems show " + missing.System + "`"
-	case errors.As(err, &source) && source.unknown:
+	case errors.As(err, &source) && errors.Is(source, registry.ErrUnknownProvider):
 		h := fmt.Sprintf("%q is not a [providers] block in %s, a system, or a provider; ", source.name, source.configPath)
 		if source.suggestion != "" {
 			return h + fmt.Sprintf("did you mean %q?", source.suggestion)
@@ -177,11 +177,7 @@ func unknownCommandError(c *cli.Command, name string) error {
 		names = append(names, sub.Names()...)
 	}
 	names = slices.DeleteFunc(names, func(n string) bool { return n == "help" || n == "h" })
-	msg := fmt.Sprintf("unknown command %q", name)
-	if s := closest(name, names); s != "" {
-		msg += fmt.Sprintf("; did you mean %q?", s)
-	}
-	return newUsageError(c, "%s", msg)
+	return newUsageError(c, "unknown command %q%s", name, didYouMean(name, names))
 }
 
 // withUsageHandling gives every command in the tree short usage errors, and

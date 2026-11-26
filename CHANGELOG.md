@@ -21,6 +21,7 @@ version may break configuration.
   and `departures NAME` one board, with the board's filters, `window` and
   `per_row`; flags given on the command line replace them. Boards no longer
   need a `[clock]`, so the configuration can serve the terminal alone.
+  Boards and stops are fetched at the same time.
 - Shell completion for bash, zsh and fish (`completion`), covering
   commands, flags, systems, provider blocks and board names.
 - `config example` prints the annotated example configuration.
@@ -35,6 +36,8 @@ version may break configuration.
 - The README explains how to use the packages from Go, and
   `examples/departures` is a complete program that does. Runnable examples
   document the main packages.
+- For programs that import `pkg/`: `transit.Filter.Narrows` reports
+  whether a filter asks for less than every departure.
 
 ### Changed
 
@@ -47,6 +50,7 @@ version may break configuration.
   commands that work without a configuration.
 - `stops search` aligns its IDs to the longest one, and at a terminal
   prints the `departures` command to use next.
+- Stop search also ignores the accents in å, ø, ý and ÿ.
 - Configuration: `[[boards]]` without `[clock]`, or `[clock]` without
   boards, is valid; `clock run` and `clock preview` still require both.
 - `departures --json` for configured boards prints an array of boards,
