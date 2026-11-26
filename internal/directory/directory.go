@@ -158,11 +158,8 @@ func (d *Directory) Search(ctx context.Context, words string) (Results, error) {
 	known := map[string]bool{}
 	var found []System
 	for _, s := range cat {
-		for _, id := range s.MobilityDB {
+		for _, id := range slices.Concat(s.MobilityDB, s.TransitlandFeeds) {
 			known[id] = true
-		}
-		if s.TransitlandFeed != "" {
-			known[s.TransitlandFeed] = true
 		}
 		if u, ok := s.Options["static_url"].(string); ok {
 			known[u] = true

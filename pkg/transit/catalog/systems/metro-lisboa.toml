@@ -14,6 +14,6 @@ Needs a free OAuth client: register at the API Store, subscribe an
 application to EstadoServicoML, and generate production keys with the
 client-credentials grant. Station IDs are two letters, such as "BC"."""
 mobility_db = ["tld-716"]
-transitland_feed = "f-eyckr-metrodelisboa"
+transitland_feeds = ["f-eyckr-metrodelisboa"]
 
 [options]
