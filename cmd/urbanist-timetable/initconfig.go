@@ -80,7 +80,7 @@ func initConfig(ctx context.Context, c *cli.Command) error {
 			in:  bufio.NewReader(c.Root().Reader),
 			out: c.Root().ErrWriter,
 			open: func(name string) (transit.Provider, error) {
-				return openSource(path, name, cacheOptions(c)...)
+				return openSource(path, name, providerOptions(c)...)
 			},
 		}
 		a, err = p.ask(ctx)

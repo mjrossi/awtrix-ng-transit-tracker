@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"slices"
 	"strings"
@@ -94,6 +95,7 @@ func departures(ctx context.Context, c *cli.Command) error {
 	q.json = c.Bool("json")
 	q.opts = termout.Options{Color: isTerminal(w) && os.Getenv("NO_COLOR") == "", Limit: c.Int("limit")}
 	q.warnings = c.Root().ErrWriter
+	q.log = newLogger(c)
 
 	if watching {
 		t := time.NewTicker(c.Duration("interval"))
@@ -117,7 +119,7 @@ func feedQuery(c *cli.Command, stops []string) (query, error) {
 	if s := c.String("static"); s != "" {
 		settings["static_url"] = s
 	}
-	p, err := providers.Open("gtfsrt", settings, cacheOptions(c)...)
+	p, err := providers.Open("gtfsrt", settings, providerOptions(c)...)
 	if err != nil {
 		return query{}, err
 	}
@@ -130,7 +132,7 @@ func sourceQuery(c *cli.Command, source string, stops []string) (query, error) {
 	if err != nil {
 		return query{}, err
 	}
-	p, err := openSource(path, source, cacheOptions(c)...)
+	p, err := openSource(path, source, providerOptions(c)...)
 	if err != nil {
 		return query{}, err
 	}
@@ -178,7 +180,7 @@ func boardsQuery(c *cli.Command, args []string) (query, error) {
 			used[s.Provider] = cfg.Providers[s.Provider]
 		}
 	}
-	provs, err := buildProviders(used, cacheOptions(c)...)
+	provs, err := buildProviders(used, providerOptions(c)...)
 	if err != nil {
 		return query{}, err
 	}
@@ -245,6 +247,7 @@ type query struct {
 	json     bool
 	opts     termout.Options
 	warnings io.Writer
+	log      *slog.Logger
 }
 
 // boardQuery is one block of output.
@@ -344,8 +347,11 @@ func (q query) fetch(ctx context.Context, now time.Time, bq boardQuery) (termout
 	var wg sync.WaitGroup
 	for i, s := range bq.stops {
 		wg.Go(func() {
+			start := time.Now()
 			deps, err := s.Provider.Departures(ctx, transit.Query{StopID: s.StopID, Now: now, Window: bq.window})
 			results[i] = result{deps, err}
+			q.log.DebugContext(ctx, "fetched stop", slog.String("board", bq.name), slog.String("stop", s.Name),
+				slog.Int("departures", len(deps)), slog.Duration("took", time.Since(start).Round(time.Millisecond)), slog.Any("err", err))
 		})
 	}
 	wg.Wait()

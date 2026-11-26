@@ -3,6 +3,8 @@
 package providers
 
 import (
+	"log/slog"
+
 	"github.com/mjrossi/urbanist-timetable/pkg/transit"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/catalog"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/providers/carrismetropolitana"
@@ -15,6 +17,7 @@ import (
 
 type options struct {
 	scheduleCache string
+	log           *slog.Logger
 }
 
 // Option configures the built-in providers.
@@ -26,6 +29,11 @@ func WithScheduleCache(dir string) Option {
 	return func(o *options) { o.scheduleCache = dir }
 }
 
+// WithLogger reports slow work, such as GTFS schedule downloads, to log.
+func WithLogger(log *slog.Logger) Option {
+	return func(o *options) { o.log = log }
+}
+
 // Registry returns a registry with every built-in provider.
 func Registry(opts ...Option) *registry.Registry {
 	var o options
@@ -35,7 +43,11 @@ func Registry(opts ...Option) *registry.Registry {
 	r := registry.New()
 	carrismetropolitana.Register(r)
 	demo.Register(r)
-	gtfsrt.Register(r, gtfsrt.WithCacheDir(o.scheduleCache))
+	gtfsOpts := []gtfsrt.Option{gtfsrt.WithCacheDir(o.scheduleCache)}
+	if o.log != nil {
+		gtfsOpts = append(gtfsOpts, gtfsrt.WithLogger(o.log))
+	}
+	gtfsrt.Register(r, gtfsOpts...)
 	metrolisboa.Register(r)
 	transitland.Register(r)
 	return r

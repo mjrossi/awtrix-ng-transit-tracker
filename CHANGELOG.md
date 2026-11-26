@@ -9,6 +9,11 @@ version may break configuration.
 
 ### Added
 
+- GTFS schedule downloads are logged to stderr, with their size and time, so
+  a first run that downloads several schedules no longer sits silent.
+  `--log-level debug` also logs each stop `departures` fetches and how long it
+  took. A bad `--log-level` or `--log-format` is rejected before any command
+  runs. Library users can pass `providers.WithLogger` or `gtfsrt.WithLogger`.
 - Errors from the command line come with a hint for what to do next. A
   mistyped command, flag, system or source gets a "did you mean". A stop
   name given where an ID belongs gets the `stops search` command that

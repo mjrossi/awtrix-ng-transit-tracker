@@ -1,14 +1,19 @@
 package gtfsrt_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
 
 	"github.com/mjrossi/urbanist-timetable/pkg/transit"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/providers/gtfsrt"
@@ -218,5 +223,66 @@ func TestCacheOffWritesNothing(t *testing.T) {
 	}
 	if es := cacheFiles(t, tmp); len(es) != 0 {
 		t.Errorf("files written with the cache off: %v", es)
+	}
+}
+
+// logMessages runs a provider sharing dir at each time and returns the
+// messages it logged, in order.
+func logMessages(t *testing.T, a *agency, dir string, times ...time.Time) []string {
+	t.Helper()
+	var buf bytes.Buffer
+	log := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	cfg := gtfsrt.Config{StaticURL: a.URL + "/gtfs.zip?key=secret", RealtimeURLs: []string{a.URL + "/realtime.pb"}}
+	for _, at := range times {
+		p, err := gtfsrt.New(cfg, a.Client(), gtfsrt.WithCacheDir(dir), gtfsrt.WithLogger(log))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := departAt(t, p, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if strings.Contains(buf.String(), "secret") {
+		t.Errorf("log holds the URL's query string:\n%s", buf.String())
+	}
+	var msgs []string
+	for line := range strings.Lines(buf.String()) {
+		var rec struct{ Msg string }
+		if err := json.Unmarshal([]byte(line), &rec); err != nil {
+			t.Fatal(err)
+		}
+		msgs = append(msgs, rec.Msg)
+	}
+	return msgs
+}
+
+func TestScheduleDownloadsAreLogged(t *testing.T) {
+	downloaded := []string{"downloading GTFS schedule", "downloaded GTFS schedule"}
+	tests := []struct {
+		name  string
+		cache bool
+		times []time.Time
+		want  []string
+	}{
+		{"cache off", false, []time.Time{mtaRecorded}, downloaded},
+		{"cached schedule reused", true, []time.Time{mtaRecorded, mtaRecorded.Add(time.Hour)}, downloaded},
+		{
+			"unchanged schedule revalidated", true,
+			[]time.Time{mtaRecorded, mtaRecorded.Add(25 * time.Hour)},
+			append(downloaded, "revalidating GTFS schedule", "GTFS schedule unchanged"),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			a := newAgency(t, "mta")
+			a.etag = `"v1"`
+			dir := ""
+			if tt.cache {
+				dir = t.TempDir()
+			}
+			if diff := cmp.Diff(tt.want, logMessages(t, a, dir, tt.times...)); diff != "" {
+				t.Errorf("messages (-want +got):\n%s", diff)
+			}
+		})
 	}
 }

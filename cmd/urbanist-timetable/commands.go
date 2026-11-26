@@ -52,15 +52,11 @@ func runCommand() *cli.Command {
 
 // setup returns the logger and configuration named by the global flags.
 func setup(c *cli.Command) (*slog.Logger, *config.Config, error) {
-	log, err := newLogger(c)
-	if err != nil {
-		return nil, nil, err
-	}
 	cfg, err := loadConfig(c)
 	if err != nil {
 		return nil, nil, err
 	}
-	return log, cfg, nil
+	return newLogger(c), cfg, nil
 }
 
 // loadConfig loads the whole configuration, for commands that need one.
@@ -85,7 +81,7 @@ func runBoards(ctx context.Context, c *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	provs, err := buildProviders(cfg.Providers, cacheOptions(c)...)
+	provs, err := buildProviders(cfg.Providers, providerOptions(c)...)
 	if err != nil {
 		return err
 	}
@@ -174,7 +170,7 @@ func preview(ctx context.Context, c *cli.Command) error {
 		}
 	}
 	out := newClockOutput(cfg, pusher)
-	provs, err := buildProviders(cfg.Providers, cacheOptions(c)...)
+	provs, err := buildProviders(cfg.Providers, providerOptions(c)...)
 	if err != nil {
 		return err
 	}
@@ -235,7 +231,7 @@ func configCommand() *cli.Command {
 				if err != nil {
 					return err
 				}
-				provs, err := buildProviders(cfg.Providers, cacheOptions(c)...)
+				provs, err := buildProviders(cfg.Providers, providerOptions(c)...)
 				if err != nil {
 					return err
 				}
@@ -358,7 +354,7 @@ func stopsCommand() *cli.Command {
 				if err != nil {
 					return err
 				}
-				p, err := openSource(path, name, cacheOptions(c)...)
+				p, err := openSource(path, name, providerOptions(c)...)
 				if err != nil {
 					return err
 				}

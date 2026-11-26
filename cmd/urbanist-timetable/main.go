@@ -85,12 +85,22 @@ func newRootCommand() *cli.Command {
 				Usage:   "json or text; text by default when stderr is a terminal",
 				Value:   defaultLogFormat(),
 				Sources: cli.EnvVars("TIMETABLE_LOG_FORMAT"),
+				Validator: func(s string) error {
+					if f := strings.ToLower(s); f != "json" && f != "text" {
+						return fmt.Errorf("want json or text, got %q", s)
+					}
+					return nil
+				},
 			},
 			&cli.StringFlag{
 				Name:    "log-level",
 				Usage:   "debug, info, warn or error",
 				Value:   "info",
 				Sources: cli.EnvVars("TIMETABLE_LOG_LEVEL"),
+				Validator: func(s string) error {
+					var level slog.Level
+					return level.UnmarshalText([]byte(s))
+				},
 			},
 		},
 		Commands: []*cli.Command{
@@ -122,27 +132,24 @@ func defaultLogFormat() string {
 	return "json"
 }
 
-// cacheOptions passes --cache-dir to the providers.
-func cacheOptions(c *cli.Command) []providers.Option {
+// providerOptions passes --cache-dir and the logger to the providers, so a
+// slow schedule download says what it is doing.
+func providerOptions(c *cli.Command) []providers.Option {
 	dir := c.String("cache-dir")
 	if dir == "off" {
 		dir = ""
 	}
-	return []providers.Option{providers.WithScheduleCache(dir)}
+	return []providers.Option{providers.WithScheduleCache(dir), providers.WithLogger(newLogger(c))}
 }
 
-func newLogger(c *cli.Command) (*slog.Logger, error) {
+// newLogger builds the logger the global flags describe. Their validators
+// have already rejected bad values, so a failed parse here cannot happen.
+func newLogger(c *cli.Command) *slog.Logger {
 	var level slog.Level
-	if err := level.UnmarshalText([]byte(c.String("log-level"))); err != nil {
-		return nil, fmt.Errorf("log-level: %w", err)
-	}
+	_ = level.UnmarshalText([]byte(c.String("log-level")))
 	opts := &slog.HandlerOptions{Level: level}
-	switch strings.ToLower(c.String("log-format")) {
-	case "json":
-		return slog.New(slog.NewJSONHandler(os.Stderr, opts)), nil
-	case "text":
-		return slog.New(slog.NewTextHandler(os.Stderr, opts)), nil
-	default:
-		return nil, fmt.Errorf("log-format: want json or text, got %q", c.String("log-format"))
+	if strings.EqualFold(c.String("log-format"), "json") {
+		return slog.New(slog.NewJSONHandler(c.Root().ErrWriter, opts))
 	}
+	return slog.New(slog.NewTextHandler(c.Root().ErrWriter, opts))
 }

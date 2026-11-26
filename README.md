@@ -255,9 +255,11 @@ Global flags: `--config` (`TIMETABLE_CONFIG`, default
 `~/.config/urbanist-timetable/config.toml`, or under `$XDG_CONFIG_HOME`; in the
 image, `/config/config.toml`), `--cache-dir` (`TIMETABLE_CACHE`, default
 your user cache directory; in the image, `/data/cache`), `--log-format json|text`
-(`TIMETABLE_LOG_FORMAT`, default `json`), `--log-level
-debug|info|warn|error` (`TIMETABLE_LOG_LEVEL`), and `--version`, which prints
-the release version.
+(`TIMETABLE_LOG_FORMAT`, default `text` at a terminal and `json` otherwise),
+`--log-level debug|info|warn|error` (`TIMETABLE_LOG_LEVEL`), and `--version`,
+which prints the release version. Logs go to stderr. GTFS schedule downloads,
+which can take a while on a first run, are logged at `info`; at `debug`,
+`departures` also logs how long each stop took.
 
 ## Configuration
 

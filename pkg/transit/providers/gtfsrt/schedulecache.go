@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -25,6 +26,12 @@ type Option func(*Provider)
 // the cache off.
 func WithCacheDir(dir string) Option {
 	return func(p *Provider) { p.cacheDir = dir }
+}
+
+// WithLogger reports schedule downloads to log, since a large one can take
+// minutes. Without it nothing is logged.
+func WithLogger(log *slog.Logger) Option {
+	return func(p *Provider) { p.log = log }
 }
 
 // validators let a stale schedule be revalidated with a conditional request.
@@ -157,9 +164,15 @@ func (p *Provider) refreshCache(ctx context.Context, now time.Time, path string,
 		_ = os.Remove(tmp.Name())
 	}()
 
+	if old == nil {
+		p.logDownloadStart(ctx)
+	} else {
+		p.log.DebugContext(ctx, "revalidating GTFS schedule", slog.String("url", redact(p.cfg.StaticURL)))
+	}
+	start := p.clock()
 	var valid validators
 	notModified := false
-	_, err = p.fetchTo(ctx, p.cfg.StaticURL, cond, maxStaticBody, func(status int, h http.Header) (io.Writer, error) {
+	size, err := p.fetchTo(ctx, p.cfg.StaticURL, cond, maxStaticBody, func(status int, h http.Header) (io.Writer, error) {
 		if status == http.StatusNotModified && old != nil {
 			notModified = true
 			return io.Discard, nil
@@ -178,6 +191,7 @@ func (p *Provider) refreshCache(ctx context.Context, now time.Time, path string,
 		return nil, err
 	}
 	if notModified {
+		p.log.DebugContext(ctx, "GTFS schedule unchanged", slog.String("url", redact(p.cfg.StaticURL)))
 		if err := os.Chtimes(path, now, now); err != nil {
 			return nil, err
 		}
@@ -194,6 +208,7 @@ func (p *Provider) refreshCache(ctx context.Context, now time.Time, path string,
 	if err != nil {
 		return nil, err
 	}
+	p.logDownloaded(ctx, size, start)
 	if err := os.Chtimes(tmp.Name(), now, now); err != nil {
 		return nil, err
 	}

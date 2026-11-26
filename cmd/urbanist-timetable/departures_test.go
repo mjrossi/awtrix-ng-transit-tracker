@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -204,6 +205,39 @@ func TestDeparturesScheduleCache(t *testing.T) {
 	}
 }
 
+func TestDeparturesLogs(t *testing.T) {
+	at(t, mtaRecorded)
+	srv := gtfsServer(t, false)
+	args := []string{"departures", "--static", srv.URL + "/gtfs.zip", "--realtime", srv.URL + "/realtime.pb", "235"}
+	tests := []struct {
+		level string
+		want  []string
+		not   []string
+	}{
+		{"info", []string{"downloaded GTFS schedule"}, []string{"fetched stop"}},
+		{"debug", []string{"downloaded GTFS schedule", `msg="fetched stop" board="" stop=gtfsrt:235`}, nil},
+		{"warn", nil, []string{"GTFS schedule", "fetched stop"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.level, func(t *testing.T) {
+			_, stderr, err := runCLIOut(t, "", append([]string{"--log-format", "text", "--log-level", tt.level}, args...)...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, w := range tt.want {
+				if !strings.Contains(stderr, w) {
+					t.Errorf("stderr lacks %q:\n%s", w, stderr)
+				}
+			}
+			for _, n := range tt.not {
+				if strings.Contains(stderr, n) {
+					t.Errorf("stderr has %q:\n%s", n, stderr)
+				}
+			}
+		})
+	}
+}
+
 func TestDeparturesUsageErrors(t *testing.T) {
 	tests := map[string]struct {
 		args []string
@@ -213,6 +247,8 @@ func TestDeparturesUsageErrors(t *testing.T) {
 		"watch and json":     {[]string{"departures", "--watch", "--json", "demo", "s1"}, "--json"},
 		"watch, no terminal": {[]string{"departures", "--watch", "demo", "s1"}, "terminal"},
 		"short interval":     {[]string{"departures", "--watch", "--interval", "5s", "demo", "s1"}, "15s"},
+		"log level":          {[]string{"--log-level", "loud", "departures", "demo", "s1"}, "log-level"},
+		"log format":         {[]string{"--log-format", "xml", "departures", "demo", "s1"}, "log-format"},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -280,7 +316,7 @@ func TestServerTextCannotDriveTheTerminal(t *testing.T) {
 	q := query{boards: []boardQuery{{
 		source: "x", window: time.Hour,
 		stops: []scheduler.Source{{Provider: failing{err: hostile, partial: true}, StopID: "s"}},
-	}}, warnings: &warnings}
+	}}, warnings: &warnings, log: slog.New(slog.DiscardHandler)}
 	if _, err := q.show(t.Context(), now); err != nil {
 		t.Fatal(err)
 	}
