@@ -94,15 +94,14 @@ func (d *Directory) searchTransitland(ctx context.Context, words string) ([]Syst
 		if !matches(strings.Join(hay, " "), words) {
 			continue
 		}
-		data := DataSchedule
-		for _, f := range op.Feeds {
-			if strings.EqualFold(f.Spec, specGTFSRT) {
-				data = DataRealtime
-			}
-		}
+		live := op.liveSchedules()
 		for _, f := range op.Feeds {
 			if !strings.EqualFold(f.Spec, specGTFS) {
 				continue
+			}
+			data := DataSchedule
+			if live[f.OnestopID] {
+				data = DataRealtime
 			}
 			s := System{ID: f.OnestopID, Agency: op.title(), Place: op.place(), Data: data, Source: SourceTransitland}
 			if f.Name != nil {
@@ -112,6 +111,39 @@ func (d *Directory) searchTransitland(ctx context.Context, words string) ([]Syst
 		}
 	}
 	return out, nil
+}
+
+// liveSchedules lists the operator's schedules that have a realtime feed.
+// A realtime feed belongs to the schedule whose ID begins its own
+// (f-dpz8-ttc~surface~rt to f-dpz8-ttc~surface, not f-dpz8-ttc), or to
+// the only schedule; one that fits neither is left unassigned, so it marks
+// none of several schedules.
+func (op tlOperator) liveSchedules() map[string]bool {
+	var schedules []string
+	for _, f := range op.Feeds {
+		if strings.EqualFold(f.Spec, specGTFS) {
+			schedules = append(schedules, f.OnestopID)
+		}
+	}
+	live := map[string]bool{}
+	for _, f := range op.Feeds {
+		if !strings.EqualFold(f.Spec, specGTFSRT) {
+			continue
+		}
+		best := ""
+		for _, s := range schedules {
+			if strings.HasPrefix(f.OnestopID, s+"~") && len(s) > len(best) {
+				best = s
+			}
+		}
+		if best == "" && len(schedules) == 1 {
+			best = schedules[0]
+		}
+		if best != "" {
+			live[best] = true
+		}
+	}
+	return live
 }
 
 func (op tlOperator) title() string {
@@ -199,7 +231,7 @@ func (d *Directory) lookupTransitland(ctx context.Context, id string) (System, B
 			}
 		}
 	}
-	if len(rtRefs) > 0 {
+	if len(ops.Operators) > 0 && ops.Operators[0].liveSchedules()[id] {
 		sys.Data = DataRealtime
 	}
 

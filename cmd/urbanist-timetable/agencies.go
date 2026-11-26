@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -79,9 +80,31 @@ func writeSystems(c *cli.Command, res directory.Results) {
 	if res.NoTransitland {
 		fmt.Fprintf(ew, "set %s to also search Transitland\n", directory.TransitlandKeyVar)
 	}
+	if hasUnsure(res.Systems) {
+		fmt.Fprintln(ew, unsureNote)
+	}
 	if len(res.Systems) > 0 && isTerminal(c.Root().Writer) {
 		fmt.Fprintf(ew, "\nFind a stop: urbanist-timetable stops search %s <words...>\n", res.Systems[0].ID)
 	}
+}
+
+// unsureNote explains dataLabel's "realtime?".
+const unsureNote = "realtime? = the agency publishes predictions, which Transitland may not pass on; departures mark schedule-only times with *"
+
+// dataLabel names what departures a system gives. Through Transitland,
+// that the agency publishes predictions does not mean Transitland merges
+// them: the CTA's reach Transitland, yet its departures are all scheduled.
+func dataLabel(d directory.Data, viaTransitland bool) string {
+	if d == directory.DataRealtime && viaTransitland {
+		return "realtime?"
+	}
+	return string(d)
+}
+
+func hasUnsure(systems []directory.System) bool {
+	return slices.ContainsFunc(systems, func(s directory.System) bool {
+		return dataLabel(s.Data, s.Source == directory.SourceTransitland) != string(s.Data)
+	})
 }
 
 // systemRows lays out search results agency first, each with the system
@@ -107,7 +130,7 @@ func systemRows(systems []directory.System, numbered bool) [][]string {
 			// gives the same system, with every agency's stops.
 			note = strings.TrimPrefix(note+", shared feed", ", ")
 		}
-		rows = append(rows, []string{shorten(s.Agency, 40), s.ID, shorten(name(s), 28), shorten(s.Place, 30), string(s.Data), note})
+		rows = append(rows, []string{shorten(s.Agency, 40), s.ID, shorten(name(s), 28), shorten(s.Place, 30), dataLabel(s.Data, s.Source == directory.SourceTransitland), note})
 	}
 	if !named {
 		for i, r := range rows {

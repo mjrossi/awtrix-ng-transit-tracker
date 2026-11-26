@@ -1,6 +1,10 @@
 package directory
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/google/go-cmp/cmp"
+)
 
 func TestKeyVar(t *testing.T) {
 	tests := map[string]struct{ agency, id, want string }{
@@ -78,5 +82,30 @@ func TestNamed(t *testing.T) {
 		if got := named(System{Agency: tt.agency, Name: tt.name}, tt.words); got != tt.want {
 			t.Errorf("named(%q, %q, %q) = %v, want %v", tt.agency, tt.name, tt.words, got, tt.want)
 		}
+	}
+}
+
+func TestLiveSchedules(t *testing.T) {
+	feeds := func(specs ...string) []tlFeedRef {
+		var out []tlFeedRef
+		for i := 0; i < len(specs); i += 2 {
+			out = append(out, tlFeedRef{OnestopID: specs[i], Spec: specs[i+1]})
+		}
+		return out
+	}
+	tests := map[string]struct {
+		feeds []tlFeedRef
+		want  map[string]bool
+	}{
+		"by prefix, the longest": {feeds("f-ttc", "GTFS", "f-ttc~surface", "GTFS", "f-ttc~surface~rt", "GTFS_RT"), map[string]bool{"f-ttc~surface": true}},
+		"the only schedule":      {feeds("f-dp3-cta", "GTFS", "f-cta~rt", "GTFS_RT"), map[string]bool{"f-dp3-cta": true}},
+		"unassigned":             {feeds("f-a", "GTFS", "f-b", "GTFS", "f-c~rt", "GTFS_RT"), map[string]bool{}},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			if diff := cmp.Diff(tt.want, tlOperator{Feeds: tt.feeds}.liveSchedules()); diff != "" {
+				t.Errorf("(-want +got):\n%s", diff)
+			}
+		})
 	}
 }

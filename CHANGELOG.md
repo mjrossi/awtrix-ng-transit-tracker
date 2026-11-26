@@ -15,7 +15,9 @@ version may break configuration.
   Transitland's operators. An agency whose name or acronym is the search
   exactly comes before ones that only contain it. A regional or national
   feed that carries many agencies is marked as shared, and `systems show`
-  names it after the feed rather than one of its agencies. Every ID the
+  names it after the feed rather than one of its agencies. A Transitland
+  result whose agency publishes predictions reads `realtime?`, since
+  Transitland does not always pass them on. Every ID the
   Mobility Database uses works, including `ntd-`, `tdg-`, `jbda-` and
   `odpt-` ones. A result's ID,
   such as `mdb-2929` or `f-eyc-cp`, works in `departures`, `stops search`

@@ -156,7 +156,7 @@ func showDirectorySystem(ctx context.Context, c *cli.Command, id string) error {
 	if sys.Place != "" {
 		fmt.Fprintf(w, ", %s", termout.Clean(sys.Place))
 	}
-	fmt.Fprintf(w, " (%s)\n# %s\n", sys.Data, termout.Clean(b.Comment))
+	fmt.Fprintf(w, " (%s)\n# %s\n", dataLabel(sys.Data, b.Type == "transitland"), termout.Clean(b.Comment))
 	if len(sys.Needs) > 0 {
 		fmt.Fprintf(w, "# Needs %s", strings.Join(sys.Needs, ", "))
 		if sys.KeyInfo != "" {

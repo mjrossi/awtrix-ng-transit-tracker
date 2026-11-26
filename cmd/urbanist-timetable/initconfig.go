@@ -348,6 +348,9 @@ func (p prompter) askSystem(ctx context.Context) (chosenSystem, error) {
 		if res.NoTransitland {
 			fmt.Fprintf(p.out, "  Set %s to also search Transitland.\n", directory.TransitlandKeyVar)
 		}
+		if hasUnsure(res.Systems) {
+			fmt.Fprintln(p.out, "  "+unsureNote)
+		}
 		chosen, next, err := p.pickSystem(ctx, res.Systems)
 		switch {
 		case err != nil:
