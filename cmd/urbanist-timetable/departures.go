@@ -284,7 +284,6 @@ func (q query) show(ctx context.Context, now time.Time) (string, error) {
 		case err != nil:
 			err = fmt.Errorf("board %s: %w", bq.name, err)
 			failed = append(failed, err)
-			warn(q.warnings, err)
 			continue
 		}
 		boards = append(boards, b)
@@ -301,6 +300,9 @@ func (q query) show(ctx context.Context, now time.Time) (string, error) {
 	}
 	if len(boards) == 0 {
 		return "", errors.Join(failed...)
+	}
+	for _, err := range failed {
+		warn(q.warnings, err)
 	}
 	var err error
 	switch {

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -212,4 +213,51 @@ func TestPrompterStopsWhenInputEnds(t *testing.T) {
 	if _, err := p.ask(t.Context()); !errors.Is(err, errInputEnded) {
 		t.Errorf("err = %v, want errInputEnded", err)
 	}
+}
+
+func TestPrompterStopsWhenCanceled(t *testing.T) {
+	t.Run("while reading", func(t *testing.T) {
+		// A pipe nobody writes to blocks like a terminal waiting for input.
+		r, w := io.Pipe()
+		t.Cleanup(func() { _ = w.Close() })
+		ctx, cancel := context.WithCancel(t.Context())
+		p := prompter{in: bufio.NewReader(r), out: &bytes.Buffer{}, open: func(string) (transit.Provider, error) {
+			return fakeSource{}, nil
+		}}
+		done := make(chan error, 1)
+		go func() {
+			_, err := p.ask(ctx)
+			done <- err
+		}()
+		cancel()
+		select {
+		case err := <-done:
+			if !errors.Is(err, context.Canceled) {
+				t.Errorf("err = %v, want context.Canceled", err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("ask did not return after cancel")
+		}
+	})
+	t.Run("while searching", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		p := prompter{in: bufio.NewReader(strings.NewReader("nyc-subway\ntimes\ntimes\n")), out: &bytes.Buffer{}, open: func(string) (transit.Provider, error) {
+			return cancelingSource{cancel: cancel}, nil
+		}}
+		if _, err := p.ask(ctx); !errors.Is(err, context.Canceled) {
+			t.Errorf("err = %v, want context.Canceled", err)
+		}
+	})
+}
+
+// cancelingSource cancels its context when searched, as Ctrl-C during a
+// search does.
+type cancelingSource struct {
+	fakeSource
+	cancel context.CancelFunc
+}
+
+func (s cancelingSource) SearchStops(ctx context.Context, _ string) ([]transit.Stop, error) {
+	s.cancel()
+	return nil, ctx.Err()
 }

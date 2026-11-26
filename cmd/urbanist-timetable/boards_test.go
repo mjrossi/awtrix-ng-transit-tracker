@@ -144,3 +144,26 @@ func TestDeparturesWithoutStops(t *testing.T) {
 		}
 	})
 }
+
+func TestDeparturesReportsEachFailureOnce(t *testing.T) {
+	src := carrisServer(t) + `
+[[boards]]
+name = "one"
+[[boards.stops]]
+provider = "cm"
+stop = "999998"
+
+[[boards]]
+name = "two"
+[[boards.stops]]
+provider = "cm"
+stop = "999999"
+`
+	_, stderr, err := runCLIOut(t, src, "departures")
+	if err == nil || !strings.Contains(err.Error(), "board one: ") || !strings.Contains(err.Error(), "board two: ") {
+		t.Errorf("err = %v, want both boards named", err)
+	}
+	if stderr != "" {
+		t.Errorf("stderr %q repeats the error", stderr)
+	}
+}

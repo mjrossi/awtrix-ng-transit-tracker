@@ -158,7 +158,7 @@ type prompter struct {
 }
 
 func (p prompter) ask(ctx context.Context) (initAnswers, error) {
-	sys, err := p.askSystem()
+	sys, err := p.askSystem(ctx)
 	if err != nil {
 		return initAnswers{}, err
 	}
@@ -180,13 +180,13 @@ func (p prompter) ask(ctx context.Context) (initAnswers, error) {
 	if a.lines, err = p.askLines(ctx, prov, stop.ID); err != nil {
 		return initAnswers{}, err
 	}
-	if a.board, err = p.askBoard(slug(cmp.Or(stop.Name, stop.ID))); err != nil {
+	if a.board, err = p.askBoard(ctx, slug(cmp.Or(stop.Name, stop.ID))); err != nil {
 		return initAnswers{}, err
 	}
 	return a, nil
 }
 
-func (p prompter) askSystem() (catalog.System, error) {
+func (p prompter) askSystem(ctx context.Context) (catalog.System, error) {
 	all, err := catalog.All()
 	if err != nil {
 		return catalog.System{}, err
@@ -197,7 +197,7 @@ func (p prompter) askSystem() (catalog.System, error) {
 	}
 	fmt.Fprintln(p.out, "Not listed? `urbanist-timetable config example` shows how to add any agency with GTFS-Realtime, or Transitland.")
 	for {
-		answer, err := p.line(fmt.Sprintf("System [1-%d]: ", len(all)))
+		answer, err := p.line(ctx, fmt.Sprintf("System [1-%d]: ", len(all)))
 		if err != nil {
 			return catalog.System{}, err
 		}
@@ -216,15 +216,18 @@ func (p prompter) askSystem() (catalog.System, error) {
 func (p prompter) askStop(ctx context.Context, prov transit.Provider) (transit.Stop, error) {
 	searcher, ok := prov.(transit.StopSearcher)
 	if !ok {
-		id, err := p.required("\nStop ID (from the agency's site or app): ")
+		id, err := p.required(ctx, "\nStop ID (from the agency's site or app): ")
 		return transit.Stop{ID: id}, err
 	}
 	for {
-		words, err := p.required("\nSearch for your stop (name or ID): ")
+		words, err := p.required(ctx, "\nSearch for your stop (name or ID): ")
 		if err != nil {
 			return transit.Stop{}, err
 		}
 		stops, err := searcher.SearchStops(ctx, words)
+		if ctx.Err() != nil {
+			return transit.Stop{}, ctx.Err()
+		}
 		if err != nil {
 			fmt.Fprintf(p.out, "Search failed: %s\n", oneLine(err))
 			continue
@@ -244,7 +247,7 @@ func (p prompter) askStop(ctx context.Context, prov transit.Provider) (transit.S
 		if len(stops) > len(shown) {
 			fmt.Fprintf(p.out, "  … and %d more; search with more words to narrow them.\n", len(stops)-len(shown))
 		}
-		answer, err := p.line(fmt.Sprintf("Stop [1-%d], or Enter to search again: ", len(shown)))
+		answer, err := p.line(ctx, fmt.Sprintf("Stop [1-%d], or Enter to search again: ", len(shown)))
 		if err != nil {
 			return transit.Stop{}, err
 		}
@@ -275,7 +278,7 @@ func (p prompter) askLines(ctx context.Context, prov transit.Provider, stop stri
 			fmt.Fprintf(p.out, "Lines here now: %s.\n", strings.Join(names, ", "))
 		}
 	}
-	answer, err := p.line("Only some lines? Comma-separated, or Enter for all: ")
+	answer, err := p.line(ctx, "Only some lines? Comma-separated, or Enter for all: ")
 	if err != nil {
 		return nil, err
 	}
@@ -288,9 +291,9 @@ func (p prompter) askLines(ctx context.Context, prov transit.Provider, stop stri
 	return lines, nil
 }
 
-func (p prompter) askBoard(suggested string) (string, error) {
+func (p prompter) askBoard(ctx context.Context, suggested string) (string, error) {
 	for {
-		answer, err := p.line(fmt.Sprintf("\nBoard name [%s]: ", suggested))
+		answer, err := p.line(ctx, fmt.Sprintf("\nBoard name [%s]: ", suggested))
 		if err != nil {
 			return "", err
 		}
@@ -304,10 +307,35 @@ func (p prompter) askBoard(suggested string) (string, error) {
 	}
 }
 
-// line prints prompt and returns the trimmed answer.
-func (p prompter) line(prompt string) (string, error) {
+// line prints prompt and returns the trimmed answer, or ctx's error when it
+// is canceled first.
+//
+// main catches Ctrl-C to cancel ctx, and a blocked read cannot see that, so
+// the read runs in a goroutine. On cancel that goroutine is left blocked
+// until input arrives or the process exits; no later call starts another,
+// because a canceled ctx stays canceled, so it never shares p.in.
+func (p prompter) line(ctx context.Context, prompt string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	fmt.Fprint(p.out, prompt)
-	s, err := p.in.ReadString('\n')
+	type result struct {
+		s   string
+		err error
+	}
+	read := make(chan result, 1)
+	go func() {
+		s, err := p.in.ReadString('\n')
+		read <- result{s, err}
+	}()
+	var r result
+	select {
+	case <-ctx.Done():
+		fmt.Fprintln(p.out)
+		return "", ctx.Err()
+	case r = <-read:
+	}
+	s, err := r.s, r.err
 	if err != nil && (s == "" || !errors.Is(err, io.EOF)) {
 		fmt.Fprintln(p.out)
 		return "", errInputEnded
@@ -316,9 +344,9 @@ func (p prompter) line(prompt string) (string, error) {
 }
 
 // required asks until the answer is not empty.
-func (p prompter) required(prompt string) (string, error) {
+func (p prompter) required(ctx context.Context, prompt string) (string, error) {
 	for {
-		s, err := p.line(prompt)
+		s, err := p.line(ctx, prompt)
 		if err != nil || s != "" {
 			return s, err
 		}
