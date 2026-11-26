@@ -22,7 +22,9 @@ import (
 type static struct {
 	routes map[string]transit.Line
 	stops  map[string]stopInfo
-	trips  map[string]tripInfo
+	// stopIDs lists stop IDs by stopInfo.idx.
+	stopIDs []string
+	trips   map[string]tripInfo
 	// loc is the agency's time zone, which schedule times count in.
 	loc      *time.Location
 	services map[string]*service
@@ -48,6 +50,7 @@ func (s *static) release() {
 type stopInfo struct {
 	name   string
 	parent string
+	idx    int32
 }
 
 type tripInfo struct {
@@ -82,7 +85,12 @@ func parseStatic(r io.ReaderAt, size int64) (*static, error) {
 		return nil, err
 	}
 	err = readTable(zr, "stops.txt", func(r row) {
-		s.stops[strings.Clone(r.get("stop_id"))] = stopInfo{name: in.get(r.get("stop_name")), parent: in.get(r.get("parent_station"))}
+		id := strings.Clone(r.get("stop_id"))
+		if _, dup := s.stops[id]; dup {
+			return
+		}
+		s.stops[id] = stopInfo{name: in.get(r.get("stop_name")), parent: in.get(r.get("parent_station")), idx: int32(len(s.stopIDs))}
+		s.stopIDs = append(s.stopIDs, id)
 	})
 	if err != nil {
 		return nil, err
