@@ -29,8 +29,10 @@ and *Urbanist Atlas*.
 
 The terminal tool, the clock and the library are in place, as the
 [design](./superpowers/specs/2026-11-25-clock-cli-library-design.md)
-planned. v0.7 brings timetabled departures in `gtfsrt` (done) and finding
-an agency from the command line, below in "Later".
+planned. v0.7 brings timetabled departures in `gtfsrt`, and finding an
+agency from the command line (`agencies search`, and `config init` by
+agency or city). After it, the next work comes from "Later", and a version
+is cut when there is a reason to.
 
 ## Data sources: agencies are data, adapters are code
 
@@ -41,7 +43,7 @@ with the number of agencies.
 | Provider | Agencies | Code per agency | Notes |
 |---|---|---|---|
 | `gtfsrt` (generic) | Thousands: anything with static GTFS, with or without GTFS-RT `TripUpdates` | None: a TOML entry | The default path. Feeds are listed in the [Mobility Database](https://mobilitydatabase.org/). |
-| `transitland` | Thousands, merged into JSON by [Transitland](https://www.transit.land/) | None: a TOML entry with a feed Onestop ID | Done. The fallback where an agency's own feeds are awkward, and the way to show timetabled trips today. Every request counts against a monthly quota (10,000 free, 50,000 Hobbyist/Academic), so each stop is fetched once per `refresh_interval` and boards count down from that. The quota belongs to the API key, so blocks sharing a key are added up. |
+| `transitland` | Thousands, merged into JSON by [Transitland](https://www.transit.land/) | None: a TOML entry with a feed Onestop ID | Done. The fallback where an agency's own feeds are awkward. Every request counts against a monthly quota (10,000 free, 50,000 Hobbyist/Academic), so each stop is fetched once per `refresh_interval` and boards count down from that. The quota belongs to the API key, so blocks sharing a key are added up. |
 | Custom adapters | One each | A few hundred lines | Only for agencies without usable GTFS-RT `TripUpdates`. |
 
 **Rule for custom adapters** (also in `CONTRIBUTING.md`): an agency gets
@@ -112,9 +114,6 @@ providers). Each widens who the project works for.
   order through the firmware's rotation API at startup, moving only this
   service's apps relative to each other. Off by default: with one agency
   or two boards, a card is a few seconds per round with no departures.
-- **Find an agency from the command line.** `agencies search` and
-  directory IDs are done; next, `config init` searches by agency or city
-  and writes a result's block.
 
 ## Contributions welcome
 

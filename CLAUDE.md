@@ -20,6 +20,10 @@ Part of the Urbanist family with *The Urbanist Lexicon* (mjrossi.com) and
 
 ## Architecture rules
 
+- **Agency → system → stop.** An agency publishes the data; a system is
+  one schedule with its realtime feeds, one provider block; a stop belongs
+  to one system. Catalog IDs are `<agency>` or `<agency>-<system>`;
+  directory IDs (`mdb-53`, `f-9q9-bart`) work wherever a catalog ID does.
 - **Agencies are data, adapters are code.** Most agencies are served by
   the generic GTFS-RT provider through configuration alone. A custom
   provider is only added when that path cannot serve an agency; see

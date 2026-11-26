@@ -39,11 +39,12 @@ Feed and API contents. They are decoded defensively:
 
 | Input | Bound |
 |---|---|
-| GTFS schedule zip | 512 MB download; staged in a temporary file, or kept in the cache directory when one is set, with only routes, stops and trips held in memory |
+| GTFS schedule zip | 512 MB download; staged in a temporary file, or kept in the cache directory when one is set, with routes, stops, trips and the calendar held in memory, and stop times only for the stops asked for |
+| Mobility Database feed list | 64 MB; `encoding/csv`, unknown columns ignored |
 | GTFS-Realtime feed | 64 MB; hand-written protobuf decoder that skips unknown fields and rejects malformed lengths |
 | Carris Metropolitana JSON | 32 MB |
 | Metro de Lisboa JSON | 4 MB; token response 64 KB |
-| Transitland JSON | 16 MB |
+| Transitland JSON | 16 MB; 8 MB for `agencies search` |
 | Clock API replies (app list, device state) | 1 MB decoded |
 | Clock error bodies | 64 KB |
 

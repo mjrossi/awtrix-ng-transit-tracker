@@ -17,6 +17,7 @@ import (
 	"github.com/urfave/cli/v3"
 
 	"github.com/mjrossi/urbanist-timetable/internal/config"
+	"github.com/mjrossi/urbanist-timetable/internal/directory"
 	"github.com/mjrossi/urbanist-timetable/internal/fold"
 	"github.com/mjrossi/urbanist-timetable/internal/termout"
 	"github.com/mjrossi/urbanist-timetable/internal/tomlout"
@@ -33,15 +34,16 @@ func initCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "init",
 		Usage: "create a configuration file with a system and a stop",
-		Description: "At a terminal without flags, asks for a system, searches for your stop, and\n" +
-			"saves it as a board that `departures` shows without arguments. With flags,\n" +
-			"or when input is not a terminal, --system and --stop are required. Writes\n" +
-			"to --config, and does not replace a file that exists unless --force.\n\n" +
+		Description: "At a terminal without flags, asks for an agency or city, searches\n" +
+			"for your stop, and saves it as a board that `departures` shows without\n" +
+			"arguments. With flags, or when input is not a terminal, --system and\n" +
+			"--stop are required. Writes to --config, and does not replace a file that\n" +
+			"exists unless --force.\n\n" +
 			"   urbanist-timetable config init\n" +
 			"   urbanist-timetable config init --system mta-subway --stop 127N --lines 1,2,3\n" +
 			"   urbanist-timetable config init --system bart --stop EMBR --stdout",
 		Flags: []cli.Flag{
-			&cli.StringFlag{Name: "system", Usage: "a system ID from `systems`"},
+			&cli.StringFlag{Name: "system", Usage: "a system ID from `systems` or `agencies search`"},
 			&cli.StringSliceFlag{Name: "stop", Usage: "a stop ID for the board"},
 			&cli.StringSliceFlag{Name: "lines", Usage: "only these lines (IDs or short names)"},
 			&cli.StringFlag{Name: "name", Usage: "the board's name (default: from the stop)"},
@@ -55,10 +57,85 @@ func initCommand() *cli.Command {
 // initAnswers is what a new configuration holds: one system, and one board
 // of its stops.
 type initAnswers struct {
-	system catalog.System
+	system chosenSystem
 	stops  []transit.Stop
 	lines  []string
 	board  string
+}
+
+// chosenSystem is the system a new configuration uses: a catalog entry or a
+// directory result.
+type chosenSystem struct {
+	// source opens the system: its catalog or directory ID.
+	source string
+	// name names its [providers] block, which boards refer to.
+	name    string
+	title   string
+	place   string
+	info    string
+	needs   []string
+	keyInfo string
+	// block is the [providers] block, with any comment before it.
+	block string
+	// warning is printed once the system is chosen.
+	warning string
+}
+
+func catalogChoice(sys catalog.System) chosenSystem {
+	c := chosenSystem{source: sys.ID, name: sys.ID, title: sys.Title(), place: sys.City, info: sys.InfoURL, block: providerBlock(sys)}
+	for _, k := range sys.RequiredOptions {
+		c.needs = append(c.needs, sys.EnvName(k))
+	}
+	return c
+}
+
+func directoryChoice(sys directory.System, b directory.Block) (chosenSystem, error) {
+	name := sys.BlockName()
+	text, err := b.TOML(name)
+	if err != nil {
+		return chosenSystem{}, err
+	}
+	return chosenSystem{
+		source: sys.ID, name: name, title: sys.Title(), place: sys.Place,
+		needs: sys.Needs, keyInfo: sys.KeyInfo,
+		block: "# " + termout.Clean(b.Comment) + "\n" + text,
+	}, nil
+}
+
+// missing lists the environment variables the system needs that are not
+// set.
+func (c chosenSystem) missing() []string {
+	var out []string
+	for _, v := range c.needs {
+		if os.Getenv(v) == "" {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// resolveChoice finds a system by catalog or directory ID.
+func resolveChoice(ctx context.Context, dir *directory.Directory, id string) (chosenSystem, error) {
+	if sys, ok := catalog.Get(id); ok {
+		return catalogChoice(sys), nil
+	}
+	if dir == nil || !directory.IsID(id) {
+		return chosenSystem{}, unknownSystemError(id)
+	}
+	sys, b, err := dir.Resolve(ctx, id)
+	if err != nil {
+		return chosenSystem{}, err
+	}
+	c, err := directoryChoice(sys, b)
+	if err != nil {
+		return chosenSystem{}, err
+	}
+	if sys.StaticURL != "" {
+		if n, ok := dir.ScheduleSize(ctx, sys.StaticURL); ok && n > directory.LargeSchedule {
+			c.warning = fmt.Sprintf("warning: %s's schedule is %d MB, which a small machine such as a NAS may struggle to load", id, n>>20)
+		}
+	}
+	return c, nil
 }
 
 func initConfig(ctx context.Context, c *cli.Command) error {
@@ -74,14 +151,19 @@ func initConfig(ctx context.Context, c *cli.Command) error {
 		a   initAnswers
 		err error
 	)
+	dir := newDirectory(c)
 	if c.IsSet("system") || !isTerminal(c.Root().Reader) || !isTerminal(c.Root().ErrWriter) {
-		a, err = initFromFlags(c)
+		a, err = initFromFlags(ctx, c, dir)
 	} else {
 		p := prompter{
 			in:  bufio.NewReader(c.Root().Reader),
 			out: c.Root().ErrWriter,
 			open: func(name string) (transit.Provider, error) {
-				return openSource(ctx, path, name, newDirectory(c), providerOptions(c)...)
+				return openSource(ctx, path, name, dir, providerOptions(c)...)
+			},
+			find: dir.Search,
+			resolve: func(ctx context.Context, id string) (chosenSystem, error) {
+				return resolveChoice(ctx, dir, id)
 			},
 		}
 		a, err = p.ask(ctx)
@@ -95,8 +177,13 @@ func initConfig(ctx context.Context, c *cli.Command) error {
 		return err
 	}
 	if toStdout {
-		_, err := io.WriteString(c.Root().Writer, src)
-		return err
+		if _, err := io.WriteString(c.Root().Writer, src); err != nil {
+			return err
+		}
+		if missing := a.system.missing(); len(missing) > 0 {
+			printKeyHint(c.Root().ErrWriter, a.system, missing, "")
+		}
+		return nil
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("config init: %w", err)
@@ -106,29 +193,40 @@ func initConfig(ctx context.Context, c *cli.Command) error {
 	}
 	w := c.Root().Writer
 	fmt.Fprintf(w, "Saved %s.\n", path)
-	if missing := missingEnv(a.system); len(missing) > 0 {
-		fmt.Fprintf(w, "Set %s in the environment, then try: urbanist-timetable departures\n", strings.Join(missing, " and "))
+	if missing := a.system.missing(); len(missing) > 0 {
+		printKeyHint(w, a.system, missing, ", then try: urbanist-timetable departures")
 	} else {
 		fmt.Fprintln(w, "Try: urbanist-timetable departures")
 	}
 	return nil
 }
 
-func initFromFlags(c *cli.Command) (initAnswers, error) {
+// printKeyHint says which variables to set and where to get a key.
+func printKeyHint(w io.Writer, sys chosenSystem, missing []string, then string) {
+	fmt.Fprintf(w, "Set %s in the environment%s\n", strings.Join(missing, " and "), then)
+	if sys.keyInfo != "" {
+		fmt.Fprintf(w, "Get a key at %s\n", termout.Clean(sys.keyInfo))
+	}
+}
+
+func initFromFlags(ctx context.Context, c *cli.Command, dir *directory.Directory) (initAnswers, error) {
 	id, stops := c.String("system"), c.StringSlice("stop")
 	if id == "" || len(stops) == 0 {
 		return initAnswers{}, newUsageError(c, "give --system and --stop, such as `config init --system mta-subway --stop 127N`; find stop IDs with `stops search`")
 	}
-	sys, ok := catalog.Get(id)
-	if !ok {
-		return initAnswers{}, unknownSystemError(id)
+	sys, err := resolveChoice(ctx, dir, id)
+	if err != nil {
+		return initAnswers{}, err
+	}
+	if sys.warning != "" {
+		fmt.Fprintln(c.Root().ErrWriter, sys.warning)
 	}
 	a := initAnswers{system: sys, lines: c.StringSlice("lines"), board: c.String("name")}
 	for _, s := range dedupe(stops) {
 		a.stops = append(a.stops, transit.Stop{ID: s})
 	}
 	if a.board == "" {
-		a.board = slug(sys.ID + "-" + stops[0])
+		a.board = slug(sys.name + "-" + stops[0])
 	}
 	if !awtrix.ValidAppName(a.board) {
 		return initAnswers{}, newUsageError(c, "board name %q must be 1-32 letters, digits, - or _", a.board)
@@ -136,25 +234,19 @@ func initFromFlags(c *cli.Command) (initAnswers, error) {
 	return a, nil
 }
 
-// missingEnv lists the environment variables sys needs that are not set.
-func missingEnv(sys catalog.System) []string {
-	missing := sys.Missing(envSettings(sys))
-	for i, k := range missing {
-		missing[i] = sys.EnvName(k)
-	}
-	return missing
-}
-
 // errInputEnded is returned when the person stops answering, such as with
 // Ctrl-D.
 var errInputEnded = errors.New("config init: input ended before the configuration was complete")
 
 // prompter asks for the answers at a terminal. open builds a source by
-// name, so tests can give a fake.
+// name, find searches for systems and resolve looks one up by ID, so tests
+// can give fakes; without find and resolve, only the catalog is used.
 type prompter struct {
-	in   *bufio.Reader
-	out  io.Writer
-	open func(name string) (transit.Provider, error)
+	in      *bufio.Reader
+	out     io.Writer
+	open    func(name string) (transit.Provider, error)
+	find    func(ctx context.Context, words string) (directory.Results, error)
+	resolve func(ctx context.Context, id string) (chosenSystem, error)
 }
 
 func (p prompter) ask(ctx context.Context) (initAnswers, error) {
@@ -163,12 +255,19 @@ func (p prompter) ask(ctx context.Context) (initAnswers, error) {
 		return initAnswers{}, err
 	}
 	a := initAnswers{system: sys}
+	// Before the stop search, which downloads the schedule.
+	if sys.warning != "" {
+		fmt.Fprintln(p.out, sys.warning)
+	}
 
 	var prov transit.Provider
-	if missing := missingEnv(sys); len(missing) > 0 {
-		fmt.Fprintf(p.out, "\n%s needs %s. The file will read them from the environment; set them to search for stops.\n", sys.ID, strings.Join(missing, " and "))
-	} else if prov, err = p.open(sys.ID); err != nil {
-		fmt.Fprintf(p.out, "\nCould not open %s: %s\n", sys.ID, oneLine(err))
+	if missing := sys.missing(); len(missing) > 0 {
+		fmt.Fprintf(p.out, "\n%s needs %s. The file will read them from the environment; set them to search for stops.\n", sys.source, strings.Join(missing, " and "))
+		if sys.keyInfo != "" {
+			fmt.Fprintf(p.out, "Get a key at %s\n", termout.Clean(sys.keyInfo))
+		}
+	} else if prov, err = p.open(sys.source); err != nil {
+		fmt.Fprintf(p.out, "\nCould not open %s: %s\n", sys.source, oneLine(err))
 	}
 
 	stop, err := p.askStop(ctx, prov)
@@ -186,29 +285,122 @@ func (p prompter) ask(ctx context.Context) (initAnswers, error) {
 	return a, nil
 }
 
-func (p prompter) askSystem(ctx context.Context) (catalog.System, error) {
+func (p prompter) askSystem(ctx context.Context) (chosenSystem, error) {
+	resolve, find := p.resolve, p.find
+	if resolve == nil {
+		resolve = func(ctx context.Context, id string) (chosenSystem, error) { return resolveChoice(ctx, nil, id) }
+	}
+	if find == nil {
+		find = searchCatalog
+	}
+	fmt.Fprintln(p.out, "Find your transit system by agency or city, such as \"lisbon\" or \"mta\", or give a system ID.")
+	words := ""
+	for {
+		if words == "" {
+			var err error
+			if words, err = p.required(ctx, "Agency or city: "); err != nil {
+				return chosenSystem{}, err
+			}
+		}
+		c, err := resolve(ctx, words)
+		switch {
+		case err == nil:
+			return c, nil
+		case ctx.Err() != nil:
+			return chosenSystem{}, ctx.Err()
+		case directory.IsID(words) && !errors.Is(err, directory.ErrUnknownID):
+			// An ID that exists but could not be looked up, such as
+			// offline: searching for it as words would hide why.
+			fmt.Fprintf(p.out, "Could not use %s: %s\n", words, oneLine(err))
+			words = ""
+			continue
+		}
+		fmt.Fprintln(p.out, "Searching…")
+		res, err := find(ctx, words)
+		if ctx.Err() != nil {
+			return chosenSystem{}, ctx.Err()
+		}
+		for _, problem := range res.Problems {
+			fmt.Fprintf(p.out, "warning: %s\n", oneLine(problem))
+		}
+		if err != nil || len(res.Systems) == 0 {
+			fmt.Fprintln(p.out, "No systems found; try the city or region, or other words.")
+			if res.NoTransitland {
+				fmt.Fprintf(p.out, "Set %s to also search Transitland.\n", directory.TransitlandKeyVar)
+			}
+			words = ""
+			continue
+		}
+		rows := make([][]string, len(res.Systems))
+		for i, s := range res.Systems {
+			rows[i] = []string{fmt.Sprintf("  %d", i+1), s.ID, shorten(s.Title(), 44), shorten(s.Place, 32), string(s.Data), systemNote(s)}
+		}
+		termout.Table(p.out, rows)
+		if res.More > 0 {
+			fmt.Fprintf(p.out, "  … and %d more; search with more words to narrow them.\n", res.More)
+		}
+		if res.NoTransitland {
+			fmt.Fprintf(p.out, "  Set %s to also search Transitland.\n", directory.TransitlandKeyVar)
+		}
+		chosen, next, err := p.pickSystem(ctx, res.Systems, resolve)
+		switch {
+		case err != nil:
+			return chosenSystem{}, err
+		case chosen != nil:
+			return *chosen, nil
+		}
+		words = next
+	}
+}
+
+// pickSystem asks for a number from systems. It returns the chosen system,
+// or else the words to search for next: an answer that is not a number, or
+// empty to ask for an agency again.
+func (p prompter) pickSystem(ctx context.Context, systems []directory.System, resolve func(context.Context, string) (chosenSystem, error)) (*chosenSystem, string, error) {
+	for {
+		answer, err := p.line(ctx, fmt.Sprintf("System [1-%d], other words to search, or Enter to start over: ", len(systems)))
+		if err != nil {
+			return nil, "", err
+		}
+		n, isNumber := number(answer)
+		switch {
+		case !isNumber:
+			return nil, answer, nil
+		case n < 1 || n > len(systems):
+			fmt.Fprintf(p.out, "Give a number from 1 to %d.\n", len(systems))
+			continue
+		}
+		c, err := resolve(ctx, systems[n-1].ID)
+		if ctx.Err() != nil {
+			return nil, "", ctx.Err()
+		}
+		if err != nil {
+			fmt.Fprintf(p.out, "Could not use %s: %s\n", systems[n-1].ID, oneLine(err))
+			continue
+		}
+		return &c, "", nil
+	}
+}
+
+// number parses an answer that is a whole number.
+func number(s string) (int, bool) {
+	n, err := strconv.Atoi(s)
+	return n, err == nil
+}
+
+// searchCatalog searches the catalog alone.
+func searchCatalog(_ context.Context, words string) (directory.Results, error) {
 	all, err := catalog.All()
 	if err != nil {
-		return catalog.System{}, err
+		return directory.Results{}, err
 	}
-	fmt.Fprintln(p.out, "Systems:")
-	for i, s := range all {
-		fmt.Fprintf(p.out, "  %d  %-28s %s, %s\n", i+1, s.ID, s.Title(), s.City)
+	var res directory.Results
+	for _, s := range all {
+		if transit.MatchesSearch(strings.Join([]string{s.ID, s.Agency, s.Name, s.City}, " "), words) {
+			res.Systems = append(res.Systems, directory.System{ID: s.ID, Agency: s.Agency, Name: s.Name, Place: s.City, Source: directory.SourceCatalog})
+		}
 	}
-	fmt.Fprintln(p.out, "Not listed? `urbanist-timetable config example` shows how to add any agency with GTFS-Realtime, or Transitland.")
-	for {
-		answer, err := p.line(ctx, fmt.Sprintf("System [1-%d]: ", len(all)))
-		if err != nil {
-			return catalog.System{}, err
-		}
-		if n, err := strconv.Atoi(answer); err == nil && n >= 1 && n <= len(all) {
-			return all[n-1], nil
-		}
-		if s, ok := catalog.Get(answer); ok {
-			return s, nil
-		}
-		fmt.Fprintf(p.out, "Give a number from 1 to %d, or a system ID.\n", len(all))
-	}
+	return res, nil
 }
 
 // askStop searches for a stop where prov can search, and otherwise asks for
@@ -344,14 +536,21 @@ func renderConfig(a initAnswers) (string, error) {
 	var b strings.Builder
 	b.WriteString("# Written by `urbanist-timetable config init`.\n")
 	b.WriteString("# `urbanist-timetable config example` explains every setting.\n\n")
-	fmt.Fprintf(&b, "# %s, %s. More: %s\n", a.system.Title(), a.system.City, a.system.InfoURL)
-	b.WriteString(providerBlock(a.system))
+	fmt.Fprintf(&b, "# %s", termout.Clean(a.system.title))
+	if a.system.place != "" {
+		fmt.Fprintf(&b, ", %s", termout.Clean(a.system.place))
+	}
+	if a.system.info != "" {
+		fmt.Fprintf(&b, ". More: %s", a.system.info)
+	}
+	b.WriteString("\n")
+	b.WriteString(a.system.block)
 	fmt.Fprintf(&b, "\n# `urbanist-timetable departures` shows every board; `departures %s`, this one.\n", a.board)
 	b.WriteString("[[boards]]\n")
 	fmt.Fprintf(&b, "name = %s\n", tomlout.String(a.board))
 	for _, s := range a.stops {
 		b.WriteString("\n[[boards.stops]]\n")
-		fmt.Fprintf(&b, "provider = %s\n", tomlout.String(a.system.ID))
+		fmt.Fprintf(&b, "provider = %s\n", tomlout.String(a.system.name))
 		fmt.Fprintf(&b, "stop = %s", tomlout.String(s.ID))
 		if name := termout.Clean(s.Name); name != "" {
 			fmt.Fprintf(&b, "  # %s", name)

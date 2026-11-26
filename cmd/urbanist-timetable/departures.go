@@ -38,13 +38,15 @@ func departuresCommand() *cli.Command {
 		ArgsUsage: "[<board> | <source> <stop>...]",
 		Description: "Without arguments, prints every [[boards]] entry in the config; with one, that\n" +
 			"board. Otherwise <source> is a [providers.NAME] block in the config, a system\n" +
-			"from `systems`, or a provider that needs no settings. With --realtime there is\n" +
-			"no source. Flags replace a board's settings. gtfsrt sources show only\n" +
-			"departures with realtime predictions. The --json shape may change before 1.0.\n\n" +
+			"from `systems` or `agencies search`, or a provider that needs no settings.\n" +
+			"With --static or --realtime there is no source. Flags replace a board's\n" +
+			"settings. Times marked * are timetabled, without a live prediction. The\n" +
+			"--json shape may change before 1.0.\n\n" +
 			"   urbanist-timetable departures\n" +
 			"   urbanist-timetable departures mta-subway 127N\n" +
 			"   urbanist-timetable departures mta-subway 127N --lines 1,2,3 --watch\n" +
-			"   urbanist-timetable departures --static URL.zip --realtime URL.pb STOP_ID",
+			"   urbanist-timetable departures --static URL.zip --realtime URL.pb STOP_ID\n" +
+			"   urbanist-timetable departures --static URL.zip STOP_ID",
 		ShellComplete: completeFirst(completeSources(true)),
 		Flags: []cli.Flag{
 			&cli.StringSliceFlag{Name: "lines", Usage: "only these lines (IDs or short names)"},
@@ -58,7 +60,7 @@ func departuresCommand() *cli.Command {
 			&cli.BoolFlag{Name: "watch", Usage: "redraw every --interval until stopped"},
 			&cli.DurationFlag{Name: "interval", Value: 30 * time.Second, Usage: "time between redraws with --watch"},
 			&cli.StringSliceFlag{Name: "realtime", Usage: "a GTFS-Realtime TripUpdates URL, instead of a source"},
-			&cli.StringFlag{Name: "static", Usage: "the GTFS schedule zip that goes with --realtime"},
+			&cli.StringFlag{Name: "static", Usage: "a GTFS schedule zip, alone or with --realtime, instead of a source"},
 		},
 		Action: departures,
 	}
@@ -82,7 +84,7 @@ func departures(ctx context.Context, c *cli.Command) error {
 	)
 	args := c.Args().Slice()
 	switch {
-	case len(c.StringSlice("realtime")) > 0:
+	case len(c.StringSlice("realtime")) > 0 || c.String("static") != "":
 		q, err = feedQuery(c, args)
 	case len(args) >= 2:
 		q, err = sourceQuery(ctx, c, args[0], args[1:])
@@ -110,12 +112,16 @@ func departures(ctx context.Context, c *cli.Command) error {
 	return err
 }
 
-// feedQuery queries stops in the GTFS-Realtime feed named by --realtime.
+// feedQuery queries stops in the feeds named by --static and --realtime,
+// either of which may be left out.
 func feedQuery(c *cli.Command, stops []string) (query, error) {
 	if len(stops) == 0 {
-		return query{}, newUsageError(c, "give one or more stop IDs after --realtime")
+		return query{}, newUsageError(c, "give one or more stop IDs after --static or --realtime")
 	}
-	settings := map[string]any{"realtime_urls": toAny(c.StringSlice("realtime"))}
+	settings := map[string]any{}
+	if rt := c.StringSlice("realtime"); len(rt) > 0 {
+		settings["realtime_urls"] = toAny(rt)
+	}
 	if s := c.String("static"); s != "" {
 		settings["static_url"] = s
 	}

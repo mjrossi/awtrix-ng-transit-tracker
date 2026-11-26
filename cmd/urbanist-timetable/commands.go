@@ -271,7 +271,8 @@ func systemsCommand() *cli.Command {
 		Name:  "systems",
 		Usage: "list ready-made transit systems, or show how to configure one",
 		Description: "Systems work by ID in `departures` and `stops search` without a configuration\n" +
-			"file. Those that need keys read them from the environment variables listed.",
+			"file. Those that need keys read them from the environment variables listed.\n" +
+			"`systems show` also takes the IDs `agencies search` finds.",
 		Action: func(_ context.Context, c *cli.Command) error {
 			if c.Args().Present() {
 				return unknownSystemsArgument(c)
@@ -342,8 +343,9 @@ func stopsCommand() *cli.Command {
 			Name:      "search",
 			Usage:     "search a source's stops by name or ID",
 			ArgsUsage: "<source> <words...>",
-			Description: "<source> is a [providers.NAME] block in the config, a system from `systems`,\n" +
-				"or a provider that needs no settings. Prints stop IDs for `departures`.\n\n" +
+			Description: "<source> is a [providers.NAME] block in the config, a system from `systems`\n" +
+				"or `agencies search`, or a provider that needs no settings. Prints stop IDs\n" +
+				"for `departures`.\n\n" +
 				"   urbanist-timetable stops search mta-subway times sq\n" +
 				"   urbanist-timetable stops search bart embarcadero",
 			Flags:         []cli.Flag{&cli.BoolFlag{Name: "json", Usage: "print JSON instead of text"}},

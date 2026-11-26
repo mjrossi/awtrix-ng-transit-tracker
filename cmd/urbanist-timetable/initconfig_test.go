@@ -15,6 +15,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/mjrossi/urbanist-timetable/internal/config"
+	"github.com/mjrossi/urbanist-timetable/internal/directory"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/catalog"
 )
@@ -22,7 +23,7 @@ import (
 func TestRenderConfig(t *testing.T) {
 	sys, _ := catalog.Get("metro-lisboa")
 	got, err := renderConfig(initAnswers{
-		system: sys,
+		system: catalogChoice(sys),
 		stops:  []transit.Stop{{ID: "MP", Name: "Marquês de Pombal"}},
 		lines:  []string{"Azul", `Q"uote`},
 		board:  "marques",
@@ -154,8 +155,9 @@ func (f fakeSource) Departures(_ context.Context, q transit.Query) ([]transit.De
 }
 
 func TestPrompterAsksForEverything(t *testing.T) {
-	// A wrong system number, a search with no match, an empty answer to
-	// the stop list (search again), then choices.
+	// A search with no match (99), a system ID, a stop search with no
+	// match, an empty answer to the stop list (search again), then
+	// choices.
 	input := "99\nmta-subway\nnowhere\ntimes\n\ntimes\n2\n1, 2\nmy board\n\n"
 	var out bytes.Buffer
 	var opened string
@@ -171,14 +173,14 @@ func TestPrompterAsksForEverything(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v; prompts:\n%s", err, out.String())
 	}
-	if opened != "mta-subway" || a.system.ID != "mta-subway" {
-		t.Errorf("opened %q, system %q", opened, a.system.ID)
+	if opened != "mta-subway" || a.system.source != "mta-subway" {
+		t.Errorf("opened %q, system %q", opened, a.system.source)
 	}
 	want := initAnswers{system: a.system, stops: []transit.Stop{{ID: "R16", Name: "Times Sq-42 St"}}, lines: []string{"1", "2"}, board: "times-sq-42-st"}
-	if diff := cmp.Diff(want, a, cmp.AllowUnexported(initAnswers{}), cmp.Comparer(func(a, b catalog.System) bool { return a.ID == b.ID })); diff != "" {
+	if diff := cmp.Diff(want, a, cmp.AllowUnexported(initAnswers{}), cmp.Comparer(func(a, b chosenSystem) bool { return a.source == b.source })); diff != "" {
 		t.Errorf("answers (-want +got):\n%s", diff)
 	}
-	for _, s := range []string{"Give a number from 1 to", "No stops found", "Lines here now: 1, 2.", "Use 1-32 letters"} {
+	for _, s := range []string{"No systems found", "No stops found", "Lines here now: 1, 2.", "Use 1-32 letters"} {
 		if !strings.Contains(out.String(), s) {
 			t.Errorf("prompts lack %q:\n%s", s, out.String())
 		}
@@ -260,4 +262,114 @@ type cancelingSource struct {
 func (s cancelingSource) SearchStops(ctx context.Context, _ string) ([]transit.Stop, error) {
 	s.cancel()
 	return nil, ctx.Err()
+}
+
+func TestPrompterPicksFromASearch(t *testing.T) {
+	// A search, a number out of range (asked again), other words (a new
+	// search), then a pick.
+	input := "lisbon\n9\nlisbon\n1\ncais\n1\n\n\n"
+	var out bytes.Buffer
+	p := prompter{in: bufio.NewReader(strings.NewReader(input)), out: &out, open: func(string) (transit.Provider, error) {
+		return fakeSource{stops: []transit.Stop{{ID: "060001", Name: "Cais do Sodré"}}}, nil
+	}}
+	a, err := p.ask(t.Context())
+	if err != nil {
+		t.Fatalf("%v; prompts:\n%s", err, out.String())
+	}
+	if a.system.source != "carris-metropolitana" || !strings.Contains(out.String(), "  2  metro-lisboa") || !strings.Contains(out.String(), "Give a number from 1 to") {
+		t.Errorf("chose %q; prompts:\n%s", a.system.source, out.String())
+	}
+}
+
+// The interactive path through the directories: a search, a Mobility
+// Database pick that needs a key, and the block written for it.
+func TestPrompterPicksADirectorySystem(t *testing.T) {
+	fakeDirectories(t)
+	t.Setenv("CALTRAIN_API_KEY", "")
+	dir := &directory.Directory{MobilityDBURL: directoryURLs.mobilityDB}
+	var out bytes.Buffer
+	p := prompter{
+		in:  bufio.NewReader(strings.NewReader("san mateo\n1\n70011\n\n\n")),
+		out: &out,
+		open: func(string) (transit.Provider, error) {
+			t.Error("opened a source that lacks its key")
+			return nil, errors.New("no")
+		},
+		find: dir.Search,
+		resolve: func(ctx context.Context, id string) (chosenSystem, error) {
+			return resolveChoice(ctx, dir, id)
+		},
+	}
+	a, err := p.ask(t.Context())
+	if err != nil {
+		t.Fatalf("%v; prompts:\n%s", err, out.String())
+	}
+	if a.system.source != "mdb-54" || a.system.name != "caltrain" || a.stops[0].ID != "70011" {
+		t.Errorf("answers %+v", a)
+	}
+	for _, want := range []string{"Searching…", "  1  mdb-54", "mdb-54 needs CALTRAIN_API_KEY", "Set TRANSITLAND_API_KEY to also search Transitland"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("prompts lack %q:\n%s", want, out.String())
+		}
+	}
+	src, err := renderConfig(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(src, "[providers.caltrain]") || !strings.Contains(src, "${CALTRAIN_API_KEY}") {
+		t.Errorf("config:\n%s", src)
+	}
+}
+
+// A directory ID that cannot be looked up says why, rather than being
+// searched for as words.
+func TestPrompterReportsAFailedLookup(t *testing.T) {
+	var out bytes.Buffer
+	p := prompter{
+		in:  bufio.NewReader(strings.NewReader("mdb-54\n")),
+		out: &out,
+		find: func(context.Context, string) (directory.Results, error) {
+			t.Error("searched for an ID whose lookup failed")
+			return directory.Results{}, nil
+		},
+		resolve: func(context.Context, string) (chosenSystem, error) {
+			return chosenSystem{}, errors.New("mobility database: offline")
+		},
+	}
+	if _, err := p.ask(t.Context()); !errors.Is(err, errInputEnded) {
+		t.Errorf("err = %v", err)
+	}
+	if !strings.Contains(out.String(), "Could not use mdb-54: mobility database: offline") {
+		t.Errorf("prompts:\n%s", out.String())
+	}
+}
+
+func TestConfigInitFromADirectorySystem(t *testing.T) {
+	fakeDirectories(t)
+	path := filepath.Join(t.TempDir(), "config.toml")
+	cmd := newRootCommand()
+	var out, errOut bytes.Buffer
+	cmd.Writer, cmd.ErrWriter = &out, &errOut
+	cmd.Reader = strings.NewReader("")
+	t.Setenv("CALTRAIN_API_KEY", "")
+	if err := cmd.Run(t.Context(), []string{"urbanist-timetable", "--config", path, "config", "init", "--system", "mdb-54", "--stop", "70011"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "Set CALTRAIN_API_KEY in the environment") {
+		t.Errorf("output %q does not name the key", out.String())
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(b)
+	for _, want := range []string{"# From the Mobility Database (mdb-54).", "[providers.caltrain]\ntype = \"gtfsrt\"", "api_key=${CALTRAIN_API_KEY}", "provider = \"caltrain\"", "name = \"caltrain-70011\""} {
+		if !strings.Contains(src, want) {
+			t.Errorf("config lacks %q:\n%s", want, src)
+		}
+	}
+	t.Setenv("CALTRAIN_API_KEY", "k")
+	if _, err := config.Load(path); err != nil {
+		t.Errorf("written config does not load: %v", err)
+	}
 }

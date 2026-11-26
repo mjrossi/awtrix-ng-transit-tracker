@@ -21,7 +21,6 @@ version may break configuration.
   working that out takes two or more Transitland requests, kept a week in
   the cache directory. `cache clear` also removes the saved feed list and
   these lookups.
-
 - `gtfsrt` shows timetabled trips from the schedule, with the realtime
   prediction where a feed has one, so a stop no longer reads "No
   departures" while a scheduled bus is 20 minutes away, and a realtime
@@ -29,7 +28,8 @@ version may break configuration.
   carried forward from an earlier stop, now apply. Feeds that name trips
   by route and start time instead of trip ID, such as HSL's, are matched
   too. `realtime_urls` is optional, so an agency that publishes only a
-  schedule works. Trips without a headsign are named after their last
+  schedule works, and `departures --static URL STOP` needs no
+  `--realtime`. Trips without a headsign are named after their last
   stop. Where realtime trips do not match the schedule's, lines with
   realtime trips show only those and a warning is logged;
   `timetable = false` turns timetabled trips off, as `mta-subway` does.
@@ -37,7 +37,6 @@ version may break configuration.
   rather than an empty board.
   The first query for a stop reads the schedule's `stop_times.txt` (about
   5 seconds for HSL), and the result is saved in the cache directory.
-
 - `cache clear` deletes the cached GTFS schedules, which otherwise stay in
   the cache directory even after no board uses them. Library users can call
   `providers.ClearScheduleCache` or `gtfsrt.ClearCache`.
@@ -52,8 +51,14 @@ version may break configuration.
   finds its ID. A provider that needs settings gets a pointer to where they
   go.
 - `config init` writes a starting configuration. At a terminal it asks for
-  a system, searches for your stop, offers to keep some of its lines, and
-  saves a board; `--system` and `--stop` do the same without questions.
+  an agency or city and searches for systems as `agencies search` does,
+  then searches for your stop, offers to keep some of its lines, and saves
+  a board; `--system` and `--stop` do the same without questions. A
+  system found in the Mobility Database or Transitland is written out in
+  full, with its agency's name for the block (or its ID, for a name
+  without Latin letters) and `${NAME}` for any key, so the file does not
+  depend on the search. A schedule too large for a small machine is
+  warned about before it is downloaded.
 - `departures` with no arguments shows every board in the configuration,
   and `departures NAME` one board, with the board's filters, `window` and
   `per_row`; flags given on the command line replace them. Boards no longer

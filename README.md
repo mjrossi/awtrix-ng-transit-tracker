@@ -26,10 +26,11 @@ screen instead, and a `grid` layout the next departure of up to four lines.
 
 > **Status:** early, and running on a real TC002. Supported today, in the
 > terminal and on the clock:
-> any agency publishing GTFS-Realtime, with six
-> [ready-made systems](#systems) checked against their live feeds, plus
-> dedicated providers for Metro de Lisboa and Carris Metropolitana, and
-> [Transitland](https://www.transit.land/) for thousands more. Only
+> any agency publishing a GTFS schedule, with live predictions where it
+> also publishes GTFS-Realtime; six [ready-made systems](#systems) checked
+> against their live feeds; dedicated providers for Metro de Lisboa and
+> Carris Metropolitana; and [Transitland](https://www.transit.land/) for
+> thousands more. `agencies search` finds systems by agency or city. Only
 > the 52 × 16 TC002 is supported on the clock. What comes next is in
 > [`docs/PLAN.md`](./docs/PLAN.md).
 >
@@ -47,6 +48,7 @@ With Go installed:
 go install github.com/mjrossi/urbanist-timetable/cmd/urbanist-timetable@latest
 
 urbanist-timetable systems                          # ready-made systems
+urbanist-timetable agencies search lisbon           # any other agency, by name or city
 urbanist-timetable stops search mta-subway times sq # find a stop ID
 urbanist-timetable departures mta-subway 127N       # its next departures
 urbanist-timetable departures mta-subway 127N --lines 1,2,3 --watch
@@ -56,20 +58,24 @@ Systems that need no key work without a configuration file. For one that
 does, set its variables, which `systems show ID` names (such as
 `METRO_LISBOA_CLIENT_ID`), or add a block to
 `~/.config/urbanist-timetable/config.toml` as described under
-[Providers](#providers). Any agency with GTFS-Realtime works from its feed
-URLs:
+[Providers](#providers). An `agencies search` result's ID works the same
+way (`departures mdb-2929 3801`). Feed URLs work directly too:
 
 ```bash
 urbanist-timetable departures --static https://example.org/gtfs.zip \
   --realtime https://example.org/tripupdates.pb STOP_ID
 ```
 
+Leave out `--realtime` for an agency that publishes only a schedule.
+
 To see the same stops without typing them each time, save them as boards.
-`urbanist-timetable config init` asks for a system, searches for your stop
+`urbanist-timetable config init` asks for an agency or city, lets you pick
+a system from the same search as `agencies search`, searches for your stop
 and writes `~/.config/urbanist-timetable/config.toml`; after that,
 `departures` with no arguments shows every board, and `departures NAME` one
 of them. `config init --system mta-subway --stop 127N` does the same
-without questions. A board in the file looks like this:
+without questions, and `--system` takes a search result's ID too. A board
+in the file looks like this:
 
 ```toml
 [providers.nyc]
@@ -257,17 +263,20 @@ referenced but not set is a configuration error.
 ```bash
 urbanist-timetable departures SOURCE STOP...    # next departures; see --help for filters
 urbanist-timetable stops search SOURCE WORDS    # find stop IDs
-urbanist-timetable systems [show ID]            # ready-made systems
+urbanist-timetable systems [show ID]            # ready-made systems; show prints a block for any system ID
+urbanist-timetable agencies search WORDS        # find systems by agency or city
+urbanist-timetable config init                  # write a configuration with one board
 urbanist-timetable config validate              # check the configuration
-urbanist-timetable cache clear                  # delete cached GTFS schedules
+urbanist-timetable cache clear                  # delete cached GTFS schedules and the feed list
 urbanist-timetable clock run                    # poll and push until stopped (the image's default)
 urbanist-timetable clock preview [--board NAME] # fetch once, print rows and payload
 urbanist-timetable clock preview --push         # ...and push it to the clock once
 urbanist-timetable clock preview --json         # print only the payload
 ```
 
-SOURCE is a `[providers.NAME]` block in the configuration, a system ID, or
-a provider that needs no settings.
+SOURCE is a `[providers.NAME]` block in the configuration, a system ID
+(ready-made, or from `agencies search`), or a provider that needs no
+settings.
 
 Global flags: `--config` (`TIMETABLE_CONFIG`, default
 `~/.config/urbanist-timetable/config.toml`, or under `$XDG_CONFIG_HOME`; in the
@@ -341,6 +350,12 @@ system = "mta-subway"
 
 Other settings in the block override the system's.
 
+IDs name the agency, and the system when the agency runs more than one:
+`hsl`, or `mta-subway`. Systems found with `agencies search` have the IDs
+of the directory they come from: Mobility Database IDs such as `mdb-2929`
+or `tld-716`, and Transitland feed IDs such as `f-eyc-cp`. Where a
+directory lists a ready-made system, search shows the ready-made one.
+
 ## Providers
 
 | Provider | Covers | Key | Data license |
@@ -351,8 +366,9 @@ Other settings in the block override the system's.
 | `transitland` | Thousands of agencies through [Transitland](https://www.transit.land/), schedule and realtime merged | Free API key; requests count against a monthly quota | The agency's; Transitland's terms apply |
 | `demo` | Generated departures for testing the display | None | — |
 
-Find an agency's feeds in the [Mobility Database](https://mobilitydatabase.org/),
-then:
+`agencies search` and `systems show ID` write this block for you from the
+[Mobility Database](https://mobilitydatabase.org/) or Transitland. By
+hand:
 
 ```toml
 [providers.myagency]
@@ -378,9 +394,12 @@ later runs.
 ### Transitland
 
 Prefer an agency's own feeds where you can: they have no quota. Where that
-is awkward (no realtime feed, a feed behind a key, or a schedule zip too
-large for your NAS), `transitland` serves the agency from one API, with
-timetabled trips shown even when realtime has none. Data via Transitland.
+is awkward (a feed behind a key, realtime that Transitland merges from a
+regional feed, or a schedule zip too large for your NAS), `transitland`
+serves the agency from one API, schedule and realtime merged. Data via
+Transitland. `agencies search` picks for you: it writes a `gtfsrt` block
+when Transitland lists keyless feed URLs, and a `transitland` block
+otherwise.
 
 #### What you need
 
@@ -409,8 +428,9 @@ have been run through this provider:
 | Comboios de Portugal | `f-eyc-cp` | Schedule only | |
 | MBTA, Boston | `f-drt-mbta` | Live and schedule | Trips added in realtime lack a destination |
 
-For another agency, find its feed's Onestop ID on its Transitland page, then
-look up the stop:
+For another agency, find its feed's Onestop ID with `agencies search` (with
+`TRANSITLAND_API_KEY` set) or on its Transitland page, then look up the
+stop:
 
 ```bash
 urbanist-timetable stops search carris rossio
@@ -518,11 +538,12 @@ searches, previews and retries count too, but are not in the estimate.
 - The clock forgets pushed apps when it restarts; the next poll restores
   them.
 - GTFS timetables are downloaded once a day to a temporary file in `/tmp`
-  and only the needed parts are kept in memory. With a read-only root
-  filesystem, mount a tmpfs at `/tmp`; otherwise downloads fall back to
-  memory, which needs about as much RAM as the zip is large and shows no
-  timetabled trips: only realtime ones, or an error for a board without
-  `realtime_urls`.
+  (or the cache directory) and only the needed parts are kept in memory;
+  the stop times of the configured stops are read from the file. With a
+  read-only root filesystem, mount a tmpfs at `/tmp`; otherwise downloads
+  fall back to memory, which needs about as much RAM as the zip is large,
+  and boards show no timetabled trips: only realtime ones, or an error for
+  a board without `realtime_urls`.
 
 ## Use it from Go
 
@@ -534,7 +555,7 @@ which uses `catalog`.
 |---|---|
 | `pkg/transit` | The departure model, the `Provider` interface, `Filter` and `Group` |
 | `pkg/transit/providers` | `Open`: a provider from a system or type name |
-| `pkg/transit/providers/gtfsrt` | Any agency with GTFS and GTFS-Realtime, from its URLs |
+| `pkg/transit/providers/gtfsrt` | Any agency with a GTFS schedule, GTFS-Realtime, or both, from its URLs |
 | `pkg/transit/catalog` | The ready-made systems |
 | `pkg/transit/transittest` | The contract suite for a provider of your own |
 | `pkg/awtrix` | A typed client for AWTRIX NG clocks |

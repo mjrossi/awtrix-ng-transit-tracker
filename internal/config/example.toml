@@ -27,16 +27,17 @@ url = "http://awtrixng-a1b2c3.local"
 # so one type can serve several agencies. Find stop IDs with:
 #   urbanist-timetable stops search <NAME> <words...>
 #
-# Ready-made systems: list them with `urbanist-timetable systems`, and
+# Ready-made systems: list them with `urbanist-timetable systems`. Find
+# others with `urbanist-timetable agencies search <agency or city>`;
 # `urbanist-timetable systems show <id>` prints the block to paste here.
 # [providers.nyc]
 # system = "mta-subway"
 #
 # Any other agency with a GTFS schedule, GTFS-Realtime TripUpdates, or both
-# works through the generic provider. Find feed URLs at
-# https://mobilitydatabase.org/. Timetabled trips show at their scheduled
-# time until a feed predicts them. A station ID covers all its platforms; a
-# platform ID (such as "127S") narrows to one direction.
+# works through the generic provider (`agencies search` finds feed URLs in
+# https://mobilitydatabase.org/ for you). Timetabled trips show at their
+# scheduled time until a feed predicts them. A station ID covers all its
+# platforms; a platform ID (such as "127S") narrows to one direction.
 # [providers.nyc]
 # type = "gtfsrt"
 # static_url = "http://web.mta.info/developers/data/nyct/subway/google_transit.zip"
@@ -48,9 +49,9 @@ url = "http://awtrixng-a1b2c3.local"
 # Open API, no key needed.
 [providers.carrismetropolitana]
 
-# Transitland: thousands of agencies through one API, with timetabled trips
-# shown even without realtime. Prefer the agency's own feeds above where
-# you can, since every Transitland request counts against a monthly quota.
+# Transitland: thousands of agencies through one API, schedule and realtime
+# merged. Prefer the agency's own feeds above where you can, since every
+# Transitland request counts against a monthly quota.
 # Get a key at https://www.transit.land/. With `feed` set to the feed's
 # Onestop ID, stops are its GTFS stop IDs; without it, use full stop keys
 # ("f-drt-mbta:place-sstat"). `config validate` estimates requests a month.

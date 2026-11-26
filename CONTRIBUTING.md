@@ -14,7 +14,8 @@ static_url = "https://example.org/gtfs.zip"
 realtime_urls = ["https://example.org/tripupdates.pb"]
 ```
 
-If it works, please add it to the catalog so others can use
+`urbanist-timetable agencies search` may already find it, and write the
+block for you. If it works, please add it to the catalog so others can use
 `system = "<id>"`: copy a file in `pkg/transit/catalog/systems/`, set
 `status = "community"`, pick a busy `sample_stop`, and run
 `just catalog-check` (it calls the live feeds) before opening a pull
