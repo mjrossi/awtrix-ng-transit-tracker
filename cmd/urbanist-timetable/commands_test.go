@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -417,7 +418,11 @@ func TestHint(t *testing.T) {
 	}{
 		"unknown system": {fmt.Errorf("providers.x: %w", fmt.Errorf("%w %q", catalog.ErrUnknownSystem, "atlantis")), "run `urbanist-timetable systems`"},
 		"missing keys":   {errors.Join(errors.New("other"), &catalog.MissingOptionsError{System: "metro-lisboa", Options: []string{"client_id"}}), "run `urbanist-timetable systems show metro-lisboa`"},
-		"anything else":  {errors.New("boom"), ""},
+		"no answer": {
+			fmt.Errorf("stop search: schedule: gtfsrt: GET http://example.org/gtfs.zip: %w", &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("i/o timeout")}),
+			"the server did not answer: try again later, or, if the feed has moved, another result of `urbanist-timetable agencies search`",
+		},
+		"anything else": {errors.New("boom"), ""},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {

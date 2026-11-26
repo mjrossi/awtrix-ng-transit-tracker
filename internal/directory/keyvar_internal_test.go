@@ -17,10 +17,21 @@ func TestKeyVar(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			if got := keyVar(tt.agency, tt.id); got != tt.want {
+			if got := keyVar(System{Agency: tt.agency, ID: tt.id}); got != tt.want {
 				t.Errorf("keyVar(%q) = %q, want %q", tt.agency, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestBlockNameForAListOfAgencies(t *testing.T) {
+	sys := System{ID: "tld-832", Agency: "Kuopion Tila-Auto Oy, Oy Pohjolan liikenne Ab, Savonlinja Oy", Place: "Kuopio, North Savo, FI"}
+	if b, k := sys.BlockName(), keyVar(sys); b != "kuopio" || k != "KUOPIO_API_KEY" {
+		t.Errorf("block %q, key %q; want them named after the place", b, k)
+	}
+	one := System{ID: "mdb-1", Agency: "Transdev, Inc.", Place: "Boston, MA, US"}
+	if b := one.BlockName(); b != "transdev-inc" {
+		t.Errorf("block %q; one comma is part of a name, not a list", b)
 	}
 }
 
@@ -46,7 +57,7 @@ func TestBlockName(t *testing.T) {
 // A block and its key variable are named from the same words.
 func TestBlockAndKeyAgree(t *testing.T) {
 	sys := System{ID: "mdb-9", Agency: "Metropolitan Transportation Authority (MTA)"}
-	if b, k := sys.BlockName(), keyVar(sys.Agency, sys.ID); b != "mta" || k != "MTA_API_KEY" {
+	if b, k := sys.BlockName(), keyVar(sys); b != "mta" || k != "MTA_API_KEY" {
 		t.Errorf("block %q, key %q", b, k)
 	}
 }

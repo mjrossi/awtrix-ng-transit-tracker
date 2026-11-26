@@ -67,7 +67,8 @@ version may break configuration.
   a board; `--system` and `--stop` do the same without questions. A
   system found in the Mobility Database or Transitland is written out in
   full, named after the agency you picked (or its ID, for a name
-  without Latin letters) and `${NAME}` for any key, so the file does not
+  without Latin letters, or its place, for a list of agencies) and
+  `${NAME}` for any key, so the file does not
   depend on the search. A schedule too large for a small machine is
   warned about before it is downloaded.
 - `departures` with no arguments shows every board in the configuration,
@@ -89,6 +90,10 @@ version may break configuration.
   getting-started sequence.
 - `systems` names the environment variables a system needs, and marks
   those already set.
+- `transitland` boards are titled with the stop's name from its
+  departures, without a request of their own, instead of its ID.
+- A feed whose server does not answer gets a hint to try again later or
+  another search result.
 - `departures` says how many departures `--lines`, `--headsigns` or
   `--min-lead` hid when they hid all of them, and which lines the stop has.
 

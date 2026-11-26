@@ -840,7 +840,8 @@ func (p *Provider) SearchStops(ctx context.Context, search string) ([]transit.St
 		if err == nil {
 			err = ctx.Err()
 		}
-		return nil, fmt.Errorf("%s: stop search: %w", Name, err)
+		// err names the provider already, as "schedule: gtfsrt: GET ...".
+		return nil, fmt.Errorf("stop search: %w", err)
 	}
 	search = strings.TrimSpace(search)
 	if info, ok := st.stops[search]; ok {

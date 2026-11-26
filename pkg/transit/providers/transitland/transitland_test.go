@@ -937,3 +937,18 @@ func TestStopLines(t *testing.T) {
 		t.Errorf("requests %v, want one per stop", paths)
 	}
 }
+
+func TestStopNameFromDepartures(t *testing.T) {
+	s := newServer(t)
+	p := newProvider(t, s, transitland.Config{Feed: feed})
+	var namer transit.StopNamer = p
+	if _, ok := namer.StopName(t.Context(), "HC", now); ok {
+		t.Error("a name before any fetch; it would cost a request")
+	}
+	if _, err := p.Departures(t.Context(), query("HC", time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if name, ok := namer.StopName(t.Context(), "HC", now); !ok || name != "Harbor Central" {
+		t.Errorf("StopName = %q, %v", name, ok)
+	}
+}

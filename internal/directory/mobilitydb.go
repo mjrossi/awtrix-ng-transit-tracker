@@ -291,7 +291,7 @@ func (s *mdbSystem) finish() {
 		if _, ok := s.keys[feed.info]; ok {
 			continue
 		}
-		v := keyVar(s.sys.Agency, s.sys.ID)
+		v := keyVar(s.sys)
 		if n := len(s.keys); n > 0 {
 			v = strings.TrimSuffix(v, "_API_KEY") + fmt.Sprintf("_%d_API_KEY", n+1)
 		}
@@ -425,14 +425,28 @@ func agencyShort(agency string) string {
 // key variable is, or after its ID when the agency's name has no Latin
 // letters or digits.
 func (s System) BlockName() string {
-	return cmp.Or(fold.Slug(agencyShort(s.Agency), '-', 32), s.ID)
+	return cmp.Or(fold.Slug(s.shortName(), '-', 32), s.ID)
 }
 
-// keyVar names the environment variable for an agency's key, from
-// agencyShort. Names this tool or its catalog already use get the system's
+// shortName is what blocks and key variables are named after: the agency's
+// short form, or the place where the agency is a list of several, as a
+// regional feed's often is, since its first entry is no more the feed's
+// than the others.
+func (s System) shortName() string {
+	if strings.Count(s.Agency, ",") >= 2 {
+		if city, _, _ := strings.Cut(s.Place, ","); city != "" {
+			return city
+		}
+	}
+	return agencyShort(s.Agency)
+}
+
+// keyVar names the environment variable for a system's key, from its
+// shortName. Names this tool or its catalog already use get the system's
 // ID instead, so a directory entry cannot be handed another service's key.
-func keyVar(agency, id string) string {
-	name := strings.ToUpper(fold.Slug(agencyShort(agency), '_', 0))
+func keyVar(s System) string {
+	id := s.ID
+	name := strings.ToUpper(fold.Slug(s.shortName(), '_', 0))
 	v := name + "_API_KEY"
 	if name == "" || reservedVar(v) {
 		v = strings.ToUpper(strings.ReplaceAll(id, "-", "_")) + "_API_KEY"

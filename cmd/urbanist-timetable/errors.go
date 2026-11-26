@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"regexp"
 	"slices"
 	"strings"
@@ -110,6 +111,7 @@ func hint(err error) string {
 		stops    *unknownStopsError
 		noConfig *noConfigError
 		missing  *catalog.MissingOptionsError
+		network  net.Error
 	)
 	switch {
 	case errors.As(err, &usage):
@@ -132,6 +134,8 @@ func hint(err error) string {
 		return "run `urbanist-timetable systems`"
 	case errors.Is(err, transit.ErrUnknownStop):
 		return "find stop IDs with `urbanist-timetable stops search <source> <words>`"
+	case errors.As(err, &network):
+		return "the server did not answer: try again later, or, if the feed has moved, another result of `urbanist-timetable agencies search`"
 	}
 	return ""
 }

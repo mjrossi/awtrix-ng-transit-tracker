@@ -99,6 +99,8 @@ type Provider struct {
 	stops map[string]stopCache
 	// offsets holds each stop key's service-day offset.
 	offsets map[string]serviceOffset
+	// names holds each stop key's name, as departures answers give it.
+	names map[string]string
 }
 
 // stopCache caches a stop's answers for window, the widest asked for, which
@@ -151,6 +153,7 @@ func New(cfg Config, client *http.Client) (*Provider, error) {
 		refresh: refresh,
 		quota:   cfg.MonthlyQuota,
 		stops:   map[string]stopCache{},
+		names:   map[string]string{},
 		offsets: map[string]serviceOffset{},
 	}, nil
 }
@@ -239,6 +242,11 @@ func (p *Provider) fetch(ctx context.Context, key string, now time.Time, span ti
 	if len(resp.Stops) == 0 {
 		return timetable{}, fmt.Errorf("%w %q", transit.ErrUnknownStop, key)
 	}
+	if name := resp.Stops[0].StopName; name != "" {
+		p.mu.Lock()
+		p.names[key] = name
+		p.mu.Unlock()
+	}
 	lists := resp.lists()
 	p.learnOffset(key, lists, now)
 	return newTimetable(lists), nil
@@ -308,6 +316,15 @@ func (p *Provider) searchStops(ctx context.Context, search string) ([]transit.St
 		out = append(out, transit.Stop{ID: id, Name: s.StopName})
 	}
 	return out, nil
+}
+
+// StopName implements transit.StopNamer with the names departures answers
+// gave, so it never spends a request: a stop not yet fetched is unknown.
+func (p *Provider) StopName(_ context.Context, id string, _ time.Time) (string, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	name, ok := p.names[p.stopKey(id)]
+	return name, ok
 }
 
 // StopLines implements transit.StopLiner with one request per stop, each
