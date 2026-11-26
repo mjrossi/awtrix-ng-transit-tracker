@@ -10,11 +10,12 @@ rather than in a public issue.
 
 Urbanist Timetable runs in two ways: as a service for the clock on a home
 network, usually in Docker on a NAS, and as a command in a user's terminal.
-Either way it reads at most one configuration file, calls transit APIs,
-the Mobility Database and Transitland (for `agencies search` and
-directory system IDs) and, for the clock, the clock itself, caches GTFS
-schedules and the Mobility Database's public feed list on disk, and
-listens on no ports.
+Either way it reads at most one configuration file (and writes one only
+for `config init`), calls transit APIs, the Mobility Database and
+Transitland (for `agencies search` and directory system IDs) and, for the
+clock, the clock itself, caches GTFS schedules, the Mobility Database's
+public feed list and Transitland lookups on disk, and listens on no
+ports.
 
 ### What it trusts
 

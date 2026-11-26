@@ -276,11 +276,13 @@ urbanist-timetable systems show ID              # print a system's block for con
 urbanist-timetable systems                      # list the verified systems
 urbanist-timetable config init                  # write a configuration with one board
 urbanist-timetable config validate              # check the configuration
+urbanist-timetable config example               # print an example that explains every setting
 urbanist-timetable cache clear                  # delete cached GTFS schedules and the feed list
 urbanist-timetable clock run                    # poll and push until stopped (the image's default)
 urbanist-timetable clock preview [--board NAME] # fetch once, print rows and payload
 urbanist-timetable clock preview --push         # ...and push it to the clock once
 urbanist-timetable clock preview --json         # print only the payload
+urbanist-timetable completion SHELL             # tab completion for bash, zsh or fish
 ```
 
 SOURCE is a system ID, from `agencies search`, or a `[providers.NAME]`
@@ -602,7 +604,7 @@ just ci          # lint, test, validate the example config
 | `just build` | Builds `bin/urbanist-timetable` |
 | `just test` / `just lint` / `just fmt` | Tests with the race detector; lint; format |
 | `just golden` | Rewrites the renderer's golden files after an intended layout change |
-| `just catalog-check` | Checks every catalog system against its live feeds |
+| `just catalog-check` | Checks every verified system against its live feeds |
 | `just example` | Builds the example importer, a module of its own |
 | `just release-check` | Validates the GoReleaser config and builds a snapshot |
 | `just docker-build` / `just docker-run [config]` | Builds the image; runs it against `config.toml` |
