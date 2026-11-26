@@ -24,21 +24,11 @@ schedule-only times are dimmed. Add a board per direction and the clock
 rotates through them. A `rows` layout fits two lines or directions on one
 screen instead, and a `grid` layout the next departure of up to four lines.
 
-> **Status:** early, and running on a real TC002. Supported today, in the
-> terminal and on the clock:
-> any agency publishing a GTFS schedule, with live predictions where it
-> also publishes GTFS-Realtime, found by agency or city with `agencies
-> search`; six [verified systems](#systems) checked against their live
-> feeds; dedicated providers for Metro de Lisboa and Carris Metropolitana;
-> and [Transitland](https://www.transit.land/) for thousands more. Only
-> the 52 × 16 TC002 is supported on the clock. What comes next is in
+> **Status:** early, and running on a real TC002. Any agency that
+> publishes a GTFS schedule works, with live predictions where it also
+> publishes GTFS-Realtime; `agencies search` finds it by name or city.
+> Only the 52 × 16 TC002 is supported on the clock. What comes next is in
 > [`docs/PLAN.md`](./docs/PLAN.md).
->
-> **Renamed:** this project was `awtrix-ng-transit-tracker` until v0.2.0.
-> The image is now `ghcr.io/mjrossi/urbanist-timetable`, the binary
-> `urbanist-timetable`, and the environment variables `TIMETABLE_*`
-> (formerly `TRANSIT_*`). Images published before the rename are at
-> `ghcr.io/mjrossi/awtrix-ng-transit-tracker`.
 
 ## In your terminal
 
@@ -161,18 +151,11 @@ urbanist-timetable systems show mdb-2929      # prints a block to paste into con
 The search covers the [verified systems](#systems), the
 [Mobility Database](https://mobilitydatabase.org/)'s list of feeds, and,
 with `TRANSITLAND_API_KEY` set, [Transitland](https://www.transit.land/)'s
-operators, which also name the agencies inside national feeds. Every
-result's ID works in `departures`, `stops search` and `systems show`.
-The agency shown is whoever published the data, so if a name finds
-nothing, try the city; countrywide feeds, such as national railways, are
-found by the country's name. `realtime?` marks a Transitland result whose
-agency publishes predictions, which a system read through Transitland may
-lack; `systems show` says which way a system is read, and `departures`
-shows which times are live. Results are served by the
-`gtfsrt` provider where the feeds need no Transitland key, so departures
-spend no quota; looking up a Transitland ID takes two or more requests,
-saved for a week in the cache directory. `systems show` says when a feed
-needs a key of its own.
+operators. The agency shown is whoever published the data, so if a name
+finds nothing, try the city; countrywide feeds, such as national
+railways, are found by the country's name. `systems show` says when a
+feed needs a key, and how it is read; see
+[`docs/transitland.md`](./docs/transitland.md) for Transitland's quota.
 
 ### 3. Find your stop
 
@@ -204,7 +187,9 @@ lines = ["1"]
 ```
 
 [`config.example.toml`](./config.example.toml) documents every setting.
-Delete the demo boards and providers you do not use.
+Delete the demo boards and providers you do not use. With the binary
+installed, `urbanist-timetable config init --stdout` writes the provider
+and board for you, with a `[clock]` block to fill in.
 
 ### 5. Check it
 
@@ -244,20 +229,15 @@ volumes:
   timetable-data:
 ```
 
-`/data` holds the cached schedules and a small file naming the configured
-boards, so that a board you remove from the configuration also leaves the clock's app
-list. Mount a volume there, as above: without one, each new container starts
-with an empty state file, and boards removed from the configuration are not
-cleaned up after a restart. To use a folder instead of a named volume, make
-it writable for the container's non-root user. Outside Docker, set `--state`
-(or `TIMETABLE_STATE`) to a file path; without it, removed boards stay in
-the clock's list as "no data".
+Mount a volume at `/data`, as above: it keeps the downloaded schedules and
+the list of boards, so a board you remove also leaves the clock after a
+restart. The configuration is read at startup, so restart the container
+after editing it. To update, run `docker compose pull && docker compose up -d`.
+The container only makes outgoing requests, to transit APIs and to the
+clock, so it needs no published ports.
 
-The configuration is read at startup, so restart the container after
-editing it. To update, run `docker compose pull && docker compose up -d`.
-To build the image yourself instead, clone the repository and run
-`docker build -t urbanist-timetable .`. The container only makes
-outgoing requests, to transit APIs and to the clock, so it needs no published ports.
+How the running service behaves (active and quiet hours, failures, removed
+boards, the data volume) is in [`docs/clock.md`](./docs/clock.md).
 
 ### Secrets
 
@@ -303,38 +283,10 @@ which can take a while on a first run, are logged at `info`; at `debug`,
 See [`config.example.toml`](./config.example.toml). In short: an
 optional `timezone` and `quiet_hours`, one `[clock]`, one
 `[providers.NAME]` block per data source, and one `[[boards]]` entry per
-app on the clock, each with one or more stops. A board's
-`[boards.clock]` table holds how it looks on the clock: layout, labels,
-lifetime and so on. Without `timezone`, the
-`TZ` environment variable applies, which in the image is UTC unless you
-set it. A board's own `timezone` overrides the top-level one for that
-board's `active_hours`, for boards from another city; `"Local"` there
-means the `TZ` zone.
-
-### When boards are shown
-
-Two settings take a daily window such as `"06:30-23:30"`, which may run past
-midnight:
-
-- A board's `active_hours` are the hours you want to see it, such as your
-  commute. They are not the agency's service hours.
-- The top-level `quiet_hours` are a night mode for the whole service. They
-  hide every board, whatever its `active_hours`, and always follow the
-  top-level `timezone`.
-
-A hidden board is not polled, and the clock skips it. In quiet hours the
-service uses no network at all, except to hide the boards at the start: each
-within one `poll_interval`, retried if the clock does not answer, until the
-app's `lifetime` has passed. `clock preview` and `stops search` still work. The
-display stays on and shows the clock's other apps.
-
-A hidden board returns to the same place if you have arranged the rotation in
-the clock's web UI, which lists it as "no data" meanwhile. Boards you have
-not arranged return at the end of the rotation.
-
-Stopping the service works the same way: its boards leave the display when
-their `lifetime` ends, and the web UI lists them as "no data" until it runs
-again.
+app on the clock, each with one or more stops and optional
+`active_hours`. A board's `[boards.clock]` table holds how it looks on
+the clock: layout, labels, lifetime and so on. When boards are shown is
+explained in [`docs/clock.md`](./docs/clock.md#when-boards-are-shown).
 
 ## Systems
 
@@ -389,173 +341,12 @@ static_url = "https://example.org/gtfs.zip"
 realtime_urls = ["https://example.org/tripupdates.pb"]
 ```
 
-The `gtfsrt` provider shows timetabled trips from the schedule, with the
-realtime prediction where a feed has one, so a stop does not look empty
-while no vehicle is near. Leave out `realtime_urls` for an agency that
-publishes only a schedule. Without `static_url`, it shows realtime trips
-only, with route IDs for lines.
-
-Where an agency's realtime trips do not match its schedule's, lines with
-realtime trips show only those, and a warning is logged; set
-`timetable = false` to show realtime trips only (it needs
-`realtime_urls`). Reading the timetable
-for a stop the first time scans the schedule's `stop_times.txt` (about
-5 seconds for HSL); with a cache directory, the result is saved for
-later runs.
-
-### Transitland
-
-Prefer an agency's own feeds where you can: they have no quota. Where that
-is awkward (a feed behind a key, realtime that Transitland merges from a
-regional feed, or a schedule zip too large for your NAS), `transitland`
-serves the agency from one API, schedule and realtime merged. Data via
-Transitland. `systems show` picks for you: it writes a `gtfsrt` block
-when Transitland lists keyless feed URLs, and a `transitland` block
-otherwise.
-
-#### What you need
-
-An API key from [Transitland](https://www.transit.land/), and the monthly
-request quota of your plan in `monthly_quota`:
-
-| Plan | Requests a month | `monthly_quota` |
-|---|---|---|
-| Free | 10,000 | leave it out; this is the default |
-| Hobbyist/Academic (free for non-commercial use) | 50,000 | `50000` |
-| Other | see your plan | that number |
-
-Plans change, so go by the quota [your plan](https://www.transit.land/plans-pricing/)
-states. The setting only drives the warnings described under
-[Staying within the quota](#staying-within-the-quota); Transitland enforces
-the quota itself.
-
-#### Is my agency covered?
-
-Agencies do not sign up: Transitland collects the feeds they publish. These
-have been run through this provider:
-
-| Agency | Feed | Times | Notes |
-|---|---|---|---|
-| Carris, Lisbon | `f-carris~pt` | Schedule only | No destinations, so use the `grid` layout |
-| Comboios de Portugal | `f-eyc-cp` | Schedule only | |
-| MBTA, Boston | `f-drt-mbta` | Live and schedule | Trips added in realtime lack a destination |
-
-For another agency, find its feed's Onestop ID with `agencies search` (with
-`TRANSITLAND_API_KEY` set) or on its Transitland page, then look up the
-stop:
-
-```bash
-urbanist-timetable stops search carris rossio
-```
-
-Here `carris` is the name of your provider block. Some agency feeds answer
-nothing because Transitland serves the agency from a regional feed instead:
-BART's `f-9q9-bart` does, in favor of `f-sf~bay~area~rg`. Search without
-`feed` to see which feed has a stop.
-
-#### Example
-
-Two Carris stops at Rossio, in central Lisbon, one board each:
-
-```toml
-[providers.carris]
-type = "transitland"
-api_key = "${TRANSITLAND_API_KEY}"
-feed = "f-carris~pt"       # the feed's Onestop ID; stops are then GTFS stop IDs
-refresh_interval = "5m"    # 1m to 10m; default 5m
-monthly_quota = 50000      # your plan's quota; default 10000 (free plan)
-
-[[boards]]
-name = "rossio-901"
-
-[boards.clock]
-layout = "grid"
-
-[[boards.stops]]
-provider = "carris"
-stop = "901"
-
-[[boards]]
-name = "rossio-919"
-
-[boards.clock]
-layout = "grid"
-
-[[boards.stops]]
-provider = "carris"
-stop = "919"
-```
-
-Without `feed`, stops are full keys such as `f-carris~pt:901`, and one block
-serves several agencies. `lines` matches short names or Transitland route
-Onestop IDs, not GTFS route IDs.
-
-#### Live and scheduled times
-
-Times are live only where Transitland has the agency's realtime feed. Others
-are schedule-only, shown dimmed without the live dot: they do not know about
-delays or cancellations.
-
-- Between fetches predictions do not change: a vehicle leaves the board at its
-  last predicted time and, if it was delayed further, returns at the next
-  fetch, so a shorter `refresh_interval` follows delays more closely.
-- Vehicles up to 30 minutes late are shown, except that until a stop's first
-  answer with a timetabled departure, at startup or after 12 hours without
-  one, those already past their scheduled time are missed.
-- Destinations are blank where the agency publishes none, as with Carris, and
-  on some trips added in realtime, as with the MBTA's. Those rows are listed
-  after the others, so the `departure` layout shows one only when no named
-  destination is left, and a `headsigns` filter drops them. The `grid` layout
-  needs no destinations.
-
-#### Staying within the quota
-
-Each stop is fetched once per `refresh_interval`, and boards still count
-minutes down between fetches. Boards on one stop share its requests.
-Requests a month are about
-
-    31 × stops × active hours a day × 60 ÷ refresh minutes
-
-so one stop shown from 06:30 to 23:30 takes about:
-
-| `refresh_interval` | Requests a month per stop |
-|---|---|
-| `"2m"` | 15,800 |
-| `"5m"` (default) | 6,300 |
-| `"8m"` | 4,000 |
-
-For schedule-only agencies a long interval costs little.
-`config validate` prints the estimate for your boards, taking `active_hours`
-and `quiet_hours` into account, and warns when it exceeds `monthly_quota`;
-`clock run` logs it at startup. Blocks with the same key share its quota, so they
-are added up against the smallest `monthly_quota` any of them sets. Stop
-searches, previews and retries count too, but are not in the estimate.
-
-## How it behaves
-
-- Each push sets a lifetime (three poll intervals by default), so the app
-  disappears from the clock if the service stops instead of showing stale
-  times.
-- If a provider fails, the last good data is reused for up to `max_stale`
-  (10 minutes by default) while the provider is retried with backoff.
-  Minutes are recomputed on every push.
-- Outside `active_hours` and in `quiet_hours` a board is hidden and no
-  requests are made; see [When boards are shown](#when-boards-are-shown).
-- A board removed from the configuration is removed from the clock at the
-  next start, including its place in the rotation. If the clock is off, this
-  is retried with backoff, from one minute up to one hour. Apps of other
-  senders, scripts and built-in apps are left alone.
-- Logs show each board's configuration and changes of state. Set
-  `TIMETABLE_LOG_LEVEL=debug` to log every fetch and push.
-- The clock forgets pushed apps when it restarts; the next poll restores
-  them.
-- GTFS timetables are downloaded once a day to a temporary file in `/tmp`
-  (or the cache directory) and only the needed parts are kept in memory;
-  the stop times of the configured stops are read from the file. With a
-  read-only root filesystem, mount a tmpfs at `/tmp`; otherwise downloads
-  fall back to memory, which needs about as much RAM as the zip is large,
-  and boards show no timetabled trips: only realtime ones, or an error for
-  a board without `realtime_urls`.
+Either URL may be left out, for an agency that publishes only a schedule
+or only realtime. [`docs/providers.md`](./docs/providers.md) explains each
+provider's settings: what `gtfsrt` does with each feed, setting up Metro
+de Lisboa's keys, and the demo. `transitland` needs a free API key, and
+every request counts against a monthly quota: see
+[`docs/transitland.md`](./docs/transitland.md).
 
 ## Use it from Go
 

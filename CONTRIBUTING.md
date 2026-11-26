@@ -65,7 +65,8 @@ A provider must:
 6. Return what it can with a `*transit.PartialError` when part of its data
    fails, such as one of several feeds, rather than failing the whole
    query.
-7. Document its options in `config.example.toml`.
+7. Document its options in `config.example.toml` and
+   [`docs/providers.md`](./docs/providers.md).
 
 The `demo` provider is the reference implementation.
 

@@ -65,6 +65,9 @@ lacks). New adapters are frozen unless the maintainer needs one.
 ## Where the rest lives
 
 - How the code is built: [ARCHITECTURE.md](./ARCHITECTURE.md).
+- For users: running the clock, [clock.md](./clock.md); provider settings,
+  [providers.md](./providers.md); Transitland plans and quota,
+  [transitland.md](./transitland.md).
 - TC002 layouts and design rules: [rendering.md](./rendering.md).
 - Security model: [SECURITY.md](../SECURITY.md).
 - Conventions and approved modules: [CLAUDE.md](../CLAUDE.md).
