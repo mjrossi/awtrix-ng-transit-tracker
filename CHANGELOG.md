@@ -20,6 +20,8 @@ version may break configuration.
   stop. Where realtime trips do not match the schedule's, lines with
   realtime trips show only those and a warning is logged;
   `timetable = false` turns timetabled trips off, as `nyc-subway` does.
+  Without `realtime_urls`, a schedule that gives no timetable is an error
+  rather than an empty board.
   The first query for a stop reads the schedule's `stop_times.txt` (about
   5 seconds for HSL), and the result is saved in the cache directory.
 
@@ -63,6 +65,8 @@ version may break configuration.
 
 ### Changed
 
+- A board's stops are fetched at the same time on each poll, rather than
+  one after another.
 - Several errors at once, such as from `config validate` or from several
   failing stops, are printed one per line instead of run together.
 - A bad flag or argument prints a short error and points to `--help`,
