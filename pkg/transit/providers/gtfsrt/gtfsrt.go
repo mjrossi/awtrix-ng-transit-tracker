@@ -162,53 +162,13 @@ func (p *Provider) Departures(ctx context.Context, q transit.Query) ([]transit.D
 		return nil, staticErr
 	}
 
-	var (
-		feeds          []feed
-		problems       []error
-		servedByOK     bool
-		servedByFailed bool
-	)
-	for _, u := range p.cfg.RealtimeURLs {
-		// On failure, f is the last feed that decoded, or empty if none has.
-		f, err := p.feeds[u].Get(ctx, q.Now)
-		if err != nil {
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
-			}
-			problems = append(problems, err)
-			servedByFailed = servedByFailed || f.serves(st, q.StopID)
-			continue
-		}
-		servedByOK = servedByOK || f.serves(st, q.StopID)
-		feeds = append(feeds, f)
+	feeds, problems, servedByOK, servedByFailed, err := p.readFeeds(ctx, st, q)
+	if err != nil {
+		return nil, err
 	}
-
-	var (
-		plans    []planned
-		hasTimes bool
-		ttErr    error
-	)
-	if st != nil && st.tt != nil && p.timetableOn() {
-		// Trips are looked for from a while before q.Now, since a late one
-		// can still be ahead, and a little after the window for early ones.
-		from, to := q.Now.Add(-maxDelay), q.Now.Add(q.Window+maxEarly)
-		sts, err := st.tt.stopTimes(ctx, q.StopID)
-		if errors.Is(err, errTimetableClosed) {
-			// A refresh replaced the schedule during the query.
-			if cur := p.currentStatic(); cur != st && cur.tt != nil {
-				st = cur
-				sts, err = st.tt.stopTimes(ctx, q.StopID)
-			}
-		}
-		switch {
-		case ctx.Err() != nil:
-			return nil, ctx.Err()
-		case err != nil:
-			ttErr = fmt.Errorf("timetable: %w", err)
-		default:
-			hasTimes = len(sts) > 0
-			plans = st.planned(sts, from, to)
-		}
+	st, plans, hasTimes, ttErr := p.timetabled(ctx, st, q)
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 
 	if !hasTimes && len(p.cfg.RealtimeURLs) > 0 && (len(feeds) == 0 || servedByFailed && !servedByOK) {
@@ -256,6 +216,52 @@ func (p *Provider) Departures(ctx context.Context, q transit.Query) ([]transit.D
 		return out, &transit.PartialError{Err: errors.Join(problems...)}
 	}
 	return out, nil
+}
+
+// readFeeds gets every realtime feed, and reports whether one that loaded,
+// or one that failed, is known to serve q.StopID. It fails only when ctx
+// ends; a feed's failure is one of the problems.
+func (p *Provider) readFeeds(ctx context.Context, st *static, q transit.Query) (feeds []feed, problems []error, servedByOK, servedByFailed bool, err error) {
+	for _, u := range p.cfg.RealtimeURLs {
+		// On failure, f is the last feed that decoded, or empty if none has.
+		f, err := p.feeds[u].Get(ctx, q.Now)
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil, nil, false, false, ctx.Err()
+			}
+			problems = append(problems, err)
+			servedByFailed = servedByFailed || f.serves(st, q.StopID)
+			continue
+		}
+		servedByOK = servedByOK || f.serves(st, q.StopID)
+		feeds = append(feeds, f)
+	}
+	return feeds, problems, servedByOK, servedByFailed, nil
+}
+
+// timetabled returns the trips the timetable plans at q.StopID, with the
+// schedule they came from, which a refresh may have replaced, and whether
+// the stop has any stop times at all.
+func (p *Provider) timetabled(ctx context.Context, st *static, q transit.Query) (_ *static, plans []planned, hasTimes bool, err error) {
+	if st == nil || st.tt == nil || !p.timetableOn() {
+		return st, nil, false, nil
+	}
+	// Trips are looked for from a while before q.Now, since a late one can
+	// still be ahead, and a little after the window for early ones.
+	from, to := q.Now.Add(-maxDelay), q.Now.Add(q.Window+maxEarly)
+	sts, err := st.tt.stopTimes(ctx, q.StopID)
+	if errors.Is(err, errTimetableClosed) {
+		// A refresh replaced the schedule during the query.
+		if cur := p.currentStatic(); cur != st && cur.tt != nil {
+			st = cur
+			sts, err = st.tt.stopTimes(ctx, q.StopID)
+		}
+	}
+	if err != nil {
+		return st, nil, false, fmt.Errorf("timetable: %w", err)
+	}
+	plans = st.planned(sts, from, to)
+	return st, plans, len(sts) > 0, nil
 }
 
 const (
