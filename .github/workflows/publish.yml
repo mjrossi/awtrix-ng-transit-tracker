@@ -113,6 +113,10 @@ jobs:
       - run: goreleaser release --clean --release-notes "$RUNNER_TEMP/notes.md"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Check the release has notes
+        run: test "$(gh release view "$GITHUB_REF_NAME" --json body -q '.body | length')" -gt 1
+        env:
+          GH_TOKEN: ${{ github.token }}
       - uses: actions/attest-build-provenance@v4
         with:
           subject-path: |
