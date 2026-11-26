@@ -11,7 +11,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -689,20 +688,28 @@ func TestStopLines(t *testing.T) {
 func TestStopLinesWithTimetableOff(t *testing.T) {
 	s := newTown(t, town)
 	off := false
-	p, err := New(Config{StaticURL: s.URL + "/gtfs.zip", RealtimeURLs: []string{s.URL + "/rt.pb"}, Timetable: &off}, s.Client())
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err := p.StopLines(t.Context(), []string{"S1"}, monday8)
-	if err != nil || len(got["S1"]) != 2 {
-		t.Errorf("StopLines = %v, %v; want lines 1 and 2", got, err)
-	}
-}
+	cfg := Config{StaticURL: s.URL + "/gtfs.zip", RealtimeURLs: []string{s.URL + "/rt.pb"}, Timetable: &off}
 
-func TestCompareLineNames(t *testing.T) {
-	names := []string{"E", "10", "C", "2", "21"}
-	slices.SortFunc(names, compareLineNames)
-	if diff := cmp.Diff([]string{"2", "10", "21", "C", "E"}, names); diff != "" {
-		t.Errorf("order (-want +got):\n%s", diff)
-	}
+	t.Run("cached", func(t *testing.T) {
+		p, err := New(cfg, s.Client(), WithCacheDir(t.TempDir()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := p.StopLines(t.Context(), []string{"S1"}, monday8)
+		if err != nil || len(got["S1"]) != 2 {
+			t.Errorf("StopLines = %v, %v; want lines 1 and 2", got, err)
+		}
+	})
+	t.Run("uncached", func(t *testing.T) {
+		p, err := New(cfg, s.Client())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := p.StopLines(t.Context(), []string{"S1"}, monday8); err == nil || !strings.Contains(err.Error(), "schedule cache") {
+			t.Errorf("StopLines error = %v, want one naming the schedule cache", err)
+		}
+		if st := p.currentStatic(); st == nil || st.tt != nil {
+			t.Error("the temporary schedule file is kept with timetable = false")
+		}
+	})
 }

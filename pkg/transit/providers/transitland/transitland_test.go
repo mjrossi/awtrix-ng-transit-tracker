@@ -901,40 +901,68 @@ func TestOffsetFromServiceDay(t *testing.T) {
 	}
 }
 
+// The stop answers are in the shape of the live API's: routes without a
+// onestop_id, and a key matching the stop in two feeds, which list the
+// same lines under different route IDs.
 func TestStopLines(t *testing.T) {
-	var paths []string
-	var mu sync.Mutex
+	var (
+		mu    sync.Mutex
+		paths []string
+	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		paths = append(paths, r.URL.EscapedPath())
 		mu.Unlock()
 		if strings.HasSuffix(r.URL.Path, ":HC") {
-			_, _ = w.Write([]byte(`{"stops":[{"route_stops":[
-				{"route":{"onestop_id":"r-b","route_short_name":"B"}},
-				{"route":{"onestop_id":"r-a","route_short_name":"","route_long_name":"Airport"}},
-				{"route":{"onestop_id":"r-b","route_short_name":"B"}}]}]}`))
+			_, _ = w.Write([]byte(`{"stops":[
+				{"location_type":0,"route_stops":[
+					{"route":{"onestop_id":null,"route_id":"r10","route_short_name":"10","route_long_name":null}},
+					{"route":{"onestop_id":null,"route_id":"r2","route_short_name":"2","route_long_name":null}},
+					{"route":{"onestop_id":null,"route_id":"rA","route_short_name":"","route_long_name":"Airport"}}]},
+				{"location_type":0,"route_stops":[
+					{"route":{"onestop_id":null,"route_id":"9002","route_short_name":"2","route_long_name":null}}]}]}`))
 			return
 		}
-		_, _ = w.Write([]byte(`{"stops":[{"route_stops":[]}]}`))
+		_, _ = w.Write([]byte(`{"stops":[{"location_type":1,"route_stops":[]}]}`))
 	}))
 	t.Cleanup(srv.Close)
 	p, err := transitland.New(transitland.Config{Feed: feed, APIKey: "k", BaseURL: srv.URL}, srv.Client())
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := p.StopLines(t.Context(), []string{"HC", "QUIET"}, now)
+	got, err := p.StopLines(t.Context(), []string{"HC", "STATION"}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var names []string
-	for _, l := range got["HC"] {
-		names = append(names, l.ShortName)
-	}
-	if diff := cmp.Diff([]string{"Airport", "B"}, names); diff != "" || len(got) != 1 {
-		t.Errorf("lines %v (-want +got):\n%s", got, diff)
+	want := map[string][]transit.Line{"HC": {
+		{ID: "r2", ShortName: "2"},
+		{ID: "r10", ShortName: "10"},
+		{ID: "rA", ShortName: "Airport"},
+	}}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("lines (-want +got):\n%s", diff)
 	}
 	if len(paths) != 2 {
 		t.Errorf("requests %v, want one per stop", paths)
+	}
+
+	if again, err := p.StopLines(t.Context(), []string{"HC", "STATION"}, now); err != nil || len(again["HC"]) != 3 {
+		t.Errorf("asking again: %v, %v", again, err)
+	}
+	if len(paths) != 2 {
+		t.Errorf("requests %v after asking again, want none more", paths)
+	}
+
+	var many []string
+	for i := range transitland.MaxStopLines + 5 {
+		many = append(many, fmt.Sprintf("S%d", i))
+	}
+	paths = nil
+	if _, err := p.StopLines(t.Context(), many, now); err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) != transitland.MaxStopLines {
+		t.Errorf("%d requests for %d stops, want %d", len(paths), len(many), transitland.MaxStopLines)
 	}
 }
 

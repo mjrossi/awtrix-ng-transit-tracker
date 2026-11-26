@@ -111,7 +111,6 @@ func hint(err error) string {
 		stops    *unknownStopsError
 		noConfig *noConfigError
 		missing  *catalog.MissingOptionsError
-		network  net.Error
 	)
 	switch {
 	case errors.As(err, &usage):
@@ -134,10 +133,27 @@ func hint(err error) string {
 		return "run `urbanist-timetable systems`"
 	case errors.Is(err, transit.ErrUnknownStop):
 		return "find stop IDs with `urbanist-timetable stops search <source> <words>`"
-	case errors.As(err, &network):
-		return "the server did not answer: try again later, or, if the feed has moved, another result of `urbanist-timetable agencies search`"
+	case unanswered(err):
+		return noAnswerHint
 	}
 	return ""
+}
+
+const noAnswerHint = "the server did not answer: try again later; if a system found with `urbanist-timetable agencies search` keeps failing, its feed may have moved, so try another result"
+
+// unanswered reports whether err is a server that could not be reached:
+// an unknown host, a refused connection, or a timeout. Other network
+// errors, such as a bad certificate or a refused redirect, are answers the
+// hint would misdescribe.
+func unanswered(err error) bool {
+	var (
+		dns *net.DNSError
+		op  *net.OpError
+		ne  net.Error
+	)
+	return errors.As(err, &dns) ||
+		errors.As(err, &op) && op.Op == "dial" ||
+		errors.As(err, &ne) && ne.Timeout()
 }
 
 // onUsageError replaces urfave/cli's response to a bad flag, which prints

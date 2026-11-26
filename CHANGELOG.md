@@ -17,9 +17,11 @@ version may break configuration.
   feed that carries many agencies is marked as shared, and `systems show`
   names it after the feed rather than one of its agencies. A Transitland
   result whose agency publishes predictions reads `realtime?`, since
-  Transitland does not always pass them on. Every ID the
+  Transitland does not always pass them on; `systems show` says whether
+  a system is read through Transitland. Every ID the
   Mobility Database uses works, including `ntd-`, `tdg-`, `jbda-` and
-  `odpt-` ones. A result's ID,
+  `odpt-` ones, while a mistyped verified ID such as `bart-2` still gets
+  a "did you mean" at once. A result's ID,
   such as `mdb-2929` or `f-eyc-cp`, works in `departures`, `stops search`
   and `systems show` without a configuration file. `systems show` prints
   its `[providers]` block, with `${NAME}` for any key the feeds need and
@@ -82,18 +84,21 @@ version may break configuration.
 - `stops search --json`.
 - `stops search` and `config init` name the lines at each stop when
   several stops share a name, such as one per side of a street or per
-  platform: `3rd Ave & Pike St  C Line, D Line, E Line`. `gtfsrt` reads
-  them from the timetable, also with `timetable = false`; `transitland`
-  spends a request per stop, for at most 10 stops. Library users can
-  call `transit.StopLiner`.
+  platform: `3rd Ave & Pike St  C Line, D Line, E Line`, numbered lines
+  in numeric order. `gtfsrt` reads them from the timetable, and with
+  `timetable = false` from a cached schedule only; `transitland` spends
+  a request per stop, for at most 10 stops, once per process, and lists
+  none for a station, only for its platforms. Library users can call
+  `transit.StopLiner` and sort lines with `transit.CompareLines`.
 - `--help` gives examples for each command, and the root help a
   getting-started sequence.
 - `systems` names the environment variables a system needs, and marks
   those already set.
 - `transitland` boards are titled with the stop's name from its
   departures, without a request of their own, instead of its ID.
-- A feed whose server does not answer gets a hint to try again later or
-  another search result.
+- A feed whose server cannot be reached (an unknown host, a refused
+  connection or a timeout) gets a hint to try again later or another
+  search result.
 - `departures` says how many departures `--lines`, `--headsigns` or
   `--min-lead` hid when they hid all of them, and which lines the stop has.
 

@@ -33,6 +33,11 @@ func TestBlockNameForAListOfAgencies(t *testing.T) {
 	if b := one.BlockName(); b != "transdev-inc" {
 		t.Errorf("block %q; one comma is part of a name, not a list", b)
 	}
+	for _, agency := range []string{"Metro Authority, Inc., dba MetroBus", "Coach Lines, Ltd., LLC"} {
+		if isAgencyList(agency) {
+			t.Errorf("%q read as a list; its commas come before company forms", agency)
+		}
+	}
 }
 
 func TestBlockName(t *testing.T) {

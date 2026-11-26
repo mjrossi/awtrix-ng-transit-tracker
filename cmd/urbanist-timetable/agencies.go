@@ -88,8 +88,10 @@ func writeSystems(c *cli.Command, res directory.Results) {
 	}
 }
 
-// unsureNote explains dataLabel's "realtime?".
-const unsureNote = "realtime? = the agency publishes predictions, which Transitland may not pass on; departures mark schedule-only times with *"
+// unsureNote explains dataLabel's "realtime?". A search row cannot tell
+// whether the system will read the agency's feeds directly or through
+// Transitland: working that out costs requests, so `systems show` does it.
+const unsureNote = "realtime? = the agency publishes predictions; read through Transitland they may be missing, and `systems show` tells which way a system is read; departures mark schedule-only times with *"
 
 // dataLabel names what departures a system gives. Through Transitland,
 // that the agency publishes predictions does not mean Transitland merges

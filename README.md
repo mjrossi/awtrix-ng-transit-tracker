@@ -27,7 +27,7 @@ screen instead, and a `grid` layout the next departure of up to four lines.
 > **Status:** early, and running on a real TC002. Supported today, in the
 > terminal and on the clock:
 > any agency publishing a GTFS schedule, with live predictions where it
-> also publishes GTFS-Realtime, found by agency or city with `systems
+> also publishes GTFS-Realtime, found by agency or city with `agencies
 > search`; six [verified systems](#systems) checked against their live
 > feeds; dedicated providers for Metro de Lisboa and Carris Metropolitana;
 > and [Transitland](https://www.transit.land/) for thousands more. Only
@@ -166,8 +166,9 @@ result's ID works in `departures`, `stops search` and `systems show`.
 The agency shown is whoever published the data, so if a name finds
 nothing, try the city; countrywide feeds, such as national railways, are
 found by the country's name. `realtime?` marks a Transitland result whose
-agency publishes predictions, which Transitland does not always pass on;
-`departures` shows which times are live. Results are served by the
+agency publishes predictions, which a system read through Transitland may
+lack; `systems show` says which way a system is read, and `departures`
+shows which times are live. Results are served by the
 `gtfsrt` provider where the feeds need no Transitland key, so departures
 spend no quota; looking up a Transitland ID takes two or more requests,
 saved for a week in the cache directory. `systems show` says when a feed

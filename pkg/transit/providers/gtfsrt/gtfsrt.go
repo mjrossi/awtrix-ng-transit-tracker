@@ -23,7 +23,6 @@ import (
 	"net/url"
 	"os"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -646,10 +645,12 @@ func (p *Provider) timetableOn() bool { return p.cfg.Timetable == nil || *p.cfg.
 
 // adopt makes st the current schedule: it gives st a timetable that keeps
 // the schedule's file open, or closes the file, and closes the timetable of
-// the schedule st replaces. With timetable = false the timetable still
-// names the lines at each stop, for StopLines.
+// the schedule st replaces. With timetable = false a timetable is kept only
+// for a cached schedule, to name the lines at each stop for StopLines: that
+// file is on disk anyway, while an uncached one is a temporary copy, often
+// 100 MB, that a long-running service would hold for nothing.
 func (p *Provider) adopt(st *static) {
-	if st.file != nil && st.hasTimetable() {
+	if st.file != nil && st.hasTimetable() && (p.timetableOn() || st.cached) {
 		dir := ""
 		if st.cached {
 			dir = p.cacheDir
@@ -840,7 +841,8 @@ func (p *Provider) SearchStops(ctx context.Context, search string) ([]transit.St
 		if err == nil {
 			err = ctx.Err()
 		}
-		// err names the provider already, as "schedule: gtfsrt: GET ...".
+		// Download errors name the provider already, as "schedule: gtfsrt:
+		// GET ...".
 		return nil, fmt.Errorf("stop search: %w", err)
 	}
 	search = strings.TrimSpace(search)
@@ -873,16 +875,19 @@ func (p *Provider) StopName(ctx context.Context, id string, now time.Time) (stri
 	return info.name, ok && info.name != ""
 }
 
-// StopLines implements transit.StopLiner from the timetable, reading the
-// stop times of every stop asked for in one scan of the schedule. It fails
-// without one: no static_url, a schedule without stop times, or one that
-// could not be kept in a temporary file.
+// StopLines implements transit.StopLiner from the timetable. It fails
+// without one: no static_url, a schedule without stop times, one that could
+// not be kept in a temporary file, or timetable = false without the
+// schedule cache.
 func (p *Provider) StopLines(ctx context.Context, ids []string, now time.Time) (map[string][]transit.Line, error) {
 	st, err := p.staticFor(ctx, now)
 	if st == nil {
 		return nil, cmp.Or(err, ctx.Err(), errNoTimetable)
 	}
 	if st.tt == nil {
+		if !p.timetableOn() {
+			return nil, fmt.Errorf("%s: with timetable = false, stop lines need the schedule cache", Name)
+		}
 		return nil, fmt.Errorf("%s: stop lines need the schedule's timetable", Name)
 	}
 	var (
@@ -891,7 +896,8 @@ func (p *Provider) StopLines(ctx context.Context, ids []string, now time.Time) (
 		errs []error
 		wg   sync.WaitGroup
 	)
-	// Stops asked for together share one scan of stop_times.txt.
+	// The timetable gathers stops asked for within scanGather into one scan
+	// of stop_times.txt, so these usually share it.
 	for _, id := range ids {
 		wg.Go(func() {
 			sts, err := st.tt.stopTimes(ctx, id)
@@ -925,24 +931,6 @@ func (s *static) stopLines(sts []stopTime) []transit.Line {
 		seen[routeID] = true
 		lines = append(lines, s.routeLine(routeID))
 	}
-	slices.SortFunc(lines, func(a, b transit.Line) int {
-		return cmp.Or(compareLineNames(a.ShortName, b.ShortName), strings.Compare(a.ID, b.ID))
-	})
+	slices.SortFunc(lines, transit.CompareLines)
 	return lines
-}
-
-// compareLineNames puts numbered lines first, in numeric order, so 2 comes
-// before 10, then named ones.
-func compareLineNames(a, b string) int {
-	na, errA := strconv.Atoi(a)
-	nb, errB := strconv.Atoi(b)
-	switch {
-	case errA == nil && errB == nil:
-		return cmp.Compare(na, nb)
-	case errA == nil:
-		return -1
-	case errB == nil:
-		return 1
-	}
-	return strings.Compare(a, b)
 }

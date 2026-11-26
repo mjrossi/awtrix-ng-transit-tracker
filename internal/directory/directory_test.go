@@ -344,7 +344,7 @@ func TestListIsCached(t *testing.T) {
 }
 
 func TestIsID(t *testing.T) {
-	for id, want := range map[string]bool{"mdb-53": true, "tld-716": true, "f-9q9-bart": true, "bart": false, "mta-subway": false, "f-": false, "ntd-23": true, "jbda-1234": true, "metro-lisboa": false} {
+	for id, want := range map[string]bool{"mdb-53": true, "tld-716": true, "f-9q9-bart": true, "bart": false, "mta-subway": false, "f-": false, "ntd-23": true, "jbda-1234": true, "metro-lisboa": false, "bart-2": false, "hsl-1": false, "mta-7": false} {
 		if got := directory.IsID(id); got != want {
 			t.Errorf("IsID(%q) = %v", id, got)
 		}

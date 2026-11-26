@@ -48,7 +48,7 @@ Mobility Database's feed list to the cache directory (`--cache-dir`).
 
 | Package | Owns | Imports (project) |
 |---|---|---|
-| `pkg/transit` | `Departure`, `Line`, `Provider`, `Query`, `PartialError`, `ErrUnknownStop`, `StopNamer`, `Metered`, `Quota`, `Filter`, `Group`, `MatchesSearch`, `ModeForRouteType` | `internal/fold` |
+| `pkg/transit` | `Departure`, `Line`, `Provider`, `Query`, `PartialError`, `ErrUnknownStop`, `StopNamer`, `StopLiner`, `CompareLines`, `Metered`, `Quota`, `Filter`, `Group`, `MatchesSearch`, `ModeForRouteType` | `internal/fold` |
 | `pkg/transit/registry` | building providers by name from configuration: `Registry`, `Options`, `RegisterConfig` | `transit` |
 | `pkg/transit/transittest` | the provider contract suite | `transit` |
 | `pkg/transit/providers/<name>` | one data source each | `transit`, `registry` |

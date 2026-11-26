@@ -156,13 +156,25 @@ const TransitlandKeyVar = "TRANSITLAND_API_KEY"
 // Database ID such as "mdb-53", "tld-716" or "ntd-23", or a Transitland
 // feed Onestop ID such as "f-9q9-bart".
 func IsID(id string) bool {
-	return mdbID.MatchString(id) || strings.HasPrefix(id, "f-") && len(id) > 2
+	return mdbID.MatchString(id) && !catalogPrefix(id) || strings.HasPrefix(id, "f-") && len(id) > 2
 }
 
 // mdbID takes any prefix: the Mobility Database names feeds after where it
 // found them (mdb, tld, ntd, tdg, jbda, odpt), and adds sources over time.
 // The catalog keeps its IDs out of this shape.
 var mdbID = regexp.MustCompile(`^[a-z]+-[0-9]+$`)
+
+// catalogPrefix reports whether id starts like a catalog ID, as "bart-2"
+// does: a mistyped catalog ID, better answered with a suggestion at once
+// than by loading the Mobility Database's list to find it missing.
+func catalogPrefix(id string) bool {
+	prefix, _, _ := strings.Cut(id, "-")
+	all, _ := catalog.All()
+	return slices.ContainsFunc(all, func(s catalog.System) bool {
+		first, _, _ := strings.Cut(s.ID, "-")
+		return first == prefix
+	})
+}
 
 // Results is what Search found.
 type Results struct {

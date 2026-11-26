@@ -1,7 +1,10 @@
 package transit_test
 
 import (
+	"slices"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 
 	"github.com/mjrossi/urbanist-timetable/pkg/transit"
 )
@@ -22,5 +25,23 @@ func TestModeForRouteType(t *testing.T) {
 				t.Errorf("route_type %d = %q, want %q", rt, got, want)
 			}
 		}
+	}
+}
+
+func TestCompareLines(t *testing.T) {
+	lines := []transit.Line{
+		{ID: "c", ShortName: "Azul"},
+		{ID: "b", ShortName: "10"},
+		{ID: "d", ShortName: "C Line"},
+		{ID: "a", ShortName: "2"},
+		{ID: "e", ShortName: "10"},
+	}
+	slices.SortFunc(lines, transit.CompareLines)
+	var got []string
+	for _, l := range lines {
+		got = append(got, l.ID)
+	}
+	if diff := cmp.Diff([]string{"a", "b", "e", "c", "d"}, got); diff != "" {
+		t.Errorf("order (-want +got):\n%s", diff)
 	}
 }

@@ -8,7 +8,9 @@
 package transit
 
 import (
+	"cmp"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -79,6 +81,26 @@ type Line struct {
 	// Color is the line's brand color as "#RRGGBB", or empty if unknown.
 	Color string
 	Mode  Mode
+}
+
+// CompareLines orders lines for listing: numbered ones first, in numeric
+// order so 2 comes before 10, then named ones, then by ID.
+func CompareLines(a, b Line) int {
+	return cmp.Or(compareLineNames(a.ShortName, b.ShortName), strings.Compare(a.ID, b.ID))
+}
+
+func compareLineNames(a, b string) int {
+	na, errA := strconv.Atoi(a)
+	nb, errB := strconv.Atoi(b)
+	switch {
+	case errA == nil && errB == nil:
+		return cmp.Compare(na, nb)
+	case errA == nil:
+		return -1
+	case errB == nil:
+		return 1
+	}
+	return strings.Compare(a, b)
 }
 
 // NormalizeColor returns a color as "#RRGGBB", accepting it with or

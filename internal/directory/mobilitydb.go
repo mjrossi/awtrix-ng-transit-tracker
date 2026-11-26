@@ -433,12 +433,30 @@ func (s System) BlockName() string {
 // regional feed's often is, since its first entry is no more the feed's
 // than the others.
 func (s System) shortName() string {
-	if strings.Count(s.Agency, ",") >= 2 {
+	if isAgencyList(s.Agency) {
 		if city, _, _ := strings.Cut(s.Place, ","); city != "" {
 			return city
 		}
 	}
 	return agencyShort(s.Agency)
+}
+
+// isAgencyList reports whether agency names three or more agencies, as
+// "A Oy, B Ab, C Oy" does. Commas before a company form, as in
+// "X Authority, Inc., dba Y", are part of one name.
+func isAgencyList(agency string) bool {
+	n := 0
+	for part := range strings.SplitSeq(agency, ",") {
+		if !companyForm[strings.ToLower(strings.Trim(part, " ."))] {
+			n++
+		}
+	}
+	return n >= 3
+}
+
+var companyForm = map[string]bool{
+	"inc": true, "llc": true, "ltd": true, "co": true, "corp": true, "lp": true, "plc": true,
+	"s.a": true, "sa": true, "gmbh": true, "ag": true, "oy": true, "ab": true, "bv": true, "srl": true,
 }
 
 // keyVar names the environment variable for a system's key, from its

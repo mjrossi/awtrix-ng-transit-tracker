@@ -509,6 +509,22 @@ func TestSearchStops(t *testing.T) {
 	}
 }
 
+// A failed download names the provider once, from the fetch.
+func TestSearchStopsDownloadError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "gone", http.StatusNotFound)
+	}))
+	t.Cleanup(srv.Close)
+	p, err := gtfsrt.New(gtfsrt.Config{StaticURL: srv.URL + "/gtfs.zip"}, srv.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = p.SearchStops(t.Context(), "main")
+	if err == nil || strings.Count(err.Error(), gtfsrt.Name) != 1 {
+		t.Errorf("error %v, want %q in it once", err, gtfsrt.Name)
+	}
+}
+
 func TestNewValidates(t *testing.T) {
 	bad := []gtfsrt.Config{
 		{},
