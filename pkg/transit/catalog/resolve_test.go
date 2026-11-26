@@ -35,7 +35,7 @@ func TestResolve(t *testing.T) {
 	}{
 		"type key":     {"nyc", map[string]any{"type": "gtfsrt", "realtime_urls": []any{"https://x"}}, "gtfsrt", []string{"realtime_urls"}},
 		"name is type": {"demo", map[string]any{}, "demo", nil},
-		"system":       {"nyc", map[string]any{"system": "nyc-subway", "headers": map[string]any{"X-Test": "1"}}, "gtfsrt", []string{"headers", "realtime_urls", "static_url"}},
+		"system":       {"nyc", map[string]any{"system": "nyc-subway", "headers": map[string]any{"X-Test": "1"}}, "gtfsrt", []string{"headers", "realtime_urls", "static_url", "timetable"}},
 		"nil settings": {"carrismetropolitana", nil, "carrismetropolitana", nil},
 	}
 	for name, tt := range tests {

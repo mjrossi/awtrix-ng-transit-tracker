@@ -33,23 +33,33 @@ type feed struct {
 }
 
 type tripUpdate struct {
-	tripID   string
-	routeID  string
-	relation int
-	stops    []stopTimeUpdate
+	tripID  string
+	routeID string
+	// startDate is the trip's service day as YYYYMMDD, or empty.
+	startDate string
+	// startTime and direction identify the trip, with routeID and
+	// startDate, in feeds that leave tripID out, such as HSL's.
+	startTime string
+	direction int // -1 when absent
+	relation  int
+	stops     []stopTimeUpdate
 }
 
 type stopTimeUpdate struct {
-	stopID    string
+	stopID string
+	// seq is the stop_sequence, valid when hasSeq.
+	seq       uint32
+	hasSeq    bool
 	relation  int
 	arrival   event
 	departure event
 }
 
 type event struct {
-	time    int64
-	hasTime bool
-	delay   int32
+	time     int64
+	hasTime  bool
+	delay    int32
+	hasDelay bool
 }
 
 func decodeFeed(b []byte) (feed, error) {
@@ -95,7 +105,7 @@ func decodeFeed(b []byte) (feed, error) {
 }
 
 func decodeTripUpdate(b []byte) (tripUpdate, error) {
-	var tu tripUpdate
+	tu := tripUpdate{direction: -1}
 	err := fields(b, func(num, wt int, _ uint64, data []byte) error {
 		if wt != wireBytes {
 			return nil
@@ -106,6 +116,12 @@ func decodeTripUpdate(b []byte) (tripUpdate, error) {
 				switch {
 				case num == 1 && wt == wireBytes:
 					tu.tripID = string(data)
+				case num == 2 && wt == wireBytes:
+					tu.startTime = string(data)
+				case num == 6 && wt == wireVarint:
+					tu.direction = int(v)
+				case num == 3 && wt == wireBytes:
+					tu.startDate = string(data)
 				case num == 4 && wt == wireVarint:
 					tu.relation = int(v)
 				case num == 5 && wt == wireBytes:
@@ -130,6 +146,8 @@ func decodeStopTimeUpdate(b []byte) (stopTimeUpdate, error) {
 	err := fields(b, func(num, wt int, v uint64, data []byte) error {
 		var err error
 		switch {
+		case num == 1 && wt == wireVarint:
+			s.seq, s.hasSeq = uint32(v), true
 		case num == 2 && wt == wireBytes:
 			s.arrival, err = decodeEvent(data)
 		case num == 3 && wt == wireBytes:
@@ -150,7 +168,7 @@ func decodeEvent(b []byte) (event, error) {
 		switch {
 		case num == 1 && wt == wireVarint:
 			// int32 fields encode negative values as 64-bit two's complement.
-			e.delay = int32(int64(v))
+			e.delay, e.hasDelay = int32(int64(v)), true
 		case num == 2 && wt == wireVarint:
 			e.time, e.hasTime = int64(v), true
 		}

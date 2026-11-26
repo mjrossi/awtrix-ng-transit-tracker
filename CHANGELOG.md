@@ -9,6 +9,22 @@ version may break configuration.
 
 ### Added
 
+- `gtfsrt` shows timetabled trips from the schedule, with the realtime
+  prediction where a feed has one, so a stop no longer reads "No
+  departures" while a scheduled bus is 20 minutes away, and a realtime
+  outage no longer blanks a board. Delays sent without a time, and delays
+  carried forward from an earlier stop, now apply. Feeds that name trips
+  by route and start time instead of trip ID, such as HSL's, are matched
+  too. `realtime_urls` is optional, so an agency that publishes only a
+  schedule works. Trips without a headsign are named after their last
+  stop. Where realtime trips do not match the schedule's, lines with
+  realtime trips show only those and a warning is logged;
+  `timetable = false` turns timetabled trips off, as `nyc-subway` does.
+  Without `realtime_urls`, a schedule that gives no timetable is an error
+  rather than an empty board.
+  The first query for a stop reads the schedule's `stop_times.txt` (about
+  5 seconds for HSL), and the result is saved in the cache directory.
+
 - `cache clear` deletes the cached GTFS schedules, which otherwise stay in
   the cache directory even after no board uses them. Library users can call
   `providers.ClearScheduleCache` or `gtfsrt.ClearCache`.
@@ -49,6 +65,8 @@ version may break configuration.
 
 ### Changed
 
+- A board's stops are fetched at the same time on each poll, rather than
+  one after another.
 - Several errors at once, such as from `config validate` or from several
   failing stops, are printed one per line instead of run together.
 - A bad flag or argument prints a short error and points to `--help`,

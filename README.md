@@ -144,7 +144,8 @@ urbanist-timetable systems show nyc-subway    # prints a block to paste into con
 ```
 
 If your agency is not listed, see [Providers](#providers): any agency
-with GTFS-Realtime works through the `gtfsrt` provider.
+that publishes a GTFS schedule works through the `gtfsrt` provider, with
+realtime predictions where it also publishes GTFS-Realtime.
 
 ### 3. Find your stop
 
@@ -329,7 +330,7 @@ Other settings in the block override the system's.
 |---|---|---|---|
 | `carrismetropolitana` | Carris Metropolitana buses, Lisbon metropolitan area | None | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), © Carris Metropolitana |
 | `metrolisboa` | Metro de Lisboa, all four lines | Free OAuth client from the [API Store](https://api.metrolisboa.pt/store/) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), © Metropolitano de Lisboa |
-| `gtfsrt` | Any agency with GTFS and GTFS-Realtime TripUpdates, configured by URL (several per config with `type = "gtfsrt"`) | Depends on the agency | The agency's |
+| `gtfsrt` | Any agency with a GTFS schedule, GTFS-Realtime TripUpdates, or both, configured by URL (several per config with `type = "gtfsrt"`) | Depends on the agency | The agency's |
 | `transitland` | Thousands of agencies through [Transitland](https://www.transit.land/), schedule and realtime merged | Free API key; requests count against a monthly quota | The agency's; Transitland's terms apply |
 | `demo` | Generated departures for testing the display | None | — |
 
@@ -343,8 +344,19 @@ static_url = "https://example.org/gtfs.zip"
 realtime_urls = ["https://example.org/tripupdates.pb"]
 ```
 
-The `gtfsrt` provider shows only departures with realtime predictions;
-trips the feed does not list yet are missing until it does.
+The `gtfsrt` provider shows timetabled trips from the schedule, with the
+realtime prediction where a feed has one, so a stop does not look empty
+while no vehicle is near. Leave out `realtime_urls` for an agency that
+publishes only a schedule. Without `static_url`, it shows realtime trips
+only, with route IDs for lines.
+
+Where an agency's realtime trips do not match its schedule's, lines with
+realtime trips show only those, and a warning is logged; set
+`timetable = false` to show realtime trips only (it needs
+`realtime_urls`). Reading the timetable
+for a stop the first time scans the schedule's `stop_times.txt` (about
+5 seconds for HSL); with a cache directory, the result is saved for
+later runs.
 
 ### Transitland
 
@@ -491,7 +503,9 @@ searches, previews and retries count too, but are not in the estimate.
 - GTFS timetables are downloaded once a day to a temporary file in `/tmp`
   and only the needed parts are kept in memory. With a read-only root
   filesystem, mount a tmpfs at `/tmp`; otherwise downloads fall back to
-  memory, which needs about as much RAM as the zip is large.
+  memory, which needs about as much RAM as the zip is large and shows no
+  timetabled trips: only realtime ones, or an error for a board without
+  `realtime_urls`.
 
 ## Use it from Go
 

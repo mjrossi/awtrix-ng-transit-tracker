@@ -40,7 +40,8 @@ predictions of a failing source, which are as old as its last good fetch.
 
 The program makes outgoing requests only: to transit APIs and to the clock.
 It listens on no ports. Besides the state file, it writes only GTFS
-schedules to the cache directory (`--cache-dir`).
+schedules, and the stop times read from them for configured stops, to the
+cache directory (`--cache-dir`).
 
 ## Packages and what they may import
 
@@ -79,7 +80,8 @@ Rules, from [CLAUDE.md](../CLAUDE.md):
   `Snapshot.Rows` copies before it changes anything.
 - All runners share one output. `clockout.Output` keeps each board's last
   push time, under a mutex.
-- Within a tick, a board refreshes its due sources one after another.
+- Within a tick, a board refreshes its due sources at the same time, each
+  touching only its own state.
 - `buildProviders` (`cmd/urbanist-timetable/wire.go`) builds each
   `[providers.NAME]` block **once**. Boards that name the same block share
   the instance, and with it its caches. Providers must therefore be safe for
@@ -92,6 +94,7 @@ Rules, from [CLAUDE.md](../CLAUDE.md):
   |---|---|---|---|
   | `gtfsrt` | schedule zip, in memory and, with a cache directory, on disk | 24 h, then a conditional request on disk | keep last, retry in 15 min; a new process uses an expired file and reports the failure |
   | `gtfsrt` | each realtime feed | 15 s | failure cached for 15 s too |
+  | `gtfsrt` | stop times of each stop asked for, in memory and, with a cache directory, on disk | as long as the schedule; stops first asked within 100 ms share one scan of `stop_times.txt`, and a stop asked for during a scan that covers it waits for that scan; a board's sources refresh at once, so its stops share a scan too | realtime only, partial result; scan retried in 15 min |
   | `metrolisboa` | stations | 24 h | keep last, retry in 15 min; with none yet, retry next poll |
   | `metrolisboa` | destinations | 24 h | keep last, retry in 15 min |
   | `metrolisboa` | each line's wait times | 15 s | not cached |
