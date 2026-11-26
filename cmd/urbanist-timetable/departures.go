@@ -376,13 +376,7 @@ func (q query) fetch(ctx context.Context, now time.Time, bq boardQuery) (termout
 
 // warn prints err as one warning line.
 func warn(w io.Writer, err error) {
-	var parts []string
-	for l := range strings.SplitSeq(err.Error(), "\n") {
-		if l = strings.TrimSpace(termout.Clean(l)); l != "" {
-			parts = append(parts, l)
-		}
-	}
-	fmt.Fprintf(w, "warning: %s\n", strings.Join(parts, "; "))
+	fmt.Fprintf(w, "warning: %s\n", oneLine(err))
 }
 
 // title names a board's stops where the provider already holds names, and

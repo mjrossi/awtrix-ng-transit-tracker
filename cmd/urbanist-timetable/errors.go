@@ -68,12 +68,7 @@ func (e *noConfigError) Unwrap() error { return e.err }
 // printError prints err, one line per joined error, and a hint. Errors can
 // quote server responses, so control characters are removed from each line.
 func printError(w io.Writer, err error) {
-	var lines []string
-	for l := range strings.SplitSeq(err.Error(), "\n") {
-		if l = strings.TrimSpace(termout.Clean(l)); l != "" {
-			lines = append(lines, l)
-		}
-	}
+	lines := errorLines(err)
 	switch len(lines) {
 	case 0:
 	case 1:
@@ -87,6 +82,23 @@ func printError(w io.Writer, err error) {
 	if h := hint(err); h != "" {
 		fmt.Fprintln(w, "hint: "+h)
 	}
+}
+
+// oneLine is err as one line without control characters.
+func oneLine(err error) string {
+	return strings.Join(errorLines(err), "; ")
+}
+
+// errorLines splits err into its non-empty lines without control
+// characters.
+func errorLines(err error) []string {
+	var lines []string
+	for l := range strings.SplitSeq(err.Error(), "\n") {
+		if l = strings.TrimSpace(termout.Clean(l)); l != "" {
+			lines = append(lines, l)
+		}
+	}
+	return lines
 }
 
 // hint suggests what fixes err, or returns "". The library's errors do not

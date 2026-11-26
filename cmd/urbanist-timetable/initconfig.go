@@ -443,14 +443,3 @@ func cmpOrSlug(s transit.Stop) string {
 	}
 	return slug(s.ID)
 }
-
-// oneLine is err as one line without control characters.
-func oneLine(err error) string {
-	var parts []string
-	for l := range strings.SplitSeq(err.Error(), "\n") {
-		if l = strings.TrimSpace(termout.Clean(l)); l != "" {
-			parts = append(parts, l)
-		}
-	}
-	return strings.Join(parts, "; ")
-}
