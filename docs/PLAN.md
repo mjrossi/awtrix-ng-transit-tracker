@@ -127,8 +127,6 @@ Small, and deferred:
 
 - After a 304 from a feed server, a failure to update the cached schedule's
   modification time reports a valid schedule as partial.
-- An explicit `--config` path that does not exist is treated as having no
-  provider block, instead of as a missing file.
 - `departures` aligns columns by character count, so combining accents and
   wide characters (such as CJK) misalign.
 - CI's `oldest-go` job does not build `examples/departures`.

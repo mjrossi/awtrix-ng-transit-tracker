@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -25,7 +26,7 @@ var clock = time.Now
 // clearScreen moves the cursor home and clears the terminal.
 const clearScreen = "\x1b[H\x1b[2J"
 
-const departuresUsage = "usage: urbanist-timetable departures <source> <stop>... (or --realtime URL <stop>...)"
+const departuresUsage = "give a source and one or more stop IDs, such as `departures nyc-subway 127N`"
 
 func departuresCommand() *cli.Command {
 	return &cli.Command{
@@ -79,12 +80,12 @@ func departures(ctx context.Context, c *cli.Command) error {
 		}
 	} else {
 		if len(args) < 2 {
-			return errors.New(departuresUsage)
+			return newUsageError(c, departuresUsage)
 		}
 		source, args = args[0], args[1:]
 	}
 	if len(args) == 0 {
-		return errors.New(departuresUsage)
+		return newUsageError(c, "give one or more stop IDs after --realtime")
 	}
 	stops := dedupe(args)
 
@@ -95,7 +96,11 @@ func departures(ctx context.Context, c *cli.Command) error {
 	if settings != nil {
 		p, err = providers.Open(source, settings, cacheOptions(c)...)
 	} else {
-		p, err = openSource(c.String("config"), source, cacheOptions(c)...)
+		var path string
+		if path, err = queryConfig(c); err != nil {
+			return err
+		}
+		p, err = openSource(path, source, cacheOptions(c)...)
 	}
 	if err != nil {
 		return err
@@ -144,7 +149,12 @@ type query struct {
 // stop fails; otherwise problems are warnings.
 func (q query) show(ctx context.Context, now time.Time) (string, error) {
 	b := termout.Board{Source: q.source, At: now, Window: q.window}
-	var failed []error
+	var (
+		failed  []error
+		unknown int
+		hidden  int
+		lines   []string
+	)
 	for _, stop := range q.stops {
 		deps, err := q.provider.Departures(ctx, transit.Query{StopID: stop, Now: now, Window: q.window})
 		var partial *transit.PartialError
@@ -156,19 +166,39 @@ func (q query) show(ctx context.Context, now time.Time) (string, error) {
 			if ctx.Err() != nil {
 				return "", ctx.Err()
 			}
+			if errors.Is(err, transit.ErrUnknownStop) {
+				unknown++
+			}
 			failed = append(failed, fmt.Errorf("stop %s: %w", stop, err))
 			continue
 		}
-		b.Departures = append(b.Departures, q.filter.Apply(now, deps)...)
+		kept := q.filter.Apply(now, deps)
+		hidden += len(deps) - len(kept)
+		for _, d := range deps {
+			name := cmp.Or(d.Line.ShortName, d.Line.ID)
+			if !slices.Contains(lines, name) {
+				lines = append(lines, name)
+			}
+		}
+		b.Departures = append(b.Departures, kept...)
 	}
 	if len(failed) == len(q.stops) {
-		return "", errors.Join(failed...)
+		err := errors.Join(failed...)
+		if unknown == len(q.stops) {
+			return "", &unknownStopsError{source: q.source, stops: q.stops, err: err}
+		}
+		return "", err
 	}
 	for _, err := range failed {
 		b.Partial = true
 		fmt.Fprintf(q.warnings, "warning: %s\n", termout.Clean(err.Error()))
 	}
 	b.Title = q.title(ctx, now)
+	narrowed := len(q.filter.Lines) > 0 || len(q.filter.Headsigns) > 0 || q.filter.MinLead > 0
+	if len(b.Departures) == 0 && hidden > 0 && narrowed && !q.json {
+		slices.Sort(lines)
+		fmt.Fprintf(q.warnings, "note: the filters hid %d departures; lines here: %s\n", hidden, termout.Clean(strings.Join(lines, ", ")))
+	}
 
 	var out bytes.Buffer
 	var err error

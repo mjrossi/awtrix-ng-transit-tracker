@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"os"
 	"strconv"
@@ -22,6 +23,7 @@ import (
 	"github.com/mjrossi/urbanist-timetable/pkg/transit"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/catalog"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/providers"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit/registry"
 )
 
 func clockCommand() *cli.Command {
@@ -53,11 +55,21 @@ func setup(c *cli.Command) (*slog.Logger, *config.Config, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	cfg, err := config.Load(c.String("config"))
+	cfg, err := loadConfig(c)
 	if err != nil {
 		return nil, nil, err
 	}
 	return log, cfg, nil
+}
+
+// loadConfig loads the whole configuration, for commands that need one.
+func loadConfig(c *cli.Command) (*config.Config, error) {
+	path := c.String("config")
+	cfg, err := config.Load(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, &noConfigError{path: path, err: err}
+	}
+	return cfg, err
 }
 
 func runBoards(ctx context.Context, c *cli.Command) error {
@@ -210,7 +222,7 @@ func configCommand() *cli.Command {
 			Name:  "validate",
 			Usage: "check the configuration file and build its providers and clock client",
 			Action: func(_ context.Context, c *cli.Command) error {
-				cfg, err := config.Load(c.String("config"))
+				cfg, err := loadConfig(c)
 				if err != nil {
 					return err
 				}
@@ -250,6 +262,9 @@ func systemsCommand() *cli.Command {
 		Name:  "systems",
 		Usage: "list ready-made transit systems, or show how to configure one",
 		Action: func(_ context.Context, c *cli.Command) error {
+			if c.Args().Present() {
+				return unknownSystemsArgument(c)
+			}
 			w := c.Root().Writer
 			all, err := catalog.All()
 			if err != nil {
@@ -270,10 +285,13 @@ func systemsCommand() *cli.Command {
 			Usage:     "print a system's details and a config snippet",
 			ArgsUsage: "<id>",
 			Action: func(_ context.Context, c *cli.Command) error {
+				if c.Args().Len() != 1 {
+					return newUsageError(c, "give one system ID, such as `systems show sf-bart`")
+				}
 				id := c.Args().First()
 				s, ok := catalog.Get(id)
 				if !ok {
-					return fmt.Errorf("unknown system %q; run `urbanist-timetable systems`", id)
+					return unknownSystemError(id)
 				}
 				w := c.Root().Writer
 				fmt.Fprintf(w, "# %s, %s (%s)\n", s.Name, s.City, s.Country)
@@ -304,11 +322,15 @@ func stopsCommand() *cli.Command {
 			ArgsUsage: "<provider> <words...>",
 			Action: func(ctx context.Context, c *cli.Command) error {
 				if c.Args().Len() < 2 {
-					return errors.New("usage: urbanist-timetable stops search <provider> <words...>")
+					return newUsageError(c, "give a source and words to search for, such as `stops search nyc-subway times sq`")
 				}
 				name := c.Args().First()
 				search := strings.Join(c.Args().Tail(), " ")
-				p, err := openSource(c.String("config"), name, cacheOptions(c)...)
+				path, err := queryConfig(c)
+				if err != nil {
+					return err
+				}
+				p, err := openSource(path, name, cacheOptions(c)...)
 				if err != nil {
 					return err
 				}
@@ -333,6 +355,20 @@ func stopsCommand() *cli.Command {
 	}
 }
 
+// queryConfig returns the configuration path for commands that work
+// without a file. A path given with --config must exist; TIMETABLE_CONFIG
+// may name one that does not, as the Docker image does by default.
+func queryConfig(c *cli.Command) (string, error) {
+	path := c.String("config")
+	if !c.IsSet("config") || os.Getenv("TIMETABLE_CONFIG") == path {
+		return path, nil
+	}
+	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
+		return "", &noConfigError{path: path, err: err}
+	}
+	return path, nil
+}
+
 // openSource builds the provider name refers to: a [providers.NAME] block
 // in the file at path, else a catalog system, with required options read
 // from <SYSTEM>_<OPTION> environment variables, else a provider type that
@@ -343,18 +379,45 @@ func openSource(path, name string, opts ...providers.Option) (transit.Provider, 
 	if err != nil {
 		return nil, err
 	}
-	if !found {
-		settings = map[string]any{}
-		if sys, ok := catalog.Get(name); ok {
-			settings["system"] = name
-			for _, k := range sys.RequiredOptions {
-				if v := os.Getenv(sys.EnvName(k)); v != "" {
-					settings[k] = v
-				}
+	if found {
+		return providers.Open(name, settings, opts...)
+	}
+	settings = map[string]any{}
+	if sys, ok := catalog.Get(name); ok {
+		settings["system"] = name
+		for _, k := range sys.RequiredOptions {
+			if v := os.Getenv(sys.EnvName(k)); v != "" {
+				settings[k] = v
 			}
 		}
+		return providers.Open(name, settings, opts...)
 	}
-	return providers.Open(name, settings, opts...)
+	p, err := providers.Open(name, settings, opts...)
+	if err == nil {
+		return p, nil
+	}
+	serr := &sourceError{name: name, configPath: path, err: err}
+	if errors.Is(err, registry.ErrUnknownProvider) {
+		serr.unknown = true
+		serr.suggestion = closest(name, sourceNames(path, false))
+	}
+	return nil, serr
+}
+
+// sourceNames lists what can name a source: the file's provider blocks,
+// catalog systems and provider types, and with boards the file's boards.
+func sourceNames(path string, boards bool) []string {
+	boardNames, blocks := config.Names(path)
+	names := blocks
+	if boards {
+		names = append(names, boardNames...)
+	}
+	if all, err := catalog.All(); err == nil {
+		for _, s := range all {
+			names = append(names, s.ID)
+		}
+	}
+	return append(names, providers.Registry().Names()...)
 }
 
 func filterBoards(boards []config.Board, name string) []config.Board {
@@ -394,4 +457,27 @@ func printRows(w io.Writer, b config.Board, rows []transit.Row, now time.Time) {
 	if scrolls {
 		fmt.Fprintln(w, "#   (~ = too wide for its space; set a shorter name under [boards.clock.labels])")
 	}
+}
+
+func unknownSystemError(id string) error {
+	err := fmt.Errorf("%w %q", catalog.ErrUnknownSystem, id)
+	all, _ := catalog.All()
+	ids := make([]string, len(all))
+	for i, s := range all {
+		ids[i] = s.ID
+	}
+	if s := closest(id, ids); s != "" {
+		return fmt.Errorf("%w; did you mean %q?", err, s)
+	}
+	return err
+}
+
+// unknownSystemsArgument answers `systems ID`, which is most often meant as
+// `systems show ID`.
+func unknownSystemsArgument(c *cli.Command) error {
+	arg := c.Args().First()
+	if _, ok := catalog.Get(arg); ok && c.Args().Len() == 1 {
+		return newUsageError(c, "unknown command %q; did you mean `systems show %s`?", arg, arg)
+	}
+	return unknownCommandError(c, arg)
 }

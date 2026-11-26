@@ -13,7 +13,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -28,9 +27,6 @@ import (
 	"github.com/urfave/cli/v3"
 
 	"github.com/mjrossi/urbanist-timetable/internal/config"
-	"github.com/mjrossi/urbanist-timetable/internal/termout"
-	"github.com/mjrossi/urbanist-timetable/pkg/transit"
-	"github.com/mjrossi/urbanist-timetable/pkg/transit/catalog"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/providers"
 )
 
@@ -57,32 +53,8 @@ func run() int {
 	return 0
 }
 
-// printError prints err and a hint. Errors can quote server responses, so
-// control characters are removed first.
-func printError(w io.Writer, err error) {
-	fmt.Fprintf(w, "error: %s\n", termout.Clean(err.Error()))
-	if h := hint(err); h != "" {
-		fmt.Fprintln(w, h)
-	}
-}
-
-// hint suggests the command that fixes err, or returns "". The library's
-// errors do not name commands, since programs other than this one use it.
-func hint(err error) string {
-	var missing *catalog.MissingOptionsError
-	switch {
-	case errors.As(err, &missing):
-		return "hint: run `urbanist-timetable systems show " + missing.System + "`"
-	case errors.Is(err, catalog.ErrUnknownSystem):
-		return "hint: run `urbanist-timetable systems`"
-	case errors.Is(err, transit.ErrUnknownStop):
-		return "hint: find stop IDs with `urbanist-timetable stops search <source> <words>`"
-	}
-	return ""
-}
-
 func newRootCommand() *cli.Command {
-	return &cli.Command{
+	return withUsageHandling(&cli.Command{
 		Name:    "urbanist-timetable",
 		Usage:   "show public transit departures in a terminal or on a pixel clock",
 		Version: version,
@@ -102,8 +74,8 @@ func newRootCommand() *cli.Command {
 			},
 			&cli.StringFlag{
 				Name:    "log-format",
-				Usage:   "json or text",
-				Value:   "json",
+				Usage:   "json or text; text by default when stderr is a terminal",
+				Value:   defaultLogFormat(),
 				Sources: cli.EnvVars("TIMETABLE_LOG_FORMAT"),
 			},
 			&cli.StringFlag{
@@ -120,7 +92,7 @@ func newRootCommand() *cli.Command {
 			configCommand(),
 			clockCommand(),
 		},
-	}
+	})
 }
 
 // defaultCacheDir is the user's cache directory for this program, or off
@@ -131,6 +103,15 @@ func defaultCacheDir() string {
 		return "off"
 	}
 	return filepath.Join(dir, "urbanist-timetable")
+}
+
+// defaultLogFormat is text for a person at a terminal and JSON for a log
+// collector, such as Docker's.
+func defaultLogFormat() string {
+	if isTerminal(os.Stderr) {
+		return "text"
+	}
+	return "json"
 }
 
 // cacheOptions passes --cache-dir to the providers.

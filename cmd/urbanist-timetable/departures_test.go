@@ -158,7 +158,7 @@ func TestDeparturesWithOneStopFailing(t *testing.T) {
 		t.Errorf("stdout %q stderr %q; want the good stop and a warning", out, stderr)
 	}
 	_, _, err = runCLIOut(t, src, "departures", "cm", "999998", "999999")
-	if !errors.Is(err, transit.ErrUnknownStop) || !strings.Contains(hint(err), "stops search") {
+	if !errors.Is(err, transit.ErrUnknownStop) || hint(err) != "find stop IDs with `urbanist-timetable stops search cm 999998 999999`" {
 		t.Errorf("all failing: err = %v, hint %q", err, hint(err))
 	}
 }
@@ -208,8 +208,8 @@ func TestDeparturesUsageErrors(t *testing.T) {
 		args []string
 		want string
 	}{
-		"no arguments":       {[]string{"departures"}, "usage"},
-		"no stop":            {[]string{"departures", "demo"}, "usage"},
+		"no arguments":       {[]string{"departures"}, "stop IDs"},
+		"no stop":            {[]string{"departures", "demo"}, "stop IDs"},
 		"watch and json":     {[]string{"departures", "--watch", "--json", "demo", "s1"}, "--json"},
 		"watch, no terminal": {[]string{"departures", "--watch", "demo", "s1"}, "terminal"},
 		"short interval":     {[]string{"departures", "--watch", "--interval", "5s", "demo", "s1"}, "15s"},

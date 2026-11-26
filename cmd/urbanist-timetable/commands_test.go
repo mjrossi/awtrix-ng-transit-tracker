@@ -411,8 +411,8 @@ func TestHint(t *testing.T) {
 		err  error
 		want string
 	}{
-		"unknown system": {fmt.Errorf("providers.x: %w", fmt.Errorf("%w %q", catalog.ErrUnknownSystem, "atlantis")), "hint: run `urbanist-timetable systems`"},
-		"missing keys":   {errors.Join(errors.New("other"), &catalog.MissingOptionsError{System: "lisbon-metro", Options: []string{"client_id"}}), "hint: run `urbanist-timetable systems show lisbon-metro`"},
+		"unknown system": {fmt.Errorf("providers.x: %w", fmt.Errorf("%w %q", catalog.ErrUnknownSystem, "atlantis")), "run `urbanist-timetable systems`"},
+		"missing keys":   {errors.Join(errors.New("other"), &catalog.MissingOptionsError{System: "lisbon-metro", Options: []string{"client_id"}}), "run `urbanist-timetable systems show lisbon-metro`"},
 		"anything else":  {errors.New("boom"), ""},
 	}
 	for name, tt := range tests {

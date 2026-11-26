@@ -434,3 +434,36 @@ func TestDefaultPath(t *testing.T) {
 		t.Errorf("with HOME: %q", got)
 	}
 }
+
+func TestNames(t *testing.T) {
+	dir := t.TempDir()
+	write := func(src string) string {
+		path := filepath.Join(dir, "c.toml")
+		if err := os.WriteFile(path, []byte(src), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	// Invalid as a configuration (no clock, an unset variable), but names
+	// can still be read.
+	boards, provs := config.Names(write(`[providers.b]
+api_key = "${UNSET_FOR_NAMES_TEST}"
+[providers.a]
+[[boards]]
+name = "home"
+[[boards]]
+name = "work"
+`))
+	if diff := cmp.Diff([]string{"home", "work"}, boards); diff != "" {
+		t.Errorf("boards (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff([]string{"a", "b"}, provs); diff != "" {
+		t.Errorf("providers (-want +got):\n%s", diff)
+	}
+	if b, p := config.Names(write("not toml ][")); b != nil || p != nil {
+		t.Errorf("broken file: %v %v", b, p)
+	}
+	if b, p := config.Names(filepath.Join(dir, "missing.toml")); b != nil || p != nil {
+		t.Errorf("missing file: %v %v", b, p)
+	}
+}

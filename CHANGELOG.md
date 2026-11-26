@@ -9,11 +9,29 @@ version may break configuration.
 
 ### Added
 
+- Errors from the command line come with a hint for what to do next. A
+  mistyped command, flag, system or source gets a "did you mean". A stop
+  name given where an ID belongs gets the `stops search` command that
+  finds its ID. A provider that needs settings gets a pointer to where they
+  go.
+- `departures` says how many departures `--lines`, `--headsigns` or
+  `--min-lead` hid when they hid all of them, and which lines the stop has.
+
 - The README explains how to use the packages from Go, and
   `examples/departures` is a complete program that does. Runnable examples
   document the main packages.
 
 ### Changed
+
+- Several errors at once, such as from `config validate` or from several
+  failing stops, are printed one per line instead of run together.
+- A bad flag or argument prints a short error and points to `--help`,
+  instead of printing the whole help.
+- A file named with `--config` must exist. `TIMETABLE_CONFIG` may still
+  name one that does not, as the Docker image does by default, for
+  commands that work without a configuration.
+- `--log-format` is `text` by default when stderr is a terminal, and
+  `json` otherwise.
 
 - For programs that import `pkg/`: the module needs Go 1.26, down from
   1.27.3.

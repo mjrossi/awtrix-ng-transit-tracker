@@ -211,6 +211,32 @@ func LoadProvider(path, name string) (settings map[string]any, found bool, err e
 	return settings, true, nil
 }
 
+// Names lists the board names and provider block names in the file at
+// path, without expanding or validating it, for shell completion and
+// suggestions. It returns nothing when the file cannot be read or decoded.
+func Names(path string) (boards, providers []string) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, nil
+	}
+	var c struct {
+		Providers map[string]any `toml:"providers"`
+		Boards    []struct {
+			Name string `toml:"name"`
+		} `toml:"boards"`
+	}
+	if toml.Unmarshal(b, &c) != nil {
+		return nil, nil
+	}
+	for _, b := range c.Boards {
+		if b.Name != "" {
+			boards = append(boards, b.Name)
+		}
+	}
+	providers = slices.Sorted(maps.Keys(c.Providers))
+	return boards, providers
+}
+
 // Load reads, expands and validates the file at path.
 func Load(path string) (*Config, error) {
 	b, err := os.ReadFile(path)
