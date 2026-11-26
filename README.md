@@ -74,7 +74,8 @@ a system from the same search as `agencies search`, searches for your stop
 and writes `~/.config/urbanist-timetable/config.toml`; after that,
 `departures` with no arguments shows every board, and `departures NAME` one
 of them. `config init --system mta-subway --stop 127N` does the same
-without questions, and `--system` takes a search result's ID too. A board in the file looks like this:
+without questions, and `--system` takes a search result's ID too. A board
+in the file looks like this:
 
 ```toml
 [providers.nyc]

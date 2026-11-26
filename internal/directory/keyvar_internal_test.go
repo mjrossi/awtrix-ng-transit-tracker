@@ -20,6 +20,33 @@ func TestKeyVar(t *testing.T) {
 	}
 }
 
+func TestBlockName(t *testing.T) {
+	for agency, want := range map[string]string{
+		"Bay Area Rapid Transit (BART)":       "bart",
+		"Caltrain":                            "caltrain",
+		"Metro-North Railroad":                "metro-north-railroad",
+		"Companhia Carris de Ferro de Lisboa": "companhia-carris",
+		"Helsingin seudun liikenne (HSL)":     "hsl",
+		"Transtejo Soflusa (TTSL)":            "ttsl",
+		"SĮ 'Susisiekimo paslaugos'":          "si-susisiekimo",
+		"Αστικές Συγκοινωνίες Αθηνών":         "mdb-1",
+		"東京都交通局":                              "mdb-1",
+		"":                                    "mdb-1",
+	} {
+		if got := (System{ID: "mdb-1", Agency: agency}).BlockName(); got != want {
+			t.Errorf("BlockName(%q) = %q, want %q", agency, got, want)
+		}
+	}
+}
+
+// A block and its key variable are named from the same words.
+func TestBlockAndKeyAgree(t *testing.T) {
+	sys := System{ID: "mdb-9", Agency: "Metropolitan Transportation Authority (MTA)"}
+	if b, k := sys.BlockName(), keyVar(sys.Agency, sys.ID); b != "mta" || k != "MTA_API_KEY" {
+		t.Errorf("block %q, key %q", b, k)
+	}
+}
+
 func TestStartsWord(t *testing.T) {
 	for text, want := range map[string]bool{
 		"lisboa–metro":  true, // en dash

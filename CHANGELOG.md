@@ -55,8 +55,10 @@ version may break configuration.
   then searches for your stop, offers to keep some of its lines, and saves
   a board; `--system` and `--stop` do the same without questions. A
   system found in the Mobility Database or Transitland is written out in
-  full, with its agency's name for the block and `${NAME}` for any key, so
-  the file does not depend on the search.
+  full, with its agency's name for the block (or its ID, for a name
+  without Latin letters) and `${NAME}` for any key, so the file does not
+  depend on the search. A schedule too large for a small machine is
+  warned about before it is downloaded.
 - `departures` with no arguments shows every board in the configuration,
   and `departures NAME` one board, with the board's filters, `window` and
   `per_row`; flags given on the command line replace them. Boards no longer

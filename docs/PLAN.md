@@ -114,6 +114,7 @@ providers). Each widens who the project works for.
   order through the firmware's rotation API at startup, moving only this
   service's apps relative to each other. Off by default: with one agency
   or two boards, a card is a few seconds per round with no departures.
+
 ## Contributions welcome
 
 - **32 × 8 renderer.** All layouts use the TC002-only `layout` key, so

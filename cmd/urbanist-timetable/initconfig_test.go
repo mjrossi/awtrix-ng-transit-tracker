@@ -155,8 +155,9 @@ func (f fakeSource) Departures(_ context.Context, q transit.Query) ([]transit.De
 }
 
 func TestPrompterAsksForEverything(t *testing.T) {
-	// A wrong system number, a search with no match, an empty answer to
-	// the stop list (search again), then choices.
+	// A search with no match (99), a system ID, a stop search with no
+	// match, an empty answer to the stop list (search again), then
+	// choices.
 	input := "99\nmta-subway\nnowhere\ntimes\n\ntimes\n2\n1, 2\nmy board\n\n"
 	var out bytes.Buffer
 	var opened string
@@ -264,7 +265,8 @@ func (s cancelingSource) SearchStops(ctx context.Context, _ string) ([]transit.S
 }
 
 func TestPrompterPicksFromASearch(t *testing.T) {
-	// A search, an answer out of range (search again), then a pick.
+	// A search, a number out of range (asked again), other words (a new
+	// search), then a pick.
 	input := "lisbon\n9\nlisbon\n1\ncais\n1\n\n\n"
 	var out bytes.Buffer
 	p := prompter{in: bufio.NewReader(strings.NewReader(input)), out: &out, open: func(string) (transit.Provider, error) {
@@ -274,8 +276,71 @@ func TestPrompterPicksFromASearch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v; prompts:\n%s", err, out.String())
 	}
-	if a.system.source != "carris-metropolitana" || !strings.Contains(out.String(), "  2  metro-lisboa") {
+	if a.system.source != "carris-metropolitana" || !strings.Contains(out.String(), "  2  metro-lisboa") || !strings.Contains(out.String(), "Give a number from 1 to") {
 		t.Errorf("chose %q; prompts:\n%s", a.system.source, out.String())
+	}
+}
+
+// The interactive path through the directories: a search, a Mobility
+// Database pick that needs a key, and the block written for it.
+func TestPrompterPicksADirectorySystem(t *testing.T) {
+	fakeDirectories(t)
+	t.Setenv("CALTRAIN_API_KEY", "")
+	dir := &directory.Directory{MobilityDBURL: directoryURLs.mobilityDB}
+	var out bytes.Buffer
+	p := prompter{
+		in:  bufio.NewReader(strings.NewReader("san mateo\n1\n70011\n\n\n")),
+		out: &out,
+		open: func(string) (transit.Provider, error) {
+			t.Error("opened a source that lacks its key")
+			return nil, errors.New("no")
+		},
+		find: dir.Search,
+		resolve: func(ctx context.Context, id string) (chosenSystem, error) {
+			return resolveChoice(ctx, dir, id)
+		},
+	}
+	a, err := p.ask(t.Context())
+	if err != nil {
+		t.Fatalf("%v; prompts:\n%s", err, out.String())
+	}
+	if a.system.source != "mdb-54" || a.system.name != "caltrain" || a.stops[0].ID != "70011" {
+		t.Errorf("answers %+v", a)
+	}
+	for _, want := range []string{"Searching…", "  1  mdb-54", "mdb-54 needs CALTRAIN_API_KEY", "Set TRANSITLAND_API_KEY to also search Transitland"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("prompts lack %q:\n%s", want, out.String())
+		}
+	}
+	src, err := renderConfig(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(src, "[providers.caltrain]") || !strings.Contains(src, "${CALTRAIN_API_KEY}") {
+		t.Errorf("config:\n%s", src)
+	}
+}
+
+// A directory ID that cannot be looked up says why, rather than being
+// searched for as words.
+func TestPrompterReportsAFailedLookup(t *testing.T) {
+	var out bytes.Buffer
+	p := prompter{
+		in:  bufio.NewReader(strings.NewReader("mdb-54\n")),
+		out: &out,
+		find: func(context.Context, string) (directory.Results, error) {
+			t.Error("searched for an ID whose lookup failed")
+			return directory.Results{}, nil
+		},
+		resolve: func(context.Context, string) (chosenSystem, error) {
+			return chosenSystem{}, errors.New("mobility database: offline")
+		},
+	}
+	if _, err := p.ask(t.Context()); !errors.Is(err, errInputEnded) {
+		t.Errorf("err = %v", err)
+	}
+	if !strings.Contains(out.String(), "Could not use mdb-54: mobility database: offline") {
+		t.Errorf("prompts:\n%s", out.String())
 	}
 }
 
@@ -306,21 +371,5 @@ func TestConfigInitFromADirectorySystem(t *testing.T) {
 	t.Setenv("CALTRAIN_API_KEY", "k")
 	if _, err := config.Load(path); err != nil {
 		t.Errorf("written config does not load: %v", err)
-	}
-}
-
-func TestBlockName(t *testing.T) {
-	for agency, want := range map[string]string{
-		"Bay Area Rapid Transit (BART)":       "bart",
-		"Caltrain":                            "caltrain",
-		"Metro-North Railroad":                "metro-north-railroad",
-		"Companhia Carris de Ferro de Lisboa": "companhia-carris",
-		"Helsingin seudun liikenne (HSL)":     "hsl",
-		"Transtejo Soflusa (TTSL)":            "ttsl",
-		"SĮ 'Susisiekimo paslaugos'":          "si-susisiekimo",
-	} {
-		if got := blockName(directory.System{Agency: agency}); got != want {
-			t.Errorf("blockName(%q) = %q, want %q", agency, got, want)
-		}
 	}
 }

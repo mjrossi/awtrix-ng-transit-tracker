@@ -35,9 +35,9 @@ url = "http://awtrixng-a1b2c3.local"
 #
 # Any other agency with a GTFS schedule, GTFS-Realtime TripUpdates, or both
 # works through the generic provider (`agencies search` finds feed URLs in
-# https://mobilitydatabase.org/ for you). Timetabled trips show at their scheduled
-# time until a feed predicts them. A station ID covers all its platforms; a
-# platform ID (such as "127S") narrows to one direction.
+# https://mobilitydatabase.org/ for you). Timetabled trips show at their
+# scheduled time until a feed predicts them. A station ID covers all its
+# platforms; a platform ID (such as "127S") narrows to one direction.
 # [providers.nyc]
 # type = "gtfsrt"
 # static_url = "http://web.mta.info/developers/data/nyct/subway/google_transit.zip"

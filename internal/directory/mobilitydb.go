@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mjrossi/urbanist-timetable/internal/fold"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/catalog"
 )
 
@@ -405,21 +406,48 @@ func (s *mdbSystem) block() Block {
 	return Block{Type: "gtfsrt", Options: opts, Comment: comment}
 }
 
-var acronym = regexp.MustCompile(`\(([A-Za-z0-9 .\-]{2,12})\)`)
+var acronym = regexp.MustCompile(`\(([A-Za-z][A-Za-z0-9 .\-]{1,11})\)`)
 
-// keyVar names the environment variable for an agency's key: its acronym
-// in parentheses, as the list often gives one, or its first two words.
-// Names this tool or its catalog already use get the system's ID instead,
-// so a directory entry cannot be handed another service's key.
-func keyVar(agency, id string) string {
-	name := agency
+// agencyShort is an agency's acronym in parentheses, as the list often
+// gives one, or its first two words. Key variables and block names are
+// made from it, so a block and its key read alike.
+func agencyShort(agency string) string {
 	if m := acronym.FindStringSubmatch(agency); m != nil {
-		name = m[1]
-	} else if words := strings.Fields(agency); len(words) > 2 {
-		name = strings.Join(words[:2], " ")
+		return m[1]
 	}
+	words := strings.Fields(agency)
+	return strings.Join(words[:min(len(words), 2)], " ")
+}
+
+// BlockName names the system's [providers] block after its agency, as its
+// key variable is, or after its ID when the agency's name has no Latin
+// letters or digits.
+func (s System) BlockName() string {
 	var b strings.Builder
-	for _, r := range strings.ToUpper(name) {
+	for _, r := range fold.String(agencyShort(s.Agency)) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case b.Len() > 0 && !strings.HasSuffix(b.String(), "-"):
+			b.WriteByte('-')
+		}
+	}
+	name := strings.Trim(b.String(), "-")
+	if len(name) > 32 {
+		name = strings.TrimRight(name[:32], "-")
+	}
+	if name == "" {
+		return s.ID
+	}
+	return name
+}
+
+// keyVar names the environment variable for an agency's key, from
+// agencyShort. Names this tool or its catalog already use get the system's
+// ID instead, so a directory entry cannot be handed another service's key.
+func keyVar(agency, id string) string {
+	var b strings.Builder
+	for _, r := range strings.ToUpper(fold.String(agencyShort(agency))) {
 		switch {
 		case r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
 			b.WriteRune(r)

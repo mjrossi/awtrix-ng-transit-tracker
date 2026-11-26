@@ -9,7 +9,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -35,10 +34,11 @@ func initCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "init",
 		Usage: "create a configuration file with a system and a stop",
-		Description: "At a terminal without flags, asks for an agency or city, searches for your stop, and\n" +
-			"saves it as a board that `departures` shows without arguments. With flags,\n" +
-			"or when input is not a terminal, --system and --stop are required. Writes\n" +
-			"to --config, and does not replace a file that exists unless --force.\n\n" +
+		Description: "At a terminal without flags, asks for an agency or city, searches\n" +
+			"for your stop, and saves it as a board that `departures` shows without\n" +
+			"arguments. With flags, or when input is not a terminal, --system and\n" +
+			"--stop are required. Writes to --config, and does not replace a file that\n" +
+			"exists unless --force.\n\n" +
 			"   urbanist-timetable config init\n" +
 			"   urbanist-timetable config init --system mta-subway --stop 127N --lines 1,2,3\n" +
 			"   urbanist-timetable config init --system bart --stop EMBR --stdout",
@@ -90,7 +90,7 @@ func catalogChoice(sys catalog.System) chosenSystem {
 }
 
 func directoryChoice(sys directory.System, b directory.Block) (chosenSystem, error) {
-	name := blockName(sys)
+	name := sys.BlockName()
 	text, err := b.TOML(name)
 	if err != nil {
 		return chosenSystem{}, err
@@ -101,18 +101,6 @@ func directoryChoice(sys directory.System, b directory.Block) (chosenSystem, err
 		block: "# " + termout.Clean(b.Comment) + "\n" + text,
 	}, nil
 }
-
-// blockName names a directory system's block after its agency: the
-// acronym it gives in parentheses, or its first two words.
-func blockName(sys directory.System) string {
-	if m := acronym.FindStringSubmatch(sys.Agency); m != nil {
-		return slug(m[1])
-	}
-	words := strings.Fields(sys.Title())
-	return slug(strings.Join(words[:min(len(words), 2)], " "))
-}
-
-var acronym = regexp.MustCompile(`\(([A-Za-z][A-Za-z0-9 .\-]{1,11})\)`)
 
 // missing lists the environment variables the system needs that are not
 // set.
@@ -183,17 +171,19 @@ func initConfig(ctx context.Context, c *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	if a.system.warning != "" {
-		fmt.Fprintln(c.Root().ErrWriter, a.system.warning)
-	}
 
 	src, err := renderConfig(a)
 	if err != nil {
 		return err
 	}
 	if toStdout {
-		_, err := io.WriteString(c.Root().Writer, src)
-		return err
+		if _, err := io.WriteString(c.Root().Writer, src); err != nil {
+			return err
+		}
+		if missing := a.system.missing(); len(missing) > 0 {
+			printKeyHint(c.Root().ErrWriter, a.system, missing, "")
+		}
+		return nil
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("config init: %w", err)
@@ -204,14 +194,19 @@ func initConfig(ctx context.Context, c *cli.Command) error {
 	w := c.Root().Writer
 	fmt.Fprintf(w, "Saved %s.\n", path)
 	if missing := a.system.missing(); len(missing) > 0 {
-		fmt.Fprintf(w, "Set %s in the environment, then try: urbanist-timetable departures\n", strings.Join(missing, " and "))
-		if a.system.keyInfo != "" {
-			fmt.Fprintf(w, "Get a key at %s\n", termout.Clean(a.system.keyInfo))
-		}
+		printKeyHint(w, a.system, missing, ", then try: urbanist-timetable departures")
 	} else {
 		fmt.Fprintln(w, "Try: urbanist-timetable departures")
 	}
 	return nil
+}
+
+// printKeyHint says which variables to set and where to get a key.
+func printKeyHint(w io.Writer, sys chosenSystem, missing []string, then string) {
+	fmt.Fprintf(w, "Set %s in the environment%s\n", strings.Join(missing, " and "), then)
+	if sys.keyInfo != "" {
+		fmt.Fprintf(w, "Get a key at %s\n", termout.Clean(sys.keyInfo))
+	}
 }
 
 func initFromFlags(ctx context.Context, c *cli.Command, dir *directory.Directory) (initAnswers, error) {
@@ -222,6 +217,9 @@ func initFromFlags(ctx context.Context, c *cli.Command, dir *directory.Directory
 	sys, err := resolveChoice(ctx, dir, id)
 	if err != nil {
 		return initAnswers{}, err
+	}
+	if sys.warning != "" {
+		fmt.Fprintln(c.Root().ErrWriter, sys.warning)
 	}
 	a := initAnswers{system: sys, lines: c.StringSlice("lines"), board: c.String("name")}
 	for _, s := range dedupe(stops) {
@@ -257,6 +255,10 @@ func (p prompter) ask(ctx context.Context) (initAnswers, error) {
 		return initAnswers{}, err
 	}
 	a := initAnswers{system: sys}
+	// Before the stop search, which downloads the schedule.
+	if sys.warning != "" {
+		fmt.Fprintln(p.out, sys.warning)
+	}
 
 	var prov transit.Provider
 	if missing := sys.missing(); len(missing) > 0 {
@@ -292,14 +294,28 @@ func (p prompter) askSystem(ctx context.Context) (chosenSystem, error) {
 		find = searchCatalog
 	}
 	fmt.Fprintln(p.out, "Find your transit system by agency or city, such as \"lisbon\" or \"mta\", or give a system ID.")
+	words := ""
 	for {
-		words, err := p.required(ctx, "Agency or city: ")
-		if err != nil {
-			return chosenSystem{}, err
+		if words == "" {
+			var err error
+			if words, err = p.required(ctx, "Agency or city: "); err != nil {
+				return chosenSystem{}, err
+			}
 		}
-		if c, err := resolve(ctx, words); err == nil {
+		c, err := resolve(ctx, words)
+		switch {
+		case err == nil:
 			return c, nil
+		case ctx.Err() != nil:
+			return chosenSystem{}, ctx.Err()
+		case directory.IsID(words) && !errors.Is(err, directory.ErrUnknownID):
+			// An ID that exists but could not be looked up, such as
+			// offline: searching for it as words would hide why.
+			fmt.Fprintf(p.out, "Could not use %s: %s\n", words, oneLine(err))
+			words = ""
+			continue
 		}
+		fmt.Fprintln(p.out, "Searching…")
 		res, err := find(ctx, words)
 		if ctx.Err() != nil {
 			return chosenSystem{}, ctx.Err()
@@ -309,6 +325,10 @@ func (p prompter) askSystem(ctx context.Context) (chosenSystem, error) {
 		}
 		if err != nil || len(res.Systems) == 0 {
 			fmt.Fprintln(p.out, "No systems found; try the city or region, or other words.")
+			if res.NoTransitland {
+				fmt.Fprintf(p.out, "Set %s to also search Transitland.\n", directory.TransitlandKeyVar)
+			}
+			words = ""
 			continue
 		}
 		rows := make([][]string, len(res.Systems))
@@ -319,21 +339,53 @@ func (p prompter) askSystem(ctx context.Context) (chosenSystem, error) {
 		if res.More > 0 {
 			fmt.Fprintf(p.out, "  … and %d more; search with more words to narrow them.\n", res.More)
 		}
-		answer, err := p.line(ctx, fmt.Sprintf("System [1-%d], or Enter to search again: ", len(res.Systems)))
-		if err != nil {
+		if res.NoTransitland {
+			fmt.Fprintf(p.out, "  Set %s to also search Transitland.\n", directory.TransitlandKeyVar)
+		}
+		chosen, next, err := p.pickSystem(ctx, res.Systems, resolve)
+		switch {
+		case err != nil:
 			return chosenSystem{}, err
+		case chosen != nil:
+			return *chosen, nil
 		}
-		n, err := strconv.Atoi(answer)
-		if err != nil || n < 1 || n > len(res.Systems) {
-			continue
-		}
-		c, err := resolve(ctx, res.Systems[n-1].ID)
-		if err != nil {
-			fmt.Fprintf(p.out, "Could not use %s: %s\n", res.Systems[n-1].ID, oneLine(err))
-			continue
-		}
-		return c, nil
+		words = next
 	}
+}
+
+// pickSystem asks for a number from systems. It returns the chosen system,
+// or else the words to search for next: an answer that is not a number, or
+// empty to ask for an agency again.
+func (p prompter) pickSystem(ctx context.Context, systems []directory.System, resolve func(context.Context, string) (chosenSystem, error)) (*chosenSystem, string, error) {
+	for {
+		answer, err := p.line(ctx, fmt.Sprintf("System [1-%d], other words to search, or Enter to start over: ", len(systems)))
+		if err != nil {
+			return nil, "", err
+		}
+		n, isNumber := number(answer)
+		switch {
+		case !isNumber:
+			return nil, answer, nil
+		case n < 1 || n > len(systems):
+			fmt.Fprintf(p.out, "Give a number from 1 to %d.\n", len(systems))
+			continue
+		}
+		c, err := resolve(ctx, systems[n-1].ID)
+		if ctx.Err() != nil {
+			return nil, "", ctx.Err()
+		}
+		if err != nil {
+			fmt.Fprintf(p.out, "Could not use %s: %s\n", systems[n-1].ID, oneLine(err))
+			continue
+		}
+		return &c, "", nil
+	}
+}
+
+// number parses an answer that is a whole number.
+func number(s string) (int, bool) {
+	n, err := strconv.Atoi(s)
+	return n, err == nil
 }
 
 // searchCatalog searches the catalog alone.
