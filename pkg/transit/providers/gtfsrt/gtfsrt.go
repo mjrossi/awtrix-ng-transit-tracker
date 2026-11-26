@@ -603,9 +603,6 @@ func (s *static) tripHeadsign(trip, last string) string {
 	if h := s.trips[trip].headsign; h != "" {
 		return h
 	}
-	if last == "" {
-		return ""
-	}
 	return s.stopTitle(last)
 }
 

@@ -84,12 +84,13 @@ version may break configuration.
 - `stops search --json`.
 - `stops search` and `config init` name the lines at each stop, and
   where they go from it, when several stops share a name, such as one
-  per side of a street or per platform: `Seville & Embarcadero Del Mar
-  27 to Isla Vista, UCSB`, numbered lines in numeric order. `gtfsrt`
-  reads them from the timetable, and with `timetable = false` from a
-  cached schedule only; `transitland` spends a departures request per
-  stop, for at most 10 stops, looking a day ahead. Library users can
-  call `transit.StopLiner` and sort lines with `transit.CompareLines`.
+  per direction or platform: `Times Sq-42 St 7X to 34 St-Hudson Yards or
+  Flushing-Main St`, numbered lines in numeric order, and a line name an
+  agency repeats at the start of its headsigns left out. `gtfsrt` reads
+  them from the timetable, and with `timetable = false` from a cached
+  schedule only; `transitland` spends a departures request per stop, for
+  at most 10 stops, looking a day ahead. Library users can call
+  `transit.StopLiner` and sort lines with `transit.CompareLines`.
 - `--help` gives examples for each command, and the root help a
   getting-started sequence.
 - `systems` names the environment variables a system needs, and marks

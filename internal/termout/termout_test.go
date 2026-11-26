@@ -170,7 +170,7 @@ func TestStopsWithLines(t *testing.T) {
 		"9":   {{Line: c}, {Line: e}},
 	})
 	want := "  1  431  3rd Ave & Pike St  C to Downtown; E\n" +
-		"  2  433  3rd Ave & Pike St  27 to Goleta, Isla Vista or 2 more\n" +
+		"  2  433  3rd Ave & Pike St  27 to Goleta or Isla Vista or 2 more\n" +
 		"  3  9    Pike Place         C, E\n"
 	if b.String() != want {
 		t.Errorf("got\n%s\nwant\n%s", b.String(), want)
@@ -202,6 +202,20 @@ func TestStopsHeadsignRepeatsLine(t *testing.T) {
 		},
 	})
 	want := "16  Seville  2 to 27th Street; 27 to Isla Vista, UCSB\n"
+	if b.String() != want {
+		t.Errorf("got\n%s\nwant\n%s", b.String(), want)
+	}
+}
+
+// Headsigns that differ only by a repeated line name are one destination,
+// and stay in order once it is dropped; commas inside headsigns are not
+// mistaken for a list.
+func TestStopsHeadsignsAfterLineName(t *testing.T) {
+	var b bytes.Buffer
+	termout.Stops(&b, []transit.Stop{{ID: "15", Name: "Seville"}}, false, map[string][]transit.StopLine{
+		"15": {{Line: transit.Line{ID: "27", ShortName: "27"}, Headsigns: []string{"27 Isla Vista", "27 Camino Real Mkt, Isla Vista", "Isla Vista"}}},
+	})
+	want := "15  Seville  27 to Camino Real Mkt, Isla Vista or Isla Vista\n"
 	if b.String() != want {
 		t.Errorf("got\n%s\nwant\n%s", b.String(), want)
 	}

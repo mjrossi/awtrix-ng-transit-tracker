@@ -182,7 +182,8 @@ urbanist-timetable stops search mta-subway times sq
 
 The first argument is a system ID or a `[providers.NAME]` block in
 `config.toml`. Where several stops share a name, such as one per
-direction or platform, each is listed with the lines that leave from it.
+direction or platform, each is listed with the lines that leave from it
+and where they go, such as `7X to 34 St-Hudson Yards or Flushing-Main St`.
 
 ### 4. Add a board
 

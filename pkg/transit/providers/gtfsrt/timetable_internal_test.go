@@ -745,3 +745,20 @@ func TestStopTimesAfterRefresh(t *testing.T) {
 		t.Errorf("stopTimes = %p with %d stop times, want the new schedule %p with S1's", st, len(sts), fresh)
 	}
 }
+
+func TestTripHeadsign(t *testing.T) {
+	s := &static{
+		trips: map[string]tripInfo{"named": {headsign: "Harbor"}, "bare": {}},
+		stops: map[string]stopInfo{"P": {name: "Central"}, "P1": {name: "Central A", parent: "P"}},
+	}
+	tests := []struct{ trip, last, want string }{
+		{"named", "P1", "Harbor"},
+		{"bare", "P1", "Central"}, // the last stop's station
+		{"bare", "", ""},          // nothing to go by
+	}
+	for _, tt := range tests {
+		if got := s.tripHeadsign(tt.trip, tt.last); got != tt.want {
+			t.Errorf("tripHeadsign(%q, %q) = %q, want %q", tt.trip, tt.last, got, tt.want)
+		}
+	}
+}

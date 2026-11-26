@@ -253,7 +253,7 @@ const maxLines = 8
 
 // stopLineList names lines by short name, or ID, each with where it goes,
 // up to maxLines. Lines are set apart with semicolons when any has a
-// headsign, since a line's headsigns are listed with commas.
+// headsign, since headsigns may hold commas.
 func stopLineList(lines []transit.StopLine) string {
 	sep := ", "
 	if slices.ContainsFunc(lines, func(l transit.StopLine) bool { return len(l.Headsigns) > 0 }) {
@@ -271,8 +271,9 @@ func stopLineList(lines []transit.StopLine) string {
 	return out
 }
 
-// destinations is " to A", " to A or B", or " to A, B or N more", without
-// line's name where a headsign starts with it, as some agencies' do.
+// destinations is " to A", " to A or B", or " to A or B or N more",
+// without line's name where a headsign starts with it, as some agencies'
+// do. Headsigns are joined with "or" since they may hold commas.
 func destinations(line string, headsigns []string) string {
 	headsigns = slices.Clone(headsigns)
 	for i, h := range headsigns {
@@ -280,15 +281,15 @@ func destinations(line string, headsigns []string) string {
 			headsigns[i] = rest
 		}
 	}
+	slices.Sort(headsigns)
+	headsigns = slices.Compact(headsigns)
 	switch len(headsigns) {
 	case 0:
 		return ""
-	case 1:
-		return " to " + headsigns[0]
-	case 2:
-		return " to " + headsigns[0] + " or " + headsigns[1]
+	case 1, 2:
+		return " to " + strings.Join(headsigns, " or ")
 	}
-	return fmt.Sprintf(" to %s, %s or %d more", headsigns[0], headsigns[1], len(headsigns)-2)
+	return fmt.Sprintf(" to %s or %s or %d more", headsigns[0], headsigns[1], len(headsigns)-2)
 }
 
 // Table writes rows as columns two spaces apart, removing control

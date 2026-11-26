@@ -1048,3 +1048,18 @@ func TestStopNameFromDepartures(t *testing.T) {
 		t.Errorf("StopName = %q, %v", name, ok)
 	}
 }
+
+// A search late at night still finds where lines go the next morning.
+func TestStopLinesLateAtNight(t *testing.T) {
+	zone := time.FixedZone("", -8*3600)
+	night := time.Date(2026, 11, 25, 23, 30, 0, 0, zone)
+	s := newTimetableServer(t, zone, trip{id: "morning", scheduled: time.Date(2026, 11, 26, 7, 0, 0, 0, zone)})
+	s.clock = night
+	got, err := s.provider(t).StopLines(t.Context(), []string{"f-x:1"}, night)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got["f-x:1"]) != 1 {
+		t.Errorf("StopLines at 23:30 = %v, want the 07:00 trip's line", got)
+	}
+}
