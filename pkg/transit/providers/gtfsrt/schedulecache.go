@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -25,6 +26,12 @@ type Option func(*Provider)
 // the cache off.
 func WithCacheDir(dir string) Option {
 	return func(p *Provider) { p.cacheDir = dir }
+}
+
+// WithLogger reports schedule downloads to log, since a large one can take
+// minutes. Without it nothing is logged.
+func WithLogger(log *slog.Logger) Option {
+	return func(p *Provider) { p.log = log }
 }
 
 // validators let a stale schedule be revalidated with a conditional request.
@@ -89,14 +96,46 @@ func (cf *cacheFile) parse() (*static, error) {
 func (cf *cacheFile) Close() error { return cf.f.Close() }
 
 // removeAbandonedDownloads deletes partial downloads that no process can
-// still be writing, such as ones cut off when a container stopped.
-func removeAbandonedDownloads(dir string, now time.Time) {
+// still be writing, such as ones cut off when a container stopped, and
+// returns how many bytes it freed.
+func removeAbandonedDownloads(dir string, now time.Time) int64 {
+	var freed int64
 	paths, _ := filepath.Glob(filepath.Join(dir, ".download-*"))
 	for _, p := range paths {
 		if fi, err := os.Stat(p); err == nil && now.Sub(fi.ModTime()) > staticTimeout {
-			_ = os.Remove(p)
+			if os.Remove(p) == nil {
+				freed += fi.Size()
+			}
 		}
 	}
+	return freed
+}
+
+// ClearCache deletes the schedules cached in dir by WithCacheDir, and
+// partial downloads no process is still writing. It returns how many
+// schedules it deleted and how many bytes it freed. A process using a
+// deleted schedule keeps its copy in memory and downloads a new one at its
+// next refresh. Other files in dir are left alone.
+func ClearCache(dir string, now time.Time) (schedules int, freed int64, err error) {
+	freed = removeAbandonedDownloads(dir, now)
+	paths, err := filepath.Glob(filepath.Join(dir, "*.gtfs"))
+	if err != nil {
+		return 0, freed, err
+	}
+	var errs []error
+	for _, p := range paths {
+		fi, err := os.Lstat(p)
+		if err != nil || !fi.Mode().IsRegular() {
+			continue
+		}
+		if err := os.Remove(p); err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		schedules++
+		freed += fi.Size()
+	}
+	return schedules, freed, errors.Join(errs...)
 }
 
 // loadCachedStatic serves the schedule from the cache directory, falling
@@ -157,9 +196,15 @@ func (p *Provider) refreshCache(ctx context.Context, now time.Time, path string,
 		_ = os.Remove(tmp.Name())
 	}()
 
+	if old == nil {
+		p.logDownloadStart(ctx)
+	} else {
+		p.log.DebugContext(ctx, "revalidating GTFS schedule", slog.String("url", redact(p.cfg.StaticURL)))
+	}
+	start := p.clock()
 	var valid validators
 	notModified := false
-	_, err = p.fetchTo(ctx, p.cfg.StaticURL, cond, maxStaticBody, func(status int, h http.Header) (io.Writer, error) {
+	size, err := p.fetchTo(ctx, p.cfg.StaticURL, cond, maxStaticBody, func(status int, h http.Header) (io.Writer, error) {
 		if status == http.StatusNotModified && old != nil {
 			notModified = true
 			return io.Discard, nil
@@ -178,6 +223,7 @@ func (p *Provider) refreshCache(ctx context.Context, now time.Time, path string,
 		return nil, err
 	}
 	if notModified {
+		p.log.DebugContext(ctx, "GTFS schedule unchanged", slog.String("url", redact(p.cfg.StaticURL)))
 		if err := os.Chtimes(path, now, now); err != nil {
 			return nil, err
 		}
@@ -194,6 +240,7 @@ func (p *Provider) refreshCache(ctx context.Context, now time.Time, path string,
 	if err != nil {
 		return nil, err
 	}
+	p.logDownloaded(ctx, size, start)
 	if err := os.Chtimes(tmp.Name(), now, now); err != nil {
 		return nil, err
 	}

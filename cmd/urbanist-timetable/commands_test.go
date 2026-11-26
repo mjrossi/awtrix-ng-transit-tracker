@@ -93,7 +93,7 @@ func TestStopsSearchPrintsMatches(t *testing.T) {
 	defer srv.Close()
 	src := demoConfig + fmt.Sprintf("[providers.carrismetropolitana]\nbase_url = %q\n", srv.URL)
 	tests := map[string]struct{ search, want string }{
-		"match":    {"cais", "010001     Cais do Sodré\n"},
+		"match":    {"cais", "010001  Cais do Sodré\n"},
 		"no match": {"nowhere", "no stops found\n"},
 	}
 	for name, tt := range tests {
@@ -106,6 +106,10 @@ func TestStopsSearchPrintsMatches(t *testing.T) {
 				t.Errorf("output %q, want %q", out, tt.want)
 			}
 		})
+	}
+	out, err := runCLI(t, src, "stops", "search", "--json", "carrismetropolitana", "cais")
+	if want := "[\n  {\n    \"id\": \"010001\",\n    \"name\": \"Cais do Sodré\"\n  }\n]\n"; err != nil || out != want {
+		t.Errorf("--json: %q, %v; want %q", out, err, want)
 	}
 	if _, err := runCLI(t, src, "stops", "search", "demo", "x"); err == nil || !strings.Contains(err.Error(), "cannot search stops") {
 		t.Errorf("err = %v, want the provider to lack search", err)
@@ -359,7 +363,7 @@ stop = "f-x:1"
 			if err != nil {
 				t.Fatal(err)
 			}
-			provs, err := buildProviders(cfg)
+			provs, err := buildProviders(cfg.Providers)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -411,8 +415,8 @@ func TestHint(t *testing.T) {
 		err  error
 		want string
 	}{
-		"unknown system": {fmt.Errorf("providers.x: %w", fmt.Errorf("%w %q", catalog.ErrUnknownSystem, "atlantis")), "hint: run `urbanist-timetable systems`"},
-		"missing keys":   {errors.Join(errors.New("other"), &catalog.MissingOptionsError{System: "lisbon-metro", Options: []string{"client_id"}}), "hint: run `urbanist-timetable systems show lisbon-metro`"},
+		"unknown system": {fmt.Errorf("providers.x: %w", fmt.Errorf("%w %q", catalog.ErrUnknownSystem, "atlantis")), "run `urbanist-timetable systems`"},
+		"missing keys":   {errors.Join(errors.New("other"), &catalog.MissingOptionsError{System: "lisbon-metro", Options: []string{"client_id"}}), "run `urbanist-timetable systems show lisbon-metro`"},
 		"anything else":  {errors.New("boom"), ""},
 	}
 	for name, tt := range tests {

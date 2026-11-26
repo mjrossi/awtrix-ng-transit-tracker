@@ -136,7 +136,6 @@ func TestEnvExpansion(t *testing.T) {
 func TestInvalid(t *testing.T) {
 	tests := map[string]struct{ src, want string }{
 		"unknown key":         {minimal + "color = 1\n", "color"},
-		"no clock":            {strings.Replace(minimal, `url = "%s"`, "", 1), "clock.url"},
 		"bad name":            {strings.Replace(minimal, `name = "metro"`, `name = "my board"`, 1), "name"},
 		"fast poll":           {strings.Replace(minimal, `name = "metro"`, "name = \"m\"\npoll_interval = \"5s\"", 1), "poll_interval"},
 		"short life":          {withClock("lifetime = \"20s\""), "clock.lifetime"},
@@ -346,39 +345,36 @@ func TestProviderSystem(t *testing.T) {
 	}
 }
 
-func TestClockAndBoardsAreOptionalTogether(t *testing.T) {
+// Boards serve the terminal as well as the clock, so neither needs the
+// other to load; the clock commands ask for both with RequireClock.
+func TestClockAndBoardsAreIndependent(t *testing.T) {
 	const provider = "[providers.demo]\n"
 	const clock = "[clock]\nurl = \"http://clock.local\"\n"
 	const board = "[[boards]]\nname = \"metro\"\n[[boards.stops]]\nprovider = \"demo\"\nstop = \"s1\"\n"
 	tests := map[string]struct {
-		src          string
-		parseErr     string
-		requireClock bool
+		src         string
+		requireErrs []string
 	}{
-		"empty file":       {src: ""},
-		"providers only":   {src: provider},
-		"clock, no boards": {src: provider + clock, parseErr: "[[boards]]"},
-		"boards, no clock": {src: provider + board, parseErr: "clock.url"},
-		"clock and boards": {src: provider + clock + board, requireClock: true},
+		"empty file":       {"", []string{"clock.url", "[[boards]]"}},
+		"providers only":   {provider, []string{"clock.url", "[[boards]]"}},
+		"clock, no boards": {provider + clock, []string{"[[boards]]"}},
+		"boards, no clock": {provider + board, []string{"clock.url"}},
+		"clock and boards": {provider + clock + board, nil},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			cfg, err := config.Parse([]byte(tt.src), noEnv)
-			if tt.parseErr != "" {
-				if err == nil || !strings.Contains(err.Error(), tt.parseErr) {
-					t.Fatalf("err = %v, want one mentioning %q", err, tt.parseErr)
-				}
-				return
-			}
 			if err != nil {
 				t.Fatal(err)
 			}
 			err = cfg.RequireClock()
-			if tt.requireClock != (err == nil) {
-				t.Errorf("RequireClock = %v", err)
+			if (err == nil) != (tt.requireErrs == nil) {
+				t.Fatalf("RequireClock = %v, want errors about %v", err, tt.requireErrs)
 			}
-			if err != nil && (!strings.Contains(err.Error(), "clock.url") || !strings.Contains(err.Error(), "[[boards]]")) {
-				t.Errorf("RequireClock = %v, want it to name clock.url and [[boards]]", err)
+			for _, want := range tt.requireErrs {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("RequireClock = %v, want it to name %s", err, want)
+				}
 			}
 		})
 	}
@@ -432,5 +428,38 @@ func TestDefaultPath(t *testing.T) {
 	t.Setenv("HOME", "/h")
 	if got := config.DefaultPath(); got != "/h/.config/urbanist-timetable/config.toml" {
 		t.Errorf("with HOME: %q", got)
+	}
+}
+
+func TestNames(t *testing.T) {
+	dir := t.TempDir()
+	write := func(src string) string {
+		path := filepath.Join(dir, "c.toml")
+		if err := os.WriteFile(path, []byte(src), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	// Invalid as a configuration (no clock, an unset variable), but names
+	// can still be read.
+	boards, provs := config.Names(write(`[providers.b]
+api_key = "${UNSET_FOR_NAMES_TEST}"
+[providers.a]
+[[boards]]
+name = "home"
+[[boards]]
+name = "work"
+`))
+	if diff := cmp.Diff([]string{"home", "work"}, boards); diff != "" {
+		t.Errorf("boards (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff([]string{"a", "b"}, provs); diff != "" {
+		t.Errorf("providers (-want +got):\n%s", diff)
+	}
+	if b, p := config.Names(write("not toml ][")); b != nil || p != nil {
+		t.Errorf("broken file: %v %v", b, p)
+	}
+	if b, p := config.Names(filepath.Join(dir, "missing.toml")); b != nil || p != nil {
+		t.Errorf("missing file: %v %v", b, p)
 	}
 }

@@ -3,6 +3,7 @@
 package termout
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -18,7 +19,11 @@ import (
 
 // Board is what one query shows: the departures at one or more stops.
 type Board struct {
-	// Source is the provider block, system or type that was queried.
+	// Name is the configured board shown, or empty for stops given on the
+	// command line.
+	Name string
+	// Source is the provider block, system or type that was queried, or a
+	// comma-separated list of them.
 	Source string
 	// Title names the stops, or gives their IDs.
 	Title  string
@@ -59,7 +64,7 @@ func Text(w io.Writer, b Board, o Options) error {
 		scheduleOnly, canceled bool
 	)
 	for _, r := range rows {
-		c := cells{line: Clean(cmpOr(r.Line.ShortName, r.Line.ID)), headsign: Clean(r.Headsign)}
+		c := cells{line: Clean(cmp.Or(r.Line.ShortName, r.Line.ID)), headsign: Clean(r.Headsign)}
 		for _, d := range r.Departures {
 			m := strconv.Itoa(d.MinutesUntil(b.At))
 			switch {
@@ -174,14 +179,8 @@ func visibleWidth(s string) int {
 
 func pad(s string, n int) string { return s + strings.Repeat(" ", max(n-width(s), 0)) }
 
-func cmpOr(a, b string) string {
-	if a != "" {
-		return a
-	}
-	return b
-}
-
 type jsonBoard struct {
+	Board      string          `json:"board,omitempty"`
 	Source     string          `json:"source"`
 	At         time.Time       `json:"at"`
 	Partial    bool            `json:"partial"`
@@ -208,13 +207,61 @@ type jsonDeparture struct {
 // JSON writes b as one indented JSON object, departures soonest first. The
 // shape may change before 1.0.
 func JSON(w io.Writer, b Board) error {
+	return encode(w, jsonFor(b))
+}
+
+// JSONList writes boards as an indented JSON array of the objects JSON
+// writes.
+func JSONList(w io.Writer, boards []Board) error {
+	out := make([]jsonBoard, len(boards))
+	for i, b := range boards {
+		out[i] = jsonFor(b)
+	}
+	return encode(w, out)
+}
+
+// Stops writes stop search results as aligned ID and name columns, with
+// numbered set to number them from 1 for a prompt.
+func Stops(w io.Writer, stops []transit.Stop, numbered bool) {
+	idWidth := 0
+	for _, s := range stops {
+		idWidth = max(idWidth, width(Clean(s.ID)))
+	}
+	for i, s := range stops {
+		if numbered {
+			fmt.Fprintf(w, "  %d  ", i+1)
+		}
+		fmt.Fprintf(w, "%s  %s\n", pad(Clean(s.ID), idWidth), Clean(s.Name))
+	}
+}
+
+// StopsJSON writes stop search results as an indented JSON array.
+func StopsJSON(w io.Writer, stops []transit.Stop) error {
+	type jsonStop struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	out := make([]jsonStop, len(stops))
+	for i, s := range stops {
+		out[i] = jsonStop{ID: s.ID, Name: s.Name}
+	}
+	return encode(w, out)
+}
+
+func encode(w io.Writer, v any) error {
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(v)
+}
+
+func jsonFor(b Board) jsonBoard {
 	deps := slices.Clone(b.Departures)
 	transit.SortByTime(deps)
-	out := jsonBoard{Source: b.Source, At: b.At, Partial: b.Partial, Departures: []jsonDeparture{}}
+	out := jsonBoard{Board: b.Name, Source: b.Source, At: b.At, Partial: b.Partial, Departures: []jsonDeparture{}}
 	for _, d := range deps {
 		out.Departures = append(out.Departures, jsonDeparture{
 			Stop:      d.StopID,
-			Line:      jsonLine{ID: d.Line.ID, Name: cmpOr(d.Line.ShortName, d.Line.ID), Color: d.Line.Color, Mode: string(d.Line.Mode)},
+			Line:      jsonLine{ID: d.Line.ID, Name: cmp.Or(d.Line.ShortName, d.Line.ID), Color: d.Line.Color, Mode: string(d.Line.Mode)},
 			Headsign:  d.Headsign,
 			Scheduled: d.Scheduled,
 			Predicted: d.Predicted,
@@ -222,7 +269,5 @@ func JSON(w io.Writer, b Board) error {
 			Minutes:   d.MinutesUntil(b.At),
 		})
 	}
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	return enc.Encode(out)
+	return out
 }

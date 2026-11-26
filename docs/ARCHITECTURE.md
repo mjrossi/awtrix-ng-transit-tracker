@@ -19,13 +19,17 @@ clock output (internal/clockout):
   Snapshot.Rows (transit.Filter ──▶ transit.Group) ──▶ render.TC002 ──▶ awtrix PushApp ──▶ clock
 
 departures command (cmd, departures.go), once or every --interval:
-  openSource: one [providers.NAME] block (config.LoadProvider), else a catalog system, else a type
-  for each stop:  Provider.Departures ──▶ transit.Filter ──▶ termout (transit.Group) ──▶ stdout
+  a source and stops: openSource: one [providers.NAME] block (config.LoadProvider), else a catalog system, else a type
+  no source: the config's [[boards]] (config.Load), building only the providers they use
+  for each board, each stop:  Provider.Departures ──▶ transit.Filter ──▶ termout (transit.Group) ──▶ stdout
 ```
 
-The `departures` command does not use the scheduler: it has no boards, no
-last-good cache and no backoff. A stop that fails is a warning while
-another stop answers, and an error when all fail.
+The `departures` command does not use the scheduler: it has no last-good
+cache and no backoff, and it ignores a board's `active_hours` and clock
+settings. A stop that fails is a warning while another stop on the board
+answers, and a board that fails is a warning while another board answers;
+the command fails only when everything does. Boards need no `[clock]`;
+the clock commands check for one with `Config.RequireClock`.
 
 The scheduler knows nothing about displays. It produces a `Snapshot` per
 board and hands it to a `scheduler.Output`. A snapshot keeps each stop's
@@ -42,7 +46,7 @@ schedules to the cache directory (`--cache-dir`).
 
 | Package | Owns | Imports (project) |
 |---|---|---|
-| `pkg/transit` | `Departure`, `Line`, `Provider`, `Query`, `PartialError`, `ErrUnknownStop`, `StopNamer`, `Metered`, `Quota`, `Filter`, `Group`, `MatchesSearch`, `ModeForRouteType` | none |
+| `pkg/transit` | `Departure`, `Line`, `Provider`, `Query`, `PartialError`, `ErrUnknownStop`, `StopNamer`, `Metered`, `Quota`, `Filter`, `Group`, `MatchesSearch`, `ModeForRouteType` | `internal/fold` |
 | `pkg/transit/registry` | building providers by name from configuration: `Registry`, `Options`, `RegisterConfig` | `transit` |
 | `pkg/transit/transittest` | the provider contract suite | `transit` |
 | `pkg/transit/providers/<name>` | one data source each | `transit`, `registry` |
@@ -51,7 +55,8 @@ schedules to the cache directory (`--cache-dir`).
 | `pkg/awtrix` | typed AWTRIX NG HTTP client and payload types | none |
 | `internal/render` | departure rows → TC002 `awtrix.Layout` | `transit`, `awtrix` |
 | `internal/scheduler` | polling, backoff, last-good cache, active and quiet hours, `Snapshot`, the `Output` interface | `transit` |
-| `internal/termout` | departures → aligned terminal text or JSON | `transit` |
+| `internal/termout` | departures and stop lists → aligned terminal text or JSON | `transit` |
+| `internal/fold` | lowercase, unaccented text for stop search and board names | none |
 | `internal/clockout` | the clock `Output`: snapshot → TC002 app → push or expire; cleanup of removed boards | `scheduler`, `render`, `awtrix` |
 | `internal/config` | TOML decoding, `${NAME}` expansion, validation, reading one provider block (`LoadProvider`), monthly request estimates | `transit`, `catalog`, `render`, `awtrix` |
 | `cmd/urbanist-timetable` | CLI commands and wiring (`wire.go`) | everything |

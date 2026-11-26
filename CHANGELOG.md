@@ -9,11 +9,62 @@ version may break configuration.
 
 ### Added
 
+- `cache clear` deletes the cached GTFS schedules, which otherwise stay in
+  the cache directory even after no board uses them. Library users can call
+  `providers.ClearScheduleCache` or `gtfsrt.ClearCache`.
+- GTFS schedule downloads are logged to stderr, with their size and time, so
+  a first run that downloads several schedules no longer sits silent.
+  `--log-level debug` also logs each stop `departures` fetches and how long it
+  took. A bad `--log-level` or `--log-format` is rejected before any command
+  runs. Library users can pass `providers.WithLogger` or `gtfsrt.WithLogger`.
+- Errors from the command line come with a hint for what to do next. A
+  mistyped command, flag, system or source gets a "did you mean". A stop
+  name given where an ID belongs gets the `stops search` command that
+  finds its ID. A provider that needs settings gets a pointer to where they
+  go.
+- `config init` writes a starting configuration. At a terminal it asks for
+  a system, searches for your stop, offers to keep some of its lines, and
+  saves a board; `--system` and `--stop` do the same without questions.
+- `departures` with no arguments shows every board in the configuration,
+  and `departures NAME` one board, with the board's filters, `window` and
+  `per_row`; flags given on the command line replace them. Boards no longer
+  need a `[clock]`, so the configuration can serve the terminal alone.
+  Boards and stops are fetched at the same time.
+- Shell completion for bash, zsh and fish (`completion`), covering
+  commands, flags, systems, provider blocks and board names.
+- `config example` prints the annotated example configuration.
+- `stops search --json`.
+- `--help` gives examples for each command, and the root help a
+  getting-started sequence.
+- `systems` names the environment variables a system needs, and marks
+  those already set.
+- `departures` says how many departures `--lines`, `--headsigns` or
+  `--min-lead` hid when they hid all of them, and which lines the stop has.
+
 - The README explains how to use the packages from Go, and
   `examples/departures` is a complete program that does. Runnable examples
   document the main packages.
+- For programs that import `pkg/`: `transit.Filter.Narrows` reports
+  whether a filter asks for less than every departure.
 
 ### Changed
+
+- Several errors at once, such as from `config validate` or from several
+  failing stops, are printed one per line instead of run together.
+- A bad flag or argument prints a short error and points to `--help`,
+  instead of printing the whole help.
+- A file named with `--config` must exist. `TIMETABLE_CONFIG` may still
+  name one that does not, as the Docker image does by default, for
+  commands that work without a configuration.
+- `stops search` aligns its IDs to the longest one, and at a terminal
+  prints the `departures` command to use next.
+- Stop search also ignores the accents in å, ø, ý and ÿ.
+- Configuration: `[[boards]]` without `[clock]`, or `[clock]` without
+  boards, is valid; `clock run` and `clock preview` still require both.
+- `departures --json` for configured boards prints an array of boards,
+  each with a `board` name.
+- `--log-format` is `text` by default when stderr is a terminal, and
+  `json` otherwise.
 
 - For programs that import `pkg/`: the module needs Go 1.26, down from
   1.27.3.

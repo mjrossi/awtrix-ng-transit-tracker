@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mjrossi/urbanist-timetable/internal/scheduler"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit"
 )
 
@@ -158,7 +160,7 @@ func TestDeparturesWithOneStopFailing(t *testing.T) {
 		t.Errorf("stdout %q stderr %q; want the good stop and a warning", out, stderr)
 	}
 	_, _, err = runCLIOut(t, src, "departures", "cm", "999998", "999999")
-	if !errors.Is(err, transit.ErrUnknownStop) || !strings.Contains(hint(err), "stops search") {
+	if !errors.Is(err, transit.ErrUnknownStop) || hint(err) != "find stop IDs with `urbanist-timetable stops search cm 999998 999999`" {
 		t.Errorf("all failing: err = %v, hint %q", err, hint(err))
 	}
 }
@@ -203,16 +205,69 @@ func TestDeparturesScheduleCache(t *testing.T) {
 	}
 }
 
+func TestDeparturesLogs(t *testing.T) {
+	at(t, mtaRecorded)
+	srv := gtfsServer(t, false)
+	args := []string{"departures", "--static", srv.URL + "/gtfs.zip", "--realtime", srv.URL + "/realtime.pb", "235"}
+	tests := []struct {
+		level string
+		want  []string
+		not   []string
+	}{
+		{"info", []string{"downloaded GTFS schedule"}, []string{"fetched stop"}},
+		{"debug", []string{"downloaded GTFS schedule", `msg="fetched stop" board="" stop=gtfsrt:235`}, nil},
+		{"warn", nil, []string{"GTFS schedule", "fetched stop"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.level, func(t *testing.T) {
+			_, stderr, err := runCLIOut(t, "", append([]string{"--log-format", "text", "--log-level", tt.level}, args...)...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, w := range tt.want {
+				if !strings.Contains(stderr, w) {
+					t.Errorf("stderr lacks %q:\n%s", w, stderr)
+				}
+			}
+			for _, n := range tt.not {
+				if strings.Contains(stderr, n) {
+					t.Errorf("stderr has %q:\n%s", n, stderr)
+				}
+			}
+		})
+	}
+}
+
+func TestCacheClear(t *testing.T) {
+	at(t, mtaRecorded)
+	srv := gtfsServer(t, false)
+	dir := filepath.Join(t.TempDir(), "c")
+	args := []string{"--cache-dir", dir, "departures", "--static", srv.URL + "/gtfs.zip", "--realtime", srv.URL + "/realtime.pb", "235"}
+	if _, _, err := runCLIOut(t, "", args...); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"removed 1 schedule (", "no cached schedules in "} {
+		out, _, err := runCLIOut(t, "", "--cache-dir", dir, "cache", "clear")
+		if err != nil || !strings.HasPrefix(out, want) || !strings.HasSuffix(out, dir+"\n") {
+			t.Errorf("out %q, err %v; want %q and the directory", out, err, want)
+		}
+	}
+	if _, _, err := runCLIOut(t, "", "cache", "clear"); err == nil || !strings.Contains(err.Error(), "off") {
+		t.Errorf("with the cache off: err = %v, want one saying it is off", err)
+	}
+}
+
 func TestDeparturesUsageErrors(t *testing.T) {
 	tests := map[string]struct {
 		args []string
 		want string
 	}{
-		"no arguments":       {[]string{"departures"}, "usage"},
-		"no stop":            {[]string{"departures", "demo"}, "usage"},
+		"no stop":            {[]string{"departures", "demo"}, "stop IDs"},
 		"watch and json":     {[]string{"departures", "--watch", "--json", "demo", "s1"}, "--json"},
 		"watch, no terminal": {[]string{"departures", "--watch", "demo", "s1"}, "terminal"},
 		"short interval":     {[]string{"departures", "--watch", "--interval", "5s", "demo", "s1"}, "15s"},
+		"log level":          {[]string{"--log-level", "loud", "departures", "demo", "s1"}, "log-level"},
+		"log format":         {[]string{"--log-format", "xml", "departures", "demo", "s1"}, "log-format"},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -277,7 +332,10 @@ func TestServerTextCannotDriveTheTerminal(t *testing.T) {
 	hostile := errors.New("GET x: 500 a\x1b]0;pwned\x07b\u202e")
 	now := time.Date(2026, 11, 25, 8, 0, 0, 0, time.UTC)
 	var warnings bytes.Buffer
-	q := query{provider: failing{err: hostile, partial: true}, source: "x", stops: []string{"s"}, window: time.Hour, warnings: &warnings}
+	q := query{boards: []boardQuery{{
+		source: "x", window: time.Hour,
+		stops: []scheduler.Source{{Provider: failing{err: hostile, partial: true}, StopID: "s"}},
+	}}, warnings: &warnings, log: slog.New(slog.DiscardHandler)}
 	if _, err := q.show(t.Context(), now); err != nil {
 		t.Fatal(err)
 	}

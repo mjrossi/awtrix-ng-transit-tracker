@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"os"
 	"strconv"
@@ -19,9 +20,11 @@ import (
 	"github.com/mjrossi/urbanist-timetable/internal/config"
 	"github.com/mjrossi/urbanist-timetable/internal/render"
 	"github.com/mjrossi/urbanist-timetable/internal/scheduler"
+	"github.com/mjrossi/urbanist-timetable/internal/termout"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/catalog"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/providers"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit/registry"
 )
 
 func clockCommand() *cli.Command {
@@ -49,15 +52,21 @@ func runCommand() *cli.Command {
 
 // setup returns the logger and configuration named by the global flags.
 func setup(c *cli.Command) (*slog.Logger, *config.Config, error) {
-	log, err := newLogger(c)
+	cfg, err := loadConfig(c)
 	if err != nil {
 		return nil, nil, err
 	}
-	cfg, err := config.Load(c.String("config"))
-	if err != nil {
-		return nil, nil, err
+	return newLogger(c), cfg, nil
+}
+
+// loadConfig loads the whole configuration, for commands that need one.
+func loadConfig(c *cli.Command) (*config.Config, error) {
+	path := c.String("config")
+	cfg, err := config.Load(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, &noConfigError{path: path, err: err}
 	}
-	return log, cfg, nil
+	return cfg, err
 }
 
 func runBoards(ctx context.Context, c *cli.Command) error {
@@ -72,7 +81,7 @@ func runBoards(ctx context.Context, c *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	provs, err := buildProviders(cfg, cacheOptions(c)...)
+	provs, err := buildProviders(cfg.Providers, providerOptions(c)...)
 	if err != nil {
 		return err
 	}
@@ -127,8 +136,9 @@ func logQuotaUses(ctx context.Context, log *slog.Logger, uses []config.QuotaUse)
 
 func previewCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "preview",
-		Usage: "fetch once and print each board's rows and payload, optionally pushing it",
+		Name:          "preview",
+		Usage:         "fetch once and print each board's rows and payload, optionally pushing it",
+		ShellComplete: completeBoardFlag,
 		Flags: []cli.Flag{
 			&cli.StringFlag{Name: "board", Usage: "only this board"},
 			&cli.BoolFlag{Name: "push", Usage: "also push the payload to the clock"},
@@ -160,7 +170,7 @@ func preview(ctx context.Context, c *cli.Command) error {
 		}
 	}
 	out := newClockOutput(cfg, pusher)
-	provs, err := buildProviders(cfg, cacheOptions(c)...)
+	provs, err := buildProviders(cfg.Providers, providerOptions(c)...)
 	if err != nil {
 		return err
 	}
@@ -205,16 +215,23 @@ func writePreview(w io.Writer, b config.Board, out *clockout.Output, snap schedu
 func configCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "config",
-		Usage: "configuration tools",
-		Commands: []*cli.Command{{
+		Usage: "create, check or explain the configuration file",
+		Commands: []*cli.Command{initCommand(), {
+			Name:  "example",
+			Usage: "print an example configuration that explains every setting",
+			Action: func(_ context.Context, c *cli.Command) error {
+				_, err := io.WriteString(c.Root().Writer, config.Example())
+				return err
+			},
+		}, {
 			Name:  "validate",
 			Usage: "check the configuration file and build its providers and clock client",
 			Action: func(_ context.Context, c *cli.Command) error {
-				cfg, err := config.Load(c.String("config"))
+				cfg, err := loadConfig(c)
 				if err != nil {
 					return err
 				}
-				provs, err := buildProviders(cfg, cacheOptions(c)...)
+				provs, err := buildProviders(cfg.Providers, providerOptions(c)...)
 				if err != nil {
 					return err
 				}
@@ -225,6 +242,9 @@ func configCommand() *cli.Command {
 				}
 				w := c.Root().Writer
 				fmt.Fprintf(w, "%s: OK (%d providers, %d boards)\n", c.String("config"), len(cfg.Providers), len(cfg.Boards))
+				if cfg.Clock.URL == "" && len(cfg.Boards) > 0 {
+					fmt.Fprintln(w, "no [clock]: boards show in `departures`; add one for `clock run`")
+				}
 				writeQuotaUses(w, cfg.QuotaUses(provs))
 				return nil
 			},
@@ -249,7 +269,12 @@ func systemsCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "systems",
 		Usage: "list ready-made transit systems, or show how to configure one",
+		Description: "Systems work by ID in `departures` and `stops search` without a configuration\n" +
+			"file. Those that need keys read them from the environment variables listed.",
 		Action: func(_ context.Context, c *cli.Command) error {
+			if c.Args().Present() {
+				return unknownSystemsArgument(c)
+			}
 			w := c.Root().Writer
 			all, err := catalog.All()
 			if err != nil {
@@ -258,7 +283,14 @@ func systemsCommand() *cli.Command {
 			for _, s := range all {
 				needs := ""
 				if len(s.RequiredOptions) > 0 {
-					needs = "  (needs " + strings.Join(s.RequiredOptions, ", ") + ")"
+					vars := make([]string, len(s.RequiredOptions))
+					for i, k := range s.RequiredOptions {
+						vars[i] = s.EnvName(k)
+						if os.Getenv(vars[i]) != "" {
+							vars[i] += " (set)"
+						}
+					}
+					needs = "  needs " + strings.Join(vars, ", ")
 				}
 				fmt.Fprintf(w, "%-28s %-22s %-24s %s%s\n", s.ID, s.Name, s.City, strings.Join(s.Modes, ", "), needs)
 			}
@@ -269,11 +301,18 @@ func systemsCommand() *cli.Command {
 			Name:      "show",
 			Usage:     "print a system's details and a config snippet",
 			ArgsUsage: "<id>",
+			Description: "Prints what a system covers, the environment variables it needs,\n" +
+				"and a [providers] block to paste into the configuration.\n\n" +
+				"   urbanist-timetable systems show nyc-subway",
+			ShellComplete: completeFirst(completeSystems),
 			Action: func(_ context.Context, c *cli.Command) error {
+				if c.Args().Len() != 1 {
+					return newUsageError(c, "give one system ID, such as `systems show sf-bart`")
+				}
 				id := c.Args().First()
 				s, ok := catalog.Get(id)
 				if !ok {
-					return fmt.Errorf("unknown system %q; run `urbanist-timetable systems`", id)
+					return unknownSystemError(id)
 				}
 				w := c.Root().Writer
 				fmt.Fprintf(w, "# %s, %s (%s)\n", s.Name, s.City, s.Country)
@@ -282,10 +321,7 @@ func systemsCommand() *cli.Command {
 				for line := range strings.SplitSeq(strings.TrimSpace(s.Notes), "\n") {
 					fmt.Fprintf(w, "# %s\n", line)
 				}
-				fmt.Fprintf(w, "\n[providers.%s]\nsystem = %q\n", s.ID, s.ID)
-				for _, k := range s.RequiredOptions {
-					fmt.Fprintf(w, "%s = \"${%s}\"\n", k, s.EnvName(k))
-				}
+				fmt.Fprintf(w, "\n%s", providerBlock(s))
 				fmt.Fprintf(w, "\n# Find stop IDs: urbanist-timetable stops search %s <words...>\n", s.ID)
 				fmt.Fprintf(w, "# Example stop: %s\n", s.SampleStop)
 				return nil
@@ -300,15 +336,25 @@ func stopsCommand() *cli.Command {
 		Usage: "find stop IDs",
 		Commands: []*cli.Command{{
 			Name:      "search",
-			Usage:     "search a provider's stops by name or ID",
-			ArgsUsage: "<provider> <words...>",
+			Usage:     "search a source's stops by name or ID",
+			ArgsUsage: "<source> <words...>",
+			Description: "<source> is a [providers.NAME] block in the config, a system from `systems`,\n" +
+				"or a provider that needs no settings. Prints stop IDs for `departures`.\n\n" +
+				"   urbanist-timetable stops search nyc-subway times sq\n" +
+				"   urbanist-timetable stops search sf-bart embarcadero",
+			Flags:         []cli.Flag{&cli.BoolFlag{Name: "json", Usage: "print JSON instead of text"}},
+			ShellComplete: completeFirst(completeSources(false)),
 			Action: func(ctx context.Context, c *cli.Command) error {
 				if c.Args().Len() < 2 {
-					return errors.New("usage: urbanist-timetable stops search <provider> <words...>")
+					return newUsageError(c, "give a source and words to search for, such as `stops search nyc-subway times sq`")
 				}
 				name := c.Args().First()
 				search := strings.Join(c.Args().Tail(), " ")
-				p, err := openSource(c.String("config"), name, cacheOptions(c)...)
+				path, err := queryConfig(c)
+				if err != nil {
+					return err
+				}
+				p, err := openSource(path, name, providerOptions(c)...)
 				if err != nil {
 					return err
 				}
@@ -320,17 +366,24 @@ func stopsCommand() *cli.Command {
 				if err != nil {
 					return err
 				}
-				w := c.Root().Writer
-				if len(stops) == 0 {
-					fmt.Fprintln(w, "no stops found")
-				}
-				for _, s := range stops {
-					fmt.Fprintf(w, "%-10s %s\n", s.ID, s.Name)
-				}
-				return nil
+				return writeStops(c, name, stops)
 			},
 		}},
 	}
+}
+
+// queryConfig returns the configuration path for commands that work
+// without a file. A path given with --config must exist; TIMETABLE_CONFIG
+// may name one that does not, as the Docker image does by default.
+func queryConfig(c *cli.Command) (string, error) {
+	path := c.String("config")
+	if !c.IsSet("config") || os.Getenv("TIMETABLE_CONFIG") == path {
+		return path, nil
+	}
+	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
+		return "", &noConfigError{path: path, err: err}
+	}
+	return path, nil
 }
 
 // openSource builds the provider name refers to: a [providers.NAME] block
@@ -343,18 +396,64 @@ func openSource(path, name string, opts ...providers.Option) (transit.Provider, 
 	if err != nil {
 		return nil, err
 	}
-	if !found {
-		settings = map[string]any{}
-		if sys, ok := catalog.Get(name); ok {
-			settings["system"] = name
-			for _, k := range sys.RequiredOptions {
-				if v := os.Getenv(sys.EnvName(k)); v != "" {
-					settings[k] = v
-				}
-			}
+	if found {
+		return providers.Open(name, settings, opts...)
+	}
+	if sys, ok := catalog.Get(name); ok {
+		return providers.Open(name, envSettings(sys), opts...)
+	}
+	p, err := providers.Open(name, map[string]any{}, opts...)
+	if err == nil {
+		return p, nil
+	}
+	serr := &sourceError{name: name, configPath: path, err: err}
+	if errors.Is(err, registry.ErrUnknownProvider) {
+		serr.suggestion = closest(name, sourceNames(path, false))
+	}
+	return nil, serr
+}
+
+// envSettings is the settings block for sys, with each required option
+// that is set in the environment.
+func envSettings(sys catalog.System) map[string]any {
+	settings := map[string]any{"system": sys.ID}
+	for _, k := range sys.RequiredOptions {
+		if v := os.Getenv(sys.EnvName(k)); v != "" {
+			settings[k] = v
 		}
 	}
-	return providers.Open(name, settings, opts...)
+	return settings
+}
+
+// sourceNames lists what can name a source: the file's provider blocks,
+// catalog systems and provider types, and with boards the file's boards.
+func sourceNames(path string, boards bool) []string {
+	boardNames, blocks := config.Names(path)
+	var names []string
+	if boards {
+		names = boardNames
+	}
+	names = append(names, blocks...)
+	names = append(names, systemIDs()...)
+	return append(names, providers.Registry().Names()...)
+}
+
+// writeStops prints search results, and at a terminal the command that
+// uses them.
+func writeStops(c *cli.Command, source string, stops []transit.Stop) error {
+	w := c.Root().Writer
+	if c.Bool("json") {
+		return termout.StopsJSON(w, stops)
+	}
+	if len(stops) == 0 {
+		fmt.Fprintln(w, "no stops found")
+		return nil
+	}
+	termout.Stops(w, stops, false)
+	if isTerminal(w) {
+		fmt.Fprintf(c.Root().ErrWriter, "\nnext: urbanist-timetable departures %s <ID>\n", source)
+	}
+	return nil
 }
 
 func filterBoards(boards []config.Board, name string) []config.Board {
@@ -393,5 +492,47 @@ func printRows(w io.Writer, b config.Board, rows []transit.Row, now time.Time) {
 	fmt.Fprintln(w, "#   (* = schedule only)")
 	if scrolls {
 		fmt.Fprintln(w, "#   (~ = too wide for its space; set a shorter name under [boards.clock.labels])")
+	}
+}
+
+func unknownSystemError(id string) error {
+	return fmt.Errorf("%w %q%s", catalog.ErrUnknownSystem, id, didYouMean(id, systemIDs()))
+}
+
+// unknownSystemsArgument answers `systems ID`, which is most often meant as
+// `systems show ID`.
+func unknownSystemsArgument(c *cli.Command) error {
+	arg := c.Args().First()
+	if _, ok := catalog.Get(arg); ok && c.Args().Len() == 1 {
+		return newUsageError(c, "unknown command %q; did you mean `systems show %s`?", arg, arg)
+	}
+	return unknownCommandError(c, arg)
+}
+
+func cacheCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "cache",
+		Usage: "manage the GTFS schedules kept between runs",
+		Commands: []*cli.Command{{
+			Name:  "clear",
+			Usage: "delete the cached GTFS schedules; the next run downloads them again",
+			Action: func(_ context.Context, c *cli.Command) error {
+				dir := c.String("cache-dir")
+				if dir == "off" {
+					return newUsageError(c, "the schedule cache is off (--cache-dir off); there is nothing to clear")
+				}
+				n, freed, err := providers.ClearScheduleCache(dir, clock())
+				w := c.Root().Writer
+				switch {
+				case n == 1:
+					fmt.Fprintf(w, "removed 1 schedule (%.1f MB) from %s\n", float64(freed)/(1<<20), dir)
+				case n > 1:
+					fmt.Fprintf(w, "removed %d schedules (%.1f MB) from %s\n", n, float64(freed)/(1<<20), dir)
+				case err == nil:
+					fmt.Fprintf(w, "no cached schedules in %s\n", dir)
+				}
+				return err
+			},
+		}},
 	}
 }

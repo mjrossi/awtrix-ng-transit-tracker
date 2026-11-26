@@ -64,10 +64,38 @@ urbanist-timetable departures --static https://example.org/gtfs.zip \
   --realtime https://example.org/tripupdates.pb STOP_ID
 ```
 
+To see the same stops without typing them each time, save them as boards.
+`urbanist-timetable config init` asks for a system, searches for your stop
+and writes `~/.config/urbanist-timetable/config.toml`; after that,
+`departures` with no arguments shows every board, and `departures NAME` one
+of them. `config init --system nyc-subway --stop 127N` does the same
+without questions. A board in the file looks like this:
+
+```toml
+[providers.nyc]
+system = "nyc-subway"
+
+[[boards]]
+name = "uptown"
+
+[[boards.stops]]
+provider = "nyc"
+stop = "127N"
+lines = ["1", "2", "3"]
+```
+
+The clock shows the same boards, but a terminal needs no `[clock]`.
+
 Schedules are downloaded once a day into your cache directory (`--cache-dir`;
-`off` turns it off), so later commands are quick. `--json` prints JSON for
+`off` turns it off), so later commands are quick. They stay there until
+`urbanist-timetable cache clear` deletes them. `--json` prints JSON for
 scripts; its shape may change before 1.0. Times marked `*` are from the
 schedule, without a live prediction.
+
+Tab completion of commands, systems and sources is available for bash, zsh
+and fish; `urbanist-timetable completion --help` shows how to turn it on.
+`urbanist-timetable config example` prints a configuration that explains
+every setting.
 
 ## On a pixel clock
 
@@ -87,8 +115,10 @@ docker pull ghcr.io/mjrossi/urbanist-timetable:latest
 ### 1. Create the config
 
 ```bash
-cp config.example.toml config.toml
+docker run --rm ghcr.io/mjrossi/urbanist-timetable:latest config example > config.toml
 ```
+
+(or `cp config.example.toml config.toml` in a clone of the repository).
 
 Set `clock.url` to your clock's address. The IP address is the safest
 choice, because `awtrixng-xxxxxx.local` names often do not resolve inside
@@ -213,6 +243,7 @@ urbanist-timetable departures SOURCE STOP...    # next departures; see --help fo
 urbanist-timetable stops search SOURCE WORDS    # find stop IDs
 urbanist-timetable systems [show ID]            # ready-made systems
 urbanist-timetable config validate              # check the configuration
+urbanist-timetable cache clear                  # delete cached GTFS schedules
 urbanist-timetable clock run                    # poll and push until stopped (the image's default)
 urbanist-timetable clock preview [--board NAME] # fetch once, print rows and payload
 urbanist-timetable clock preview --push         # ...and push it to the clock once
@@ -226,9 +257,11 @@ Global flags: `--config` (`TIMETABLE_CONFIG`, default
 `~/.config/urbanist-timetable/config.toml`, or under `$XDG_CONFIG_HOME`; in the
 image, `/config/config.toml`), `--cache-dir` (`TIMETABLE_CACHE`, default
 your user cache directory; in the image, `/data/cache`), `--log-format json|text`
-(`TIMETABLE_LOG_FORMAT`, default `json`), `--log-level
-debug|info|warn|error` (`TIMETABLE_LOG_LEVEL`), and `--version`, which prints
-the release version.
+(`TIMETABLE_LOG_FORMAT`, default `text` at a terminal and `json` otherwise),
+`--log-level debug|info|warn|error` (`TIMETABLE_LOG_LEVEL`), and `--version`,
+which prints the release version. Logs go to stderr. GTFS schedule downloads,
+which can take a while on a first run, are logged at `info`; at `debug`,
+`departures` also logs how long each stop took.
 
 ## Configuration
 

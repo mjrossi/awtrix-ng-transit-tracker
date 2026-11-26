@@ -1,0 +1,169 @@
+# urbanist-timetable configuration. Copy to config.toml and edit.
+#
+# ${NAME} in the [clock] and [providers.*] settings is replaced with the
+# environment variable NAME, so secrets can stay out of the file. A missing
+# variable is an error.
+
+# IANA time zone for quiet_hours and active_hours. Empty uses the TZ
+# environment variable. A board's own `timezone` overrides it for that board's
+# active_hours; "Local" there means the TZ zone.
+timezone = "Europe/Lisbon"
+
+# Optional night mode: every board is hidden, whatever its active_hours say,
+# and the service makes no requests except to hide them. The display itself
+# stays on.
+# quiet_hours = "23:30-06:30"
+
+# Needed only for the `clock` commands; `departures` shows boards without it.
+[clock]
+# Your AWTRIX NG clock: its IP address or awtrixng-<last 6 MAC hex>.local.
+url = "http://awtrixng-a1b2c3.local"
+# Only if the clock has authEnabled:
+# username = "admin"
+# password = "${AWTRIX_PASSWORD}"
+
+# Each [providers.NAME] block configures one data source. Boards refer to
+# it by NAME. NAME is also the provider type unless the block sets `type`,
+# so one type can serve several agencies. Find stop IDs with:
+#   urbanist-timetable stops search <NAME> <words...>
+#
+# Ready-made systems: list them with `urbanist-timetable systems`, and
+# `urbanist-timetable systems show <id>` prints the block to paste here.
+# [providers.nyc]
+# system = "nyc-subway"
+#
+# Any other agency with GTFS and GTFS-Realtime TripUpdates works through
+# the generic provider. Find feed URLs at https://mobilitydatabase.org/.
+# A station ID covers all its platforms; a platform ID (such as "127S")
+# narrows to one direction.
+# [providers.nyc]
+# type = "gtfsrt"
+# static_url = "http://web.mta.info/developers/data/nyct/subway/google_transit.zip"
+# realtime_urls = ["https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs"]
+# headers = { "X-Api-Key" = "${NYC_KEY}" }   # only for feeds that need a key
+#
+# Carris Metropolitana: regional buses in the Lisbon metropolitan area.
+# Open API, no key needed.
+[providers.carrismetropolitana]
+
+# Transitland: thousands of agencies through one API, with timetabled trips
+# shown even without realtime. Prefer the agency's own feeds above where
+# you can, since every Transitland request counts against a monthly quota.
+# Get a key at https://www.transit.land/. With `feed` set to the feed's
+# Onestop ID, stops are its GTFS stop IDs; without it, use full stop keys
+# ("f-drt-mbta:place-sstat"). `config validate` estimates requests a month.
+# [providers.mbta]
+# type = "transitland"
+# api_key = "${TRANSITLAND_API_KEY}"
+# feed = "f-drt-mbta"
+# refresh_interval = "2m"   # one request per stop per interval, 1m to 10m; default 5m
+# monthly_quota = 50000     # your plan's: 50000 is Hobbyist/Academic; default 10000 (free plan)
+
+# Metro de Lisboa: needs an application subscribed to EstadoServicoML at
+# https://api.metrolisboa.pt/store/ (client-credentials grant, OAuth
+# tokens). Keep the keys in the environment, for example in
+# mise.local.toml. Station IDs are two letters, such as "BC".
+# [providers.metrolisboa]
+# client_id = "${LISBON_METRO_CLIENT_ID}"
+# client_secret = "${LISBON_METRO_CLIENT_SECRET}"
+
+# The demo provider generates departures from fixed headways. Use it to see
+# the display working before configuring a real transit API.
+[providers.demo]
+[[providers.demo.lines]]
+id = "azul"
+short_name = "Azul"
+color = "#0072CE"
+mode = "metro"
+headsign = "Santa Apolónia"
+headway = "6m"
+offset = "1m"
+realtime = true
+
+[[providers.demo.lines]]
+id = "verde"
+short_name = "Verde"
+color = "#00A651"
+mode = "metro"
+headsign = "Telheiras"
+headway = "8m"
+offset = "3m"
+
+# Each [[boards]] entry is a set of stops to show. `urbanist-timetable
+# departures` prints every board, and `departures NAME` one of them; its
+# filters and window apply there too.
+#
+# On the clock, each board is one app, and the clock rotates through its
+# apps. With the default "departure" layout a board shows one
+# line and direction like a platform sign:
+#
+#   Sta Apolónia
+#   ▌ 3  8  14
+#
+# so pin each board to one direction with `lines` and `headsigns`, and add a
+# board per direction you want. Unpinned, it keeps to the first line and
+# direction in name order that has departures.
+[[boards]]
+# Its name, and the app's name on the clock: 1-32 letters, digits, - or _.
+name = "azul"
+# How often to fetch and push. Minimum 15s.
+poll_interval = "45s"
+# How far ahead to look for departures.
+window = "60m"
+# When you want to see the board, not when the agency runs. Outside these
+# hours it is not polled, and the clock skips it but keeps its place if you
+# have arranged the rotation in the clock's web UI. Leave empty for all day.
+active_hours = "06:30-23:30"
+# Departure times to show (fewer if they do not fit).
+per_row = 3
+# Optional:
+# timezone = "Europe/Madrid"  # IANA zone for this board's active_hours
+# max_stale = "10m"   # reuse the last good data this long while a provider fails
+
+# How the board looks on the clock. Every setting is optional.
+[boards.clock]
+# layout = "rows"     # one line and direction per row, two rows
+# layout = "grid"     # up to four lines, next time only, no destinations; suits busy bus stops
+# max_rows = 2        # rows layout only
+# overflow = "clip"   # names too wide for the display are cut off instead of scrolling
+# lifetime = "135s"   # app is removed this long after the last push (default 3 × poll_interval)
+# duration = "10s"    # time on screen per rotation (default: the clock's setting)
+# font = "small"
+# name_font = "small" # font of destination names and of empty_text. By default names with
+                      # accents above letters use matrix-light6
+# empty_text = "No departures"
+
+# Shorter display names. About 13 characters fit across the display;
+# `urbanist-timetable clock preview` marks names that will scroll.
+[boards.clock.labels]
+"Santa Apolónia" = "Sta Apolónia"
+
+[[boards.stops]]
+provider = "demo"
+stop = "baixa-chiado"
+lines = ["azul"]                 # line IDs or short names
+headsigns = ["Santa Apolónia"]   # substrings of the destination
+# min_lead = "4m"                # hide departures you cannot reach in time
+# keep_canceled = true           # show canceled trips struck through
+
+[[boards]]
+name = "verde"
+poll_interval = "45s"
+active_hours = "06:30-23:30"
+
+[[boards.stops]]
+provider = "demo"
+stop = "baixa-chiado"
+lines = ["verde"]
+
+# Live Carris Metropolitana buses. A busy stop may suit the rows layout.
+# [[boards]]
+# name = "bus"
+# poll_interval = "60s"
+#
+# [boards.clock]
+# layout = "rows"
+#
+# [[boards.stops]]
+# provider = "carrismetropolitana"
+# stop = "060001"

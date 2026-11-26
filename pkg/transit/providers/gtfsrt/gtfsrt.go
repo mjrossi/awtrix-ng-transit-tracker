@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"maps"
 	"net/http"
 	"net/url"
@@ -67,6 +68,7 @@ type Provider struct {
 	clock func() time.Time
 
 	cacheDir string
+	log      *slog.Logger
 	// schedule is nil without a static_url.
 	schedule *upstream.Cache[*static]
 	// feeds holds one cache per realtime URL. Failures are cached for
@@ -99,7 +101,7 @@ func New(cfg Config, client *http.Client, opts ...Option) (*Provider, error) {
 		client = &http.Client{}
 	}
 	client = upstream.KeepHeadersOnHost(client, slices.Collect(maps.Keys(cfg.Headers))...)
-	p := &Provider{cfg: cfg, http: client, clock: time.Now, feeds: map[string]*upstream.Cache[feed]{}}
+	p := &Provider{cfg: cfg, http: client, clock: time.Now, log: slog.New(slog.DiscardHandler), feeds: map[string]*upstream.Cache[feed]{}}
 	for _, o := range opts {
 		o(p)
 	}
@@ -334,12 +336,15 @@ func (p *Provider) loadStatic(ctx context.Context, now time.Time) (*static, erro
 // only a small part of them is kept. Where no temporary file can be
 // created, such as a read-only filesystem, it falls back to memory.
 func (p *Provider) downloadStatic(ctx context.Context) (*static, error) {
+	p.logDownloadStart(ctx)
+	start := p.clock()
 	f, err := os.CreateTemp("", "gtfsrt-static-*.zip")
 	if err != nil {
 		b, err := p.fetch(ctx, p.cfg.StaticURL, maxStaticBody)
 		if err != nil {
 			return nil, err
 		}
+		p.logDownloaded(ctx, int64(len(b)), start)
 		return parseStatic(bytes.NewReader(b), int64(len(b)))
 	}
 	defer func() {
@@ -350,7 +355,19 @@ func (p *Provider) downloadStatic(ctx context.Context) (*static, error) {
 	if err != nil {
 		return nil, err
 	}
+	p.logDownloaded(ctx, size, start)
 	return parseStatic(f, size)
+}
+
+func (p *Provider) logDownloadStart(ctx context.Context) {
+	p.log.InfoContext(ctx, "downloading GTFS schedule", slog.String("url", redact(p.cfg.StaticURL)))
+}
+
+func (p *Provider) logDownloaded(ctx context.Context, size int64, start time.Time) {
+	p.log.InfoContext(ctx, "downloaded GTFS schedule",
+		slog.String("url", redact(p.cfg.StaticURL)),
+		slog.Int64("bytes", size),
+		slog.Duration("took", p.clock().Sub(start).Round(time.Millisecond)))
 }
 
 func (p *Provider) fetchFeed(ctx context.Context, u string) (feed, error) {

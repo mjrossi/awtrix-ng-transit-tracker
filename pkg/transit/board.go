@@ -21,6 +21,13 @@ type Filter struct {
 	KeepCanceled bool
 }
 
+// Narrows reports whether f asks for less than every departure: lines,
+// headsigns or a minimum lead. Dropping canceled departures, the default,
+// does not count.
+func (f Filter) Narrows() bool {
+	return len(f.Lines) > 0 || len(f.Headsigns) > 0 || f.MinLead > 0
+}
+
 // Apply returns the departures that pass the filter, in their input order.
 func (f Filter) Apply(now time.Time, deps []Departure) []Departure {
 	out := make([]Departure, 0, len(deps))

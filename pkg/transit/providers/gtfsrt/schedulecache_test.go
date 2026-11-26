@@ -1,14 +1,19 @@
 package gtfsrt_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
 
 	"github.com/mjrossi/urbanist-timetable/pkg/transit"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/providers/gtfsrt"
@@ -218,5 +223,112 @@ func TestCacheOffWritesNothing(t *testing.T) {
 	}
 	if es := cacheFiles(t, tmp); len(es) != 0 {
 		t.Errorf("files written with the cache off: %v", es)
+	}
+}
+
+// logMessages runs a provider sharing dir at each time and returns the
+// messages it logged, in order.
+func logMessages(t *testing.T, a *agency, dir string, times ...time.Time) []string {
+	t.Helper()
+	var buf bytes.Buffer
+	log := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	cfg := gtfsrt.Config{StaticURL: a.URL + "/gtfs.zip?key=secret", RealtimeURLs: []string{a.URL + "/realtime.pb"}}
+	for _, at := range times {
+		p, err := gtfsrt.New(cfg, a.Client(), gtfsrt.WithCacheDir(dir), gtfsrt.WithLogger(log))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := departAt(t, p, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if strings.Contains(buf.String(), "secret") {
+		t.Errorf("log holds the URL's query string:\n%s", buf.String())
+	}
+	var msgs []string
+	for line := range strings.Lines(buf.String()) {
+		var rec struct{ Msg string }
+		if err := json.Unmarshal([]byte(line), &rec); err != nil {
+			t.Fatal(err)
+		}
+		msgs = append(msgs, rec.Msg)
+	}
+	return msgs
+}
+
+func TestScheduleDownloadsAreLogged(t *testing.T) {
+	downloaded := []string{"downloading GTFS schedule", "downloaded GTFS schedule"}
+	tests := []struct {
+		name  string
+		cache bool
+		times []time.Time
+		want  []string
+	}{
+		{"cache off", false, []time.Time{mtaRecorded}, downloaded},
+		{"cached schedule reused", true, []time.Time{mtaRecorded, mtaRecorded.Add(time.Hour)}, downloaded},
+		{
+			"unchanged schedule revalidated", true,
+			[]time.Time{mtaRecorded, mtaRecorded.Add(25 * time.Hour)},
+			append(downloaded, "revalidating GTFS schedule", "GTFS schedule unchanged"),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			a := newAgency(t, "mta")
+			a.etag = `"v1"`
+			dir := ""
+			if tt.cache {
+				dir = t.TempDir()
+			}
+			if diff := cmp.Diff(tt.want, logMessages(t, a, dir, tt.times...)); diff != "" {
+				t.Errorf("messages (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestClearCache(t *testing.T) {
+	a, dir := newAgency(t, "mta"), t.TempDir()
+	if _, err := departAt(t, a.cachedProvider(t, dir), mtaRecorded); err != nil {
+		t.Fatal(err)
+	}
+	cached := cacheFiles(t, dir)[0]
+	info, err := cached.Info()
+	if err != nil {
+		t.Fatal(err)
+	}
+	write := func(name string, age time.Duration) {
+		t.Helper()
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte("12345"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		at := mtaRecorded.Add(-age)
+		if err := os.Chtimes(p, at, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(".download-abandoned", time.Hour)
+	write(".download-in-progress", time.Minute)
+	write("notes.txt", time.Hour)
+
+	n, freed, err := gtfsrt.ClearCache(dir, mtaRecorded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 || freed != info.Size()+5 {
+		t.Errorf("removed %d schedules and %d bytes, want 1 and %d", n, freed, info.Size()+5)
+	}
+	var left []string
+	for _, e := range cacheFiles(t, dir) {
+		left = append(left, e.Name())
+	}
+	if diff := cmp.Diff([]string{".download-in-progress", "notes.txt"}, left); diff != "" {
+		t.Errorf("files left (-want +got):\n%s", diff)
+	}
+
+	n, freed, err = gtfsrt.ClearCache(filepath.Join(dir, "missing"), mtaRecorded)
+	if n != 0 || freed != 0 || err != nil {
+		t.Errorf("missing dir: %d, %d, %v; want nothing removed and no error", n, freed, err)
 	}
 }
