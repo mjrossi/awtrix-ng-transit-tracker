@@ -38,7 +38,11 @@ func completeSources(withBoards bool) func(c *cli.Command) []string {
 	}
 }
 
-func completeSystems(*cli.Command) []string {
+func completeSystems(*cli.Command) []string { return systemIDs() }
+
+// systemIDs lists the catalog's system IDs, or nothing when the catalog
+// cannot be read.
+func systemIDs() []string {
 	all, err := catalog.All()
 	if err != nil {
 		return nil
