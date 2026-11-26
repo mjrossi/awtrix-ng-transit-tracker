@@ -195,6 +195,9 @@ func TestCompletion(t *testing.T) {
 				t.Fatal(err)
 			}
 			lines := strings.Split(out, "\n")
+			if len(dedupe(lines)) != len(lines) {
+				t.Errorf("completions repeat a name: %q", lines)
+			}
 			for _, w := range tt.want {
 				if !slices.Contains(lines, w) {
 					t.Errorf("completions %q lack %q", lines, w)

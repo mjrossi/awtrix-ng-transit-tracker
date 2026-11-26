@@ -435,14 +435,14 @@ func watch(ctx context.Context, w io.Writer, start time.Time, tick <-chan time.T
 	}
 }
 
-// isTerminal reports whether w is a terminal, so color and redrawing make
-// sense there.
-func isTerminal(w io.Writer) bool {
-	f, ok := w.(*os.File)
+// isTerminal reports whether f, a reader or writer, is a terminal, so
+// color, redrawing and prompts make sense there.
+func isTerminal(f any) bool {
+	file, ok := f.(*os.File)
 	if !ok {
 		return false
 	}
-	fi, err := f.Stat()
+	fi, err := file.Stat()
 	return err == nil && fi.Mode()&os.ModeCharDevice != 0
 }
 

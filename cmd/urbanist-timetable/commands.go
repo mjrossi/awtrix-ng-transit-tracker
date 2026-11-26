@@ -220,7 +220,7 @@ func configCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "config",
 		Usage: "create, check or explain the configuration file",
-		Commands: []*cli.Command{{
+		Commands: []*cli.Command{initCommand(), {
 			Name:  "example",
 			Usage: "print an example configuration that explains every setting",
 			Action: func(_ context.Context, c *cli.Command) error {
@@ -325,10 +325,7 @@ func systemsCommand() *cli.Command {
 				for line := range strings.SplitSeq(strings.TrimSpace(s.Notes), "\n") {
 					fmt.Fprintf(w, "# %s\n", line)
 				}
-				fmt.Fprintf(w, "\n[providers.%s]\nsystem = %q\n", s.ID, s.ID)
-				for _, k := range s.RequiredOptions {
-					fmt.Fprintf(w, "%s = \"${%s}\"\n", k, s.EnvName(k))
-				}
+				fmt.Fprintf(w, "\n%s", providerBlock(s))
 				fmt.Fprintf(w, "\n# Find stop IDs: urbanist-timetable stops search %s <words...>\n", s.ID)
 				fmt.Fprintf(w, "# Example stop: %s\n", s.SampleStop)
 				return nil

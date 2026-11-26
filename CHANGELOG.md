@@ -14,6 +14,9 @@ version may break configuration.
   name given where an ID belongs gets the `stops search` command that
   finds its ID. A provider that needs settings gets a pointer to where they
   go.
+- `config init` writes a starting configuration. At a terminal it asks for
+  a system, searches for your stop, offers to keep some of its lines, and
+  saves a board; `--system` and `--stop` do the same without questions.
 - `departures` with no arguments shows every board in the configuration,
   and `departures NAME` one board, with the board's filters, `window` and
   `per_row`; flags given on the command line replace them. Boards no longer

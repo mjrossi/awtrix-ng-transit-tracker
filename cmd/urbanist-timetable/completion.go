@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"slices"
 	"strings"
 
 	"github.com/urfave/cli/v3"
@@ -35,7 +34,7 @@ func completeFirst(names func(c *cli.Command) []string) cli.ShellCompleteFunc {
 // withBoards is set.
 func completeSources(withBoards bool) func(c *cli.Command) []string {
 	return func(c *cli.Command) []string {
-		return slices.Compact(sourceNames(c.String("config"), withBoards))
+		return dedupe(sourceNames(c.String("config"), withBoards))
 	}
 }
 

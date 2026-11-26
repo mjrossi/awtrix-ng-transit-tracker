@@ -64,9 +64,12 @@ urbanist-timetable departures --static https://example.org/gtfs.zip \
   --realtime https://example.org/tripupdates.pb STOP_ID
 ```
 
-To see the same stops without typing them each time, save them as boards
-in the configuration file, and `departures` with no arguments shows them
-all; `departures NAME` shows one:
+To see the same stops without typing them each time, save them as boards.
+`urbanist-timetable config init` asks for a system, searches for your stop
+and writes `~/.config/urbanist-timetable/config.toml`; after that,
+`departures` with no arguments shows every board, and `departures NAME` one
+of them. `config init --system nyc-subway --stop 127N` does the same
+without questions. A board in the file looks like this:
 
 ```toml
 [providers.nyc]
@@ -111,8 +114,10 @@ docker pull ghcr.io/mjrossi/urbanist-timetable:latest
 ### 1. Create the config
 
 ```bash
-cp config.example.toml config.toml
+docker run --rm ghcr.io/mjrossi/urbanist-timetable:latest config example > config.toml
 ```
+
+(or `cp config.example.toml config.toml` in a clone of the repository).
 
 Set `clock.url` to your clock's address. The IP address is the safest
 choice, because `awtrixng-xxxxxx.local` names often do not resolve inside
