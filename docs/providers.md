@@ -131,7 +131,7 @@ client_id = "${METRO_LISBOA_CLIENT_ID}"
 client_secret = "${METRO_LISBOA_CLIENT_SECRET}"
 ```
 
-Station IDs are two letters, such as `BC` for Baixa-Chiado;
+Station IDs are two letters, such as `BC` for Baixa/Chiado;
 `stops search metro-lisboa chiado` finds them. Every time is a live
 prediction: the API has no timetable. Lines are Azul, Amarela, Verde and
 Vermelha. Data CC BY 4.0, © Metropolitano de Lisboa.
