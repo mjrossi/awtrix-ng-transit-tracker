@@ -3,6 +3,7 @@
 package termout
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -63,7 +64,7 @@ func Text(w io.Writer, b Board, o Options) error {
 		scheduleOnly, canceled bool
 	)
 	for _, r := range rows {
-		c := cells{line: Clean(cmpOr(r.Line.ShortName, r.Line.ID)), headsign: Clean(r.Headsign)}
+		c := cells{line: Clean(cmp.Or(r.Line.ShortName, r.Line.ID)), headsign: Clean(r.Headsign)}
 		for _, d := range r.Departures {
 			m := strconv.Itoa(d.MinutesUntil(b.At))
 			switch {
@@ -178,13 +179,6 @@ func visibleWidth(s string) int {
 
 func pad(s string, n int) string { return s + strings.Repeat(" ", max(n-width(s), 0)) }
 
-func cmpOr(a, b string) string {
-	if a != "" {
-		return a
-	}
-	return b
-}
-
 type jsonBoard struct {
 	Board      string          `json:"board,omitempty"`
 	Source     string          `json:"source"`
@@ -239,7 +233,7 @@ func jsonFor(b Board) jsonBoard {
 	for _, d := range deps {
 		out.Departures = append(out.Departures, jsonDeparture{
 			Stop:      d.StopID,
-			Line:      jsonLine{ID: d.Line.ID, Name: cmpOr(d.Line.ShortName, d.Line.ID), Color: d.Line.Color, Mode: string(d.Line.Mode)},
+			Line:      jsonLine{ID: d.Line.ID, Name: cmp.Or(d.Line.ShortName, d.Line.ID), Color: d.Line.Color, Mode: string(d.Line.Mode)},
 			Headsign:  d.Headsign,
 			Scheduled: d.Scheduled,
 			Predicted: d.Predicted,

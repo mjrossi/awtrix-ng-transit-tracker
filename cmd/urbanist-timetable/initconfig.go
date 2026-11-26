@@ -180,7 +180,7 @@ func (p prompter) ask(ctx context.Context) (initAnswers, error) {
 	if a.lines, err = p.askLines(ctx, prov, stop.ID); err != nil {
 		return initAnswers{}, err
 	}
-	if a.board, err = p.askBoard(cmpOrSlug(stop)); err != nil {
+	if a.board, err = p.askBoard(slug(cmp.Or(stop.Name, stop.ID))); err != nil {
 		return initAnswers{}, err
 	}
 	return a, nil
@@ -436,21 +436,3 @@ var unaccented = func() map[rune]rune {
 	}
 	return m
 }()
-
-func cmpOrSlug(s transit.Stop) string {
-	if s.Name != "" {
-		return slug(s.Name)
-	}
-	return slug(s.ID)
-}
-
-// oneLine is err as one line without control characters.
-func oneLine(err error) string {
-	var parts []string
-	for l := range strings.SplitSeq(err.Error(), "\n") {
-		if l = strings.TrimSpace(termout.Clean(l)); l != "" {
-			parts = append(parts, l)
-		}
-	}
-	return strings.Join(parts, "; ")
-}

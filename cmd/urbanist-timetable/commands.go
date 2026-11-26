@@ -434,11 +434,7 @@ func sourceNames(path string, boards bool) []string {
 		names = boardNames
 	}
 	names = append(names, blocks...)
-	if all, err := catalog.All(); err == nil {
-		for _, s := range all {
-			names = append(names, s.ID)
-		}
-	}
+	names = append(names, systemIDs()...)
 	return append(names, providers.Registry().Names()...)
 }
 
@@ -517,12 +513,7 @@ func printRows(w io.Writer, b config.Board, rows []transit.Row, now time.Time) {
 
 func unknownSystemError(id string) error {
 	err := fmt.Errorf("%w %q", catalog.ErrUnknownSystem, id)
-	all, _ := catalog.All()
-	ids := make([]string, len(all))
-	for i, s := range all {
-		ids[i] = s.ID
-	}
-	if s := closest(id, ids); s != "" {
+	if s := closest(id, systemIDs()); s != "" {
 		return fmt.Errorf("%w; did you mean %q?", err, s)
 	}
 	return err
