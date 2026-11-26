@@ -200,8 +200,8 @@ func boardsQuery(c *cli.Command, args []string) (query, error) {
 		}
 		bq.source = strings.Join(blocks, ", ")
 		q.boards = append(q.boards, bq)
-		q.list = true
 	}
+	q.list = true
 	return q, nil
 }
 
