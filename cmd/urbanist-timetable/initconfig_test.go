@@ -20,7 +20,7 @@ import (
 )
 
 func TestRenderConfig(t *testing.T) {
-	sys, _ := catalog.Get("lisbon-metro")
+	sys, _ := catalog.Get("metro-lisboa")
 	got, err := renderConfig(initAnswers{
 		system: sys,
 		stops:  []transit.Stop{{ID: "MP", Name: "Marquês de Pombal"}},
@@ -34,17 +34,17 @@ func TestRenderConfig(t *testing.T) {
 # ` + "`urbanist-timetable config example`" + ` explains every setting.
 
 # Metro de Lisboa, Lisbon. More: ` + sys.InfoURL + `
-[providers.lisbon-metro]
-system = "lisbon-metro"
-client_id = "${LISBON_METRO_CLIENT_ID}"
-client_secret = "${LISBON_METRO_CLIENT_SECRET}"
+[providers.metro-lisboa]
+system = "metro-lisboa"
+client_id = "${METRO_LISBOA_CLIENT_ID}"
+client_secret = "${METRO_LISBOA_CLIENT_SECRET}"
 
 # ` + "`urbanist-timetable departures` shows every board; `departures marques`" + `, this one.
 [[boards]]
 name = "marques"
 
 [[boards.stops]]
-provider = "lisbon-metro"
+provider = "metro-lisboa"
 stop = "MP"  # Marquês de Pombal
 lines = ["Azul", "Q\"uote"]
 
@@ -63,7 +63,7 @@ func TestSlug(t *testing.T) {
 		"Times Sq-42 St":          "times-sq-42-st",
 		"Marquês de Pombal":       "marques-de-pombal",
 		"  ** ":                   "stop",
-		"sf-bart-EMBR":            "sf-bart-embr",
+		"bart-EMBR":               "bart-embr",
 		strings.Repeat("ab ", 20): "ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab",
 	}
 	for in, want := range tests {
@@ -85,7 +85,7 @@ func TestConfigInitFromFlags(t *testing.T) {
 		return out.String(), err
 	}
 
-	out, err := run("--system", "sf-bart", "--stop", "EMBR", "--lines", "Red-S")
+	out, err := run("--system", "bart", "--stop", "EMBR", "--lines", "Red-S")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,33 +96,33 @@ func TestConfigInitFromFlags(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cfg.Boards) != 1 || cfg.Boards[0].Name != "sf-bart-embr" || cfg.Boards[0].Stops[0].Stop != "EMBR" || cfg.Boards[0].Stops[0].Lines[0] != "Red-S" {
+	if len(cfg.Boards) != 1 || cfg.Boards[0].Name != "bart-embr" || cfg.Boards[0].Stops[0].Stop != "EMBR" || cfg.Boards[0].Stops[0].Lines[0] != "Red-S" {
 		t.Errorf("boards %+v", cfg.Boards)
 	}
 	if fi, err := os.Stat(path); err != nil || fi.Mode().Perm() != 0o600 {
 		t.Errorf("file mode %v, %v", fi.Mode(), err)
 	}
 
-	if _, err := run("--system", "sf-bart", "--stop", "MONT"); err == nil || !strings.Contains(err.Error(), "already exists") {
+	if _, err := run("--system", "bart", "--stop", "MONT"); err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Errorf("second init: err = %v, want a refusal", err)
 	}
-	if _, err := run("--system", "sf-bart", "--stop", "MONT", "--name", "work", "--force"); err != nil {
+	if _, err := run("--system", "bart", "--stop", "MONT", "--name", "work", "--force"); err != nil {
 		t.Errorf("--force: %v", err)
 	}
 	if cfg, _ := config.Load(path); cfg == nil || cfg.Boards[0].Name != "work" {
 		t.Errorf("--force did not replace the file")
 	}
 
-	out, err = run("--system", "lisbon-metro", "--stop", "MP", "--stdout")
-	if err != nil || !strings.Contains(out, `client_id = "${LISBON_METRO_CLIENT_ID}"`) {
+	out, err = run("--system", "metro-lisboa", "--stop", "MP", "--stdout")
+	if err != nil || !strings.Contains(out, `client_id = "${METRO_LISBOA_CLIENT_ID}"`) {
 		t.Errorf("--stdout: %q, %v", out, err)
 	}
 
 	usage := map[string][]string{
 		"no flags":       nil,
-		"no stop":        {"--system", "sf-bart"},
+		"no stop":        {"--system", "bart"},
 		"unknown system": {"--system", "sf-brat", "--stop", "x"},
-		"bad name":       {"--system", "sf-bart", "--stop", "x", "--name", "my board"},
+		"bad name":       {"--system", "bart", "--stop", "x", "--name", "my board"},
 	}
 	for name, args := range usage {
 		t.Run(name, func(t *testing.T) {
@@ -156,7 +156,7 @@ func (f fakeSource) Departures(_ context.Context, q transit.Query) ([]transit.De
 func TestPrompterAsksForEverything(t *testing.T) {
 	// A wrong system number, a search with no match, an empty answer to
 	// the stop list (search again), then choices.
-	input := "99\nnyc-subway\nnowhere\ntimes\n\ntimes\n2\n1, 2\nmy board\n\n"
+	input := "99\nmta-subway\nnowhere\ntimes\n\ntimes\n2\n1, 2\nmy board\n\n"
 	var out bytes.Buffer
 	var opened string
 	p := prompter{
@@ -171,7 +171,7 @@ func TestPrompterAsksForEverything(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v; prompts:\n%s", err, out.String())
 	}
-	if opened != "nyc-subway" || a.system.ID != "nyc-subway" {
+	if opened != "mta-subway" || a.system.ID != "mta-subway" {
 		t.Errorf("opened %q, system %q", opened, a.system.ID)
 	}
 	want := initAnswers{system: a.system, stops: []transit.Stop{{ID: "R16", Name: "Times Sq-42 St"}}, lines: []string{"1", "2"}, board: "times-sq-42-st"}
@@ -186,11 +186,11 @@ func TestPrompterAsksForEverything(t *testing.T) {
 }
 
 func TestPrompterWithoutKeysAsksForAStopID(t *testing.T) {
-	t.Setenv("LISBON_METRO_CLIENT_ID", "")
-	t.Setenv("LISBON_METRO_CLIENT_SECRET", "")
+	t.Setenv("METRO_LISBOA_CLIENT_ID", "")
+	t.Setenv("METRO_LISBOA_CLIENT_SECRET", "")
 	var out bytes.Buffer
 	p := prompter{
-		in:  bufio.NewReader(strings.NewReader("lisbon-metro\nMP\n\nmp\n")),
+		in:  bufio.NewReader(strings.NewReader("metro-lisboa\nMP\n\nmp\n")),
 		out: &out,
 		open: func(string) (transit.Provider, error) {
 			t.Error("opened a source that lacks its keys")
@@ -201,13 +201,13 @@ func TestPrompterWithoutKeysAsksForAStopID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if a.stops[0].ID != "MP" || a.board != "mp" || !strings.Contains(out.String(), "needs LISBON_METRO_CLIENT_ID and LISBON_METRO_CLIENT_SECRET") {
+	if a.stops[0].ID != "MP" || a.board != "mp" || !strings.Contains(out.String(), "needs METRO_LISBOA_CLIENT_ID and METRO_LISBOA_CLIENT_SECRET") {
 		t.Errorf("answers %+v, prompts:\n%s", a, out.String())
 	}
 }
 
 func TestPrompterStopsWhenInputEnds(t *testing.T) {
-	p := prompter{in: bufio.NewReader(strings.NewReader("nyc-subway\n")), out: &bytes.Buffer{}, open: func(string) (transit.Provider, error) {
+	p := prompter{in: bufio.NewReader(strings.NewReader("mta-subway\n")), out: &bytes.Buffer{}, open: func(string) (transit.Provider, error) {
 		return fakeSource{}, nil
 	}}
 	if _, err := p.ask(t.Context()); !errors.Is(err, errInputEnded) {
@@ -241,7 +241,7 @@ func TestPrompterStopsWhenCanceled(t *testing.T) {
 	})
 	t.Run("while searching", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(t.Context())
-		p := prompter{in: bufio.NewReader(strings.NewReader("nyc-subway\ntimes\ntimes\n")), out: &bytes.Buffer{}, open: func(string) (transit.Provider, error) {
+		p := prompter{in: bufio.NewReader(strings.NewReader("mta-subway\ntimes\ntimes\n")), out: &bytes.Buffer{}, open: func(string) (transit.Provider, error) {
 			return cancelingSource{cancel: cancel}, nil
 		}}
 		if _, err := p.ask(ctx); !errors.Is(err, context.Canceled) {

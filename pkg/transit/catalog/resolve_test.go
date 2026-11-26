@@ -35,7 +35,7 @@ func TestResolve(t *testing.T) {
 	}{
 		"type key":     {"nyc", map[string]any{"type": "gtfsrt", "realtime_urls": []any{"https://x"}}, "gtfsrt", []string{"realtime_urls"}},
 		"name is type": {"demo", map[string]any{}, "demo", nil},
-		"system":       {"nyc", map[string]any{"system": "nyc-subway", "headers": map[string]any{"X-Test": "1"}}, "gtfsrt", []string{"headers", "realtime_urls", "static_url", "timetable"}},
+		"system":       {"nyc", map[string]any{"system": "mta-subway", "headers": map[string]any{"X-Test": "1"}}, "gtfsrt", []string{"headers", "realtime_urls", "static_url", "timetable"}},
 		"nil settings": {"carrismetropolitana", nil, "carrismetropolitana", nil},
 	}
 	for name, tt := range tests {
@@ -56,7 +56,7 @@ func TestResolve(t *testing.T) {
 			}
 		})
 	}
-	if _, _, err := catalog.Resolve("x", map[string]any{"system": "sf-bart", "type": "gtfsrt"}); err == nil || !strings.Contains(err.Error(), "not both") {
+	if _, _, err := catalog.Resolve("x", map[string]any{"system": "bart", "type": "gtfsrt"}); err == nil || !strings.Contains(err.Error(), "not both") {
 		t.Errorf("system and type: err = %v", err)
 	}
 	if _, _, err := catalog.Resolve("x", map[string]any{"type": 3}); err == nil {
@@ -68,9 +68,9 @@ func TestResolveErrorsAreTyped(t *testing.T) {
 	if _, _, err := catalog.Resolve("x", map[string]any{"system": "atlantis"}); !errors.Is(err, catalog.ErrUnknownSystem) {
 		t.Errorf("err = %v, want ErrUnknownSystem", err)
 	}
-	_, _, err := catalog.Resolve("x", map[string]any{"system": "lisbon-metro"})
+	_, _, err := catalog.Resolve("x", map[string]any{"system": "metro-lisboa"})
 	var missing *catalog.MissingOptionsError
-	if !errors.As(err, &missing) || missing.System != "lisbon-metro" || !slices.Equal(missing.Options, []string{"client_id", "client_secret"}) {
+	if !errors.As(err, &missing) || missing.System != "metro-lisboa" || !slices.Equal(missing.Options, []string{"client_id", "client_secret"}) {
 		t.Errorf("err = %v, want both missing options", err)
 	}
 	if err == nil || !strings.Contains(err.Error(), "client_id and client_secret") {
@@ -79,8 +79,8 @@ func TestResolveErrorsAreTyped(t *testing.T) {
 }
 
 func TestEnvName(t *testing.T) {
-	s, _ := catalog.Get("lisbon-metro")
-	if got := s.EnvName("client_id"); got != "LISBON_METRO_CLIENT_ID" {
+	s, _ := catalog.Get("metro-lisboa")
+	if got := s.EnvName("client_id"); got != "METRO_LISBOA_CLIENT_ID" {
 		t.Errorf("EnvName = %q", got)
 	}
 }

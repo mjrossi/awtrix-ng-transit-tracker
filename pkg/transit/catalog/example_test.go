@@ -7,10 +7,10 @@ import (
 )
 
 func ExampleGet() {
-	s, ok := catalog.Get("nyc-subway")
+	s, ok := catalog.Get("mta-subway")
 	if !ok {
 		return
 	}
-	fmt.Println(s.Name, "in", s.City, "via", s.Provider)
-	// Output: New York City Subway in New York via gtfsrt
+	fmt.Println(s.Title(), "in", s.City, "via", s.Provider)
+	// Output: MTA Subway in New York via gtfsrt
 }

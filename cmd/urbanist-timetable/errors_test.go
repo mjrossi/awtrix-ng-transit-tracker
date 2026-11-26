@@ -71,7 +71,7 @@ func TestMistakesGetAHint(t *testing.T) {
 			wantHint: "run `urbanist-timetable stops --help`",
 		},
 		"system without show": {
-			args: []string{"systems", "sf-bart"}, wantErr: "did you mean `systems show sf-bart`?",
+			args: []string{"systems", "bart"}, wantErr: "did you mean `systems show bart`?",
 		},
 		"bad flag value": {
 			args: []string{"departures", "--window", "1x", "demo", "s1"}, wantErr: `invalid value "1x" for --window:`,
@@ -85,15 +85,15 @@ func TestMistakesGetAHint(t *testing.T) {
 			wantHint: "run `urbanist-timetable systems show --help`",
 		},
 		"show a typo": {
-			args: []string{"systems", "show", "sf-brat"}, wantErr: `unknown system "sf-brat"; did you mean "sf-bart"?`,
+			args: []string{"systems", "show", "brat"}, wantErr: `unknown system "brat"; did you mean "bart"?`,
 			wantHint: "run `urbanist-timetable systems`",
 		},
 		"search without words": {
-			args: []string{"stops", "search", "demo"}, wantErr: "stops search nyc-subway times sq",
+			args: []string{"stops", "search", "demo"}, wantErr: "stops search mta-subway times sq",
 		},
 		"unknown source": {
-			args: []string{"departures", "sf-brat", "EMBR"}, wantErr: `unknown provider "sf-brat"`,
-			wantHint: `did you mean "sf-bart"?`,
+			args: []string{"departures", "brat", "EMBR"}, wantErr: `unknown provider "brat"`,
+			wantHint: `did you mean "bart"?`,
 		},
 		"source that needs settings": {
 			args: []string{"departures", "transitland", "s1"}, wantErr: "api_key is required",
@@ -176,15 +176,15 @@ func TestDeparturesSaysWhatTheFiltersHid(t *testing.T) {
 }
 
 func TestCompletion(t *testing.T) {
-	src := demoConfig + "[providers.cm]\nsystem = \"lisbon-carris-metropolitana\"\n"
+	src := demoConfig + "[providers.cm]\nsystem = \"carris-metropolitana\"\n"
 	tests := map[string]struct {
 		args    []string
 		want    []string
 		notWant []string
 	}{
-		"departures": {[]string{"departures"}, []string{"metro", "demo", "cm", "sf-bart", "gtfsrt"}, nil},
-		"search":     {[]string{"stops", "search"}, []string{"demo", "sf-bart"}, []string{"metro"}},
-		"show":       {[]string{"systems", "show"}, []string{"sf-bart"}, []string{"demo"}},
+		"departures": {[]string{"departures"}, []string{"metro", "demo", "cm", "bart", "gtfsrt"}, nil},
+		"search":     {[]string{"stops", "search"}, []string{"demo", "bart"}, []string{"metro"}},
+		"show":       {[]string{"systems", "show"}, []string{"bart"}, []string{"demo"}},
 		"stop":       {[]string{"departures", "demo"}, nil, []string{"demo", "help"}},
 		"board flag": {[]string{"clock", "preview", "--board"}, []string{"metro"}, []string{"demo"}},
 	}

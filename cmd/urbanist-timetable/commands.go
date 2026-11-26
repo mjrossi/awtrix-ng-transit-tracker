@@ -292,7 +292,7 @@ func systemsCommand() *cli.Command {
 					}
 					needs = "  needs " + strings.Join(vars, ", ")
 				}
-				fmt.Fprintf(w, "%-28s %-22s %-24s %s%s\n", s.ID, s.Name, s.City, strings.Join(s.Modes, ", "), needs)
+				fmt.Fprintf(w, "%-28s %-22s %-24s %s%s\n", s.ID, s.Title(), s.City, strings.Join(s.Modes, ", "), needs)
 			}
 			fmt.Fprintln(w, "\nShow how to configure one: urbanist-timetable systems show <id>")
 			return nil
@@ -303,11 +303,11 @@ func systemsCommand() *cli.Command {
 			ArgsUsage: "<id>",
 			Description: "Prints what a system covers, the environment variables it needs,\n" +
 				"and a [providers] block to paste into the configuration.\n\n" +
-				"   urbanist-timetable systems show nyc-subway",
+				"   urbanist-timetable systems show mta-subway",
 			ShellComplete: completeFirst(completeSystems),
 			Action: func(_ context.Context, c *cli.Command) error {
 				if c.Args().Len() != 1 {
-					return newUsageError(c, "give one system ID, such as `systems show sf-bart`")
+					return newUsageError(c, "give one system ID, such as `systems show bart`")
 				}
 				id := c.Args().First()
 				s, ok := catalog.Get(id)
@@ -315,7 +315,7 @@ func systemsCommand() *cli.Command {
 					return unknownSystemError(id)
 				}
 				w := c.Root().Writer
-				fmt.Fprintf(w, "# %s, %s (%s)\n", s.Name, s.City, s.Country)
+				fmt.Fprintf(w, "# %s, %s (%s)\n", s.Title(), s.City, s.Country)
 				fmt.Fprintf(w, "# Status: %s, last verified %s. Data: %s.\n", s.Status, s.Verified, s.DataLicense)
 				fmt.Fprintf(w, "# More: %s\n", s.InfoURL)
 				for line := range strings.SplitSeq(strings.TrimSpace(s.Notes), "\n") {
@@ -340,13 +340,13 @@ func stopsCommand() *cli.Command {
 			ArgsUsage: "<source> <words...>",
 			Description: "<source> is a [providers.NAME] block in the config, a system from `systems`,\n" +
 				"or a provider that needs no settings. Prints stop IDs for `departures`.\n\n" +
-				"   urbanist-timetable stops search nyc-subway times sq\n" +
-				"   urbanist-timetable stops search sf-bart embarcadero",
+				"   urbanist-timetable stops search mta-subway times sq\n" +
+				"   urbanist-timetable stops search bart embarcadero",
 			Flags:         []cli.Flag{&cli.BoolFlag{Name: "json", Usage: "print JSON instead of text"}},
 			ShellComplete: completeFirst(completeSources(false)),
 			Action: func(ctx context.Context, c *cli.Command) error {
 				if c.Args().Len() < 2 {
-					return newUsageError(c, "give a source and words to search for, such as `stops search nyc-subway times sq`")
+					return newUsageError(c, "give a source and words to search for, such as `stops search mta-subway times sq`")
 				}
 				name := c.Args().First()
 				search := strings.Join(c.Args().Tail(), " ")

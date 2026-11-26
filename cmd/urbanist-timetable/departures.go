@@ -29,7 +29,7 @@ var clock = time.Now
 // clearScreen moves the cursor home and clears the terminal.
 const clearScreen = "\x1b[H\x1b[2J"
 
-const departuresUsage = "give a source and one or more stop IDs, such as `departures nyc-subway 127N`"
+const departuresUsage = "give a source and one or more stop IDs, such as `departures mta-subway 127N`"
 
 func departuresCommand() *cli.Command {
 	return &cli.Command{
@@ -42,8 +42,8 @@ func departuresCommand() *cli.Command {
 			"no source. Flags replace a board's settings. gtfsrt sources show only\n" +
 			"departures with realtime predictions. The --json shape may change before 1.0.\n\n" +
 			"   urbanist-timetable departures\n" +
-			"   urbanist-timetable departures nyc-subway 127N\n" +
-			"   urbanist-timetable departures nyc-subway 127N --lines 1,2,3 --watch\n" +
+			"   urbanist-timetable departures mta-subway 127N\n" +
+			"   urbanist-timetable departures mta-subway 127N --lines 1,2,3 --watch\n" +
 			"   urbanist-timetable departures --static URL.zip --realtime URL.pb STOP_ID",
 		ShellComplete: completeFirst(completeSources(true)),
 		Flags: []cli.Flag{

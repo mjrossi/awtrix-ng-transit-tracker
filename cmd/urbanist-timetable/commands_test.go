@@ -65,8 +65,8 @@ func TestSystemsCommands(t *testing.T) {
 		args []string
 		want []string
 	}{
-		"list": {[]string{"systems"}, []string{"sf-bart", "Show how to configure one"}},
-		"show": {[]string{"systems", "show", "sf-bart"}, []string{"[providers.sf-bart]\nsystem = \"sf-bart\"\n", "# Example stop: "}},
+		"list": {[]string{"systems"}, []string{"bart", "Show how to configure one"}},
+		"show": {[]string{"systems", "show", "bart"}, []string{"[providers.bart]\nsystem = \"bart\"\n", "# Example stop: "}},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -202,7 +202,7 @@ func TestConfigValidateBuildsClock(t *testing.T) {
 func TestOpenSource(t *testing.T) {
 	dir := t.TempDir()
 	missing := filepath.Join(dir, "missing.toml")
-	if _, err := openSource(missing, "helsinki-hsl"); err != nil {
+	if _, err := openSource(missing, "hsl"); err != nil {
 		t.Errorf("without a config file: %v", err)
 	}
 
@@ -210,18 +210,18 @@ func TestOpenSource(t *testing.T) {
 	if err := os.WriteFile(unrelated, []byte("[clock]\nurl = \"${TT_TEST_UNSET_CLOCK}\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := openSource(unrelated, "helsinki-hsl"); err != nil {
+	if _, err := openSource(unrelated, "hsl"); err != nil {
 		t.Errorf("an unset variable outside the block stopped the query: %v", err)
 	}
 
-	t.Setenv("LISBON_METRO_CLIENT_ID", "id")
-	t.Setenv("LISBON_METRO_CLIENT_SECRET", "secret")
-	if _, err := openSource(missing, "lisbon-metro"); err != nil {
+	t.Setenv("METRO_LISBOA_CLIENT_ID", "id")
+	t.Setenv("METRO_LISBOA_CLIENT_SECRET", "secret")
+	if _, err := openSource(missing, "metro-lisboa"); err != nil {
 		t.Errorf("keys from the environment: %v", err)
 	}
-	t.Setenv("LISBON_METRO_CLIENT_SECRET", "")
+	t.Setenv("METRO_LISBOA_CLIENT_SECRET", "")
 	var me *catalog.MissingOptionsError
-	if _, err := openSource(missing, "lisbon-metro"); !errors.As(err, &me) || !slices.Equal(me.Options, []string{"client_secret"}) {
+	if _, err := openSource(missing, "metro-lisboa"); !errors.As(err, &me) || !slices.Equal(me.Options, []string{"client_secret"}) {
 		t.Errorf("err = %v, want client_secret missing", err)
 	}
 }
@@ -416,7 +416,7 @@ func TestHint(t *testing.T) {
 		want string
 	}{
 		"unknown system": {fmt.Errorf("providers.x: %w", fmt.Errorf("%w %q", catalog.ErrUnknownSystem, "atlantis")), "run `urbanist-timetable systems`"},
-		"missing keys":   {errors.Join(errors.New("other"), &catalog.MissingOptionsError{System: "lisbon-metro", Options: []string{"client_id"}}), "run `urbanist-timetable systems show lisbon-metro`"},
+		"missing keys":   {errors.Join(errors.New("other"), &catalog.MissingOptionsError{System: "metro-lisboa", Options: []string{"client_id"}}), "run `urbanist-timetable systems show metro-lisboa`"},
 		"anything else":  {errors.New("boom"), ""},
 	}
 	for name, tt := range tests {

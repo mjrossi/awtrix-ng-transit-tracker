@@ -46,9 +46,9 @@ func TestSystemsBuild(t *testing.T) {
 }
 
 func TestGetAndMerge(t *testing.T) {
-	s, ok := catalog.Get("lisbon-metro")
+	s, ok := catalog.Get("metro-lisboa")
 	if !ok {
-		t.Fatal("lisbon-metro missing")
+		t.Fatal("metro-lisboa missing")
 	}
 	if got := s.Missing(s.Merge(nil)); len(got) != 2 {
 		t.Errorf("Missing = %v, want client_id and client_secret", got)
@@ -65,7 +65,7 @@ func TestGetAndMerge(t *testing.T) {
 // default because tests never call live APIs; run it with `just
 // catalog-check` before updating an entry's verified date. Systems that
 // need keys read them from the environment as <ID>_<OPTION>, such as
-// LISBON_METRO_CLIENT_ID, and are skipped without them.
+// METRO_LISBOA_CLIENT_ID, and are skipped without them.
 func TestLive(t *testing.T) {
 	if !*live {
 		t.Skip("live check; run with -live")
@@ -99,5 +99,17 @@ func TestLive(t *testing.T) {
 			}
 			t.Logf("%d departures at %s", len(deps), s.SampleStop)
 		})
+	}
+}
+
+func TestTitle(t *testing.T) {
+	for id, want := range map[string]string{"mta-subway": "MTA Subway", "hsl": "HSL"} {
+		s, ok := catalog.Get(id)
+		if !ok {
+			t.Fatalf("%s missing", id)
+		}
+		if got := s.Title(); got != want {
+			t.Errorf("%s: Title = %q, want %q", id, got, want)
+		}
 	}
 }

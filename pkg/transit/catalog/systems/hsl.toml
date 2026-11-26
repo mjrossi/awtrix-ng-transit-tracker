@@ -1,10 +1,10 @@
-name = "HSL"
+agency = "HSL"
 city = "Helsinki"
 country = "FI"
 modes = ["metro", "tram", "bus", "rail", "ferry"]
 provider = "gtfsrt"
 status = "community"
-verified = "2026-11-25"
+verified = "2026-11-26"
 sample_stop = "1000103"
 info_url = "https://www.hsl.fi/en/opendata"
 data_license = "CC BY 4.0"
@@ -14,6 +14,7 @@ temporary file once a day; with it loaded the process uses about 145 MB
 of memory, more during the daily refresh while the previous timetable is
 in use. The first time a stop is asked for, its timetable is read from
 the schedule in about 5 seconds, peaking near 220 MB."""
+mobility_db = ["mdb-865"]
 
 [options]
 static_url = "https://infopalvelut.storage.hsldev.com/gtfs/hsl.zip"

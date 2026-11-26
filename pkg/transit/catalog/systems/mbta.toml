@@ -1,10 +1,10 @@
-name = "MBTA"
+agency = "MBTA"
 city = "Boston"
 country = "US"
 modes = ["metro", "tram", "bus", "rail", "ferry"]
 provider = "gtfsrt"
 status = "community"
-verified = "2026-11-25"
+verified = "2026-11-26"
 sample_stop = "place-pktrm"
 info_url = "https://github.com/mbta/gtfs-documentation"
 data_license = "MBTA Developers License Agreement"
@@ -12,6 +12,7 @@ notes = """
 Subway, bus, commuter rail and ferry in one feed. Rapid transit stations
 have IDs such as "place-pktrm" (Park Street). The timetable is a 20 MB
 download."""
+mobility_db = ["mdb-437"]
 
 [options]
 static_url = "https://cdn.mbta.com/MBTA_GTFS.zip"

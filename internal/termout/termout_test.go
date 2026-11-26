@@ -38,7 +38,7 @@ func dep(l transit.Line, headsign string, m int, live bool) transit.Departure {
 }
 
 func board(deps ...transit.Departure) termout.Board {
-	return termout.Board{Source: "nyc-subway", Title: "Times Sq-42 St", At: at, Window: 90 * time.Minute, Departures: deps}
+	return termout.Board{Source: "mta-subway", Title: "Times Sq-42 St", At: at, Window: 90 * time.Minute, Departures: deps}
 }
 
 var live = board(

@@ -25,7 +25,7 @@ func (e *MissingOptionsError) Error() string {
 }
 
 // EnvName is the environment variable that conventionally holds option for
-// this system, such as LISBON_METRO_CLIENT_ID.
+// this system, such as METRO_LISBOA_CLIENT_ID.
 func (s System) EnvName(option string) string {
 	return strings.ToUpper(strings.ReplaceAll(s.ID+"_"+option, "-", "_"))
 }

@@ -3,7 +3,7 @@
 // out feed URLs:
 //
 //	[providers.nyc]
-//	system = "nyc-subway"
+//	system = "mta-subway"
 //
 // Each system is one TOML file in systems/, named by its ID. Resolve turns
 // a provider block, with or without a system, into a provider type and its
@@ -36,9 +36,15 @@ const (
 	StatusCommunity = "community"
 )
 
-// System is one catalog entry.
+// System is one catalog entry: one network an agency runs, served by one
+// provider block. An agency such as MTA runs several systems (the subway,
+// LIRR); many agencies run one.
 type System struct {
-	ID      string `toml:"-"`
+	ID string `toml:"-"`
+	// Agency is who runs the system, as riders know it: "MTA".
+	Agency string `toml:"agency"`
+	// Name is the system's name within the agency, such as "Subway", or
+	// empty when the entry covers all of the agency.
 	Name    string `toml:"name"`
 	City    string `toml:"city"`
 	Country string `toml:"country"`
@@ -54,11 +60,29 @@ type System struct {
 	DataLicense string `toml:"data_license"`
 	Notes       string `toml:"notes"`
 	// RequiredOptions are settings users must add, such as API keys.
-	RequiredOptions []string       `toml:"required_options"`
+	RequiredOptions []string `toml:"required_options"`
+	// MobilityDB and TransitlandFeed name the same system in those
+	// directories, so a search can show this entry instead.
+	MobilityDB      []string       `toml:"mobility_db"`
+	TransitlandFeed string         `toml:"transitland_feed"`
 	Options         map[string]any `toml:"options"`
 }
 
-var idPattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
+// Title is the agency and the system's name: "MTA Subway", or "HSL" for an
+// entry covering the whole agency.
+func (s System) Title() string {
+	if s.Name == "" {
+		return s.Agency
+	}
+	return s.Agency + " " + s.Name
+}
+
+var (
+	idPattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
+	// directoryID is the shape of Mobility Database IDs (mdb-53, tld-716),
+	// which work as system IDs too, so catalog IDs must not look like them.
+	directoryID = regexp.MustCompile(`^[a-z]+-[0-9]+$`)
+)
 
 var (
 	loadOnce sync.Once
@@ -103,8 +127,10 @@ func parse(file string) (System, error) {
 	switch {
 	case !idPattern.MatchString(s.ID):
 		return System{}, fmt.Errorf("catalog %s: ID must be lowercase words joined by -", file)
-	case s.Name == "" || s.Provider == "" || s.SampleStop == "":
-		return System{}, fmt.Errorf("catalog %s: name, provider and sample_stop are required", file)
+	case directoryID.MatchString(s.ID):
+		return System{}, fmt.Errorf("catalog %s: ID must not look like a Mobility Database ID", file)
+	case s.Agency == "" || s.Provider == "" || s.SampleStop == "":
+		return System{}, fmt.Errorf("catalog %s: agency, provider and sample_stop are required", file)
 	case s.Status != StatusMaintained && s.Status != StatusCommunity:
 		return System{}, fmt.Errorf("catalog %s: status %q must be %q or %q", file, s.Status, StatusMaintained, StatusCommunity)
 	}

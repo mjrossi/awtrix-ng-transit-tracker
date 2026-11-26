@@ -10,7 +10,7 @@ A companion to [*The Urbanist Lexicon*](https://mjrossi.com/blog) and
 [*Urbanist Atlas*](https://urbanistatlas.com).
 
 ```
-$ urbanist-timetable departures sf-bart EMBR --limit 3
+$ urbanist-timetable departures bart EMBR --limit 3
 Embarcadero                                       22:44
 Green-S  OAK Airport / SF / Daly City           2 22 41
 Blue-N   SF / OAK Airport / Dublin/Pleasanton   3 22 42
@@ -47,14 +47,14 @@ With Go installed:
 go install github.com/mjrossi/urbanist-timetable/cmd/urbanist-timetable@latest
 
 urbanist-timetable systems                          # ready-made systems
-urbanist-timetable stops search nyc-subway times sq # find a stop ID
-urbanist-timetable departures nyc-subway 127N       # its next departures
-urbanist-timetable departures nyc-subway 127N --lines 1,2,3 --watch
+urbanist-timetable stops search mta-subway times sq # find a stop ID
+urbanist-timetable departures mta-subway 127N       # its next departures
+urbanist-timetable departures mta-subway 127N --lines 1,2,3 --watch
 ```
 
 Systems that need no key work without a configuration file. For one that
 does, set its variables, which `systems show ID` names (such as
-`LISBON_METRO_CLIENT_ID`), or add a block to
+`METRO_LISBOA_CLIENT_ID`), or add a block to
 `~/.config/urbanist-timetable/config.toml` as described under
 [Providers](#providers). Any agency with GTFS-Realtime works from its feed
 URLs:
@@ -68,12 +68,12 @@ To see the same stops without typing them each time, save them as boards.
 `urbanist-timetable config init` asks for a system, searches for your stop
 and writes `~/.config/urbanist-timetable/config.toml`; after that,
 `departures` with no arguments shows every board, and `departures NAME` one
-of them. `config init --system nyc-subway --stop 127N` does the same
+of them. `config init --system mta-subway --stop 127N` does the same
 without questions. A board in the file looks like this:
 
 ```toml
 [providers.nyc]
-system = "nyc-subway"
+system = "mta-subway"
 
 [[boards]]
 name = "uptown"
@@ -140,7 +140,7 @@ Docker creates an empty directory with that name in its place.
 
 ```bash
 urbanist-timetable systems                    # ready-made systems
-urbanist-timetable systems show nyc-subway    # prints a block to paste into config.toml
+urbanist-timetable systems show mta-subway    # prints a block to paste into config.toml
 ```
 
 If your agency is not listed, see [Providers](#providers): any agency
@@ -150,7 +150,7 @@ realtime predictions where it also publishes GTFS-Realtime.
 ### 3. Find your stop
 
 ```bash
-urbanist-timetable stops search nyc-subway times sq
+urbanist-timetable stops search mta-subway times sq
 ```
 
 The first argument is a `[providers.NAME]` block in `config.toml`, a
@@ -160,7 +160,7 @@ system ID, or a provider that needs no settings.
 
 ```toml
 [providers.nyc]
-system = "nyc-subway"
+system = "mta-subway"
 
 [[boards]]
 name = "uptown"
@@ -304,22 +304,24 @@ again.
 
 ## Systems
 
-Ready-made settings for systems known to work:
+Ready-made settings for systems known to work. An agency runs one or more
+systems (MTA runs the subway, LIRR and more), and a stop belongs to one
+system:
 
-| System | City | Modes |
-|---|---|---|
-| `lisbon-metro` | Lisbon | metro (needs a free API key) |
-| `lisbon-carris-metropolitana` | Lisbon | bus |
-| `nyc-subway` | New York | metro |
-| `sf-bart` | San Francisco Bay Area | metro |
-| `boston-mbta` | Boston | metro, tram, bus, rail, ferry |
-| `helsinki-hsl` | Helsinki | metro, tram, bus, rail, ferry |
+| System | Agency | City | Modes |
+|---|---|---|---|
+| `metro-lisboa` | Metro de Lisboa | Lisbon | metro (needs a free API key) |
+| `carris-metropolitana` | Carris Metropolitana | Lisbon | bus |
+| `mta-subway` | MTA | New York | metro |
+| `bart` | BART | San Francisco Bay Area | metro |
+| `mbta` | MBTA | Boston | metro, tram, bus, rail, ferry |
+| `hsl` | HSL | Helsinki | metro, tram, bus, rail, ferry |
 
 In `config.toml`:
 
 ```toml
 [providers.nyc]
-system = "nyc-subway"
+system = "mta-subway"
 ```
 
 Other settings in the block override the system's.
@@ -520,7 +522,7 @@ which uses `catalog`.
 | `pkg/awtrix` | A typed client for AWTRIX NG clocks |
 
 ```go
-p, err := providers.Open("bart", map[string]any{"system": "sf-bart"})
+p, err := providers.Open("bart", map[string]any{"system": "bart"})
 if err != nil {
 	return err
 }
@@ -558,7 +560,7 @@ just ci          # lint, test, validate the example config
 Secrets for local runs go in `mise.local.toml` (gitignored); copy
 [`mise.local.toml.example`](./mise.local.toml.example). `just
 catalog-check` reads system keys as `<SYSTEM>_<OPTION>`, such as
-`LISBON_METRO_CLIENT_ID`, and skips systems without them.
+`METRO_LISBOA_CLIENT_ID`, and skips systems without them.
 
 See [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) for how the code fits
 together, [`CLAUDE.md`](./CLAUDE.md) for conventions,
