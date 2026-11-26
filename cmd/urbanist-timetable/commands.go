@@ -496,6 +496,9 @@ func printRows(w io.Writer, b config.Board, rows []transit.Row, now time.Time) {
 }
 
 func unknownSystemError(id string) error {
+	if to, ok := catalog.Renamed(id); ok {
+		return fmt.Errorf("%w %q: it was renamed %q", catalog.ErrUnknownSystem, id, to)
+	}
 	return fmt.Errorf("%w %q%s", catalog.ErrUnknownSystem, id, didYouMean(id, systemIDs()))
 }
 
