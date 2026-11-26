@@ -1,0 +1,38 @@
+{
+ "feeds": [
+  {
+   "authorization": {
+    "info_url": "",
+    "param_name": "",
+    "type": ""
+   },
+   "feed_state": {
+    "feed_version": null
+   },
+   "license": {
+    "attribution_instructions": "",
+    "attribution_text": "",
+    "commercial_use_allowed": "",
+    "create_derived_product": "unknown",
+    "redistribution_allowed": "",
+    "share_alike_optional": "",
+    "spdx_identifier": "",
+    "url": "http://www.bart.gov/schedules/developers/developer-license-agreement",
+    "use_without_attribution": "yes"
+   },
+   "name": null,
+   "onestop_id": "f-9q9-bart",
+   "spec": "GTFS",
+   "urls": {
+    "gbfs_auto_discovery": "",
+    "mds_provider": "",
+    "realtime_alerts": "",
+    "realtime_trip_updates": "",
+    "realtime_vehicle_positions": "",
+    "static_current": "http://www.bart.gov/dev/schedules/google_transit.zip",
+    "static_historic": [],
+    "static_planned": []
+   }
+  }
+ ]
+}

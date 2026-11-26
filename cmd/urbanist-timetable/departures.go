@@ -85,7 +85,7 @@ func departures(ctx context.Context, c *cli.Command) error {
 	case len(c.StringSlice("realtime")) > 0:
 		q, err = feedQuery(c, args)
 	case len(args) >= 2:
-		q, err = sourceQuery(c, args[0], args[1:])
+		q, err = sourceQuery(ctx, c, args[0], args[1:])
 	default:
 		q, err = boardsQuery(c, args)
 	}
@@ -127,12 +127,12 @@ func feedQuery(c *cli.Command, stops []string) (query, error) {
 }
 
 // sourceQuery queries stops of a source named on the command line.
-func sourceQuery(c *cli.Command, source string, stops []string) (query, error) {
+func sourceQuery(ctx context.Context, c *cli.Command, source string, stops []string) (query, error) {
 	path, err := queryConfig(c)
 	if err != nil {
 		return query{}, err
 	}
-	p, err := openSource(path, source, providerOptions(c)...)
+	p, err := openSource(ctx, path, source, newDirectory(c), providerOptions(c)...)
 	if err != nil {
 		return query{}, err
 	}

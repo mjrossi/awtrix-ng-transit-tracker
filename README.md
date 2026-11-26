@@ -143,9 +143,24 @@ urbanist-timetable systems                    # ready-made systems
 urbanist-timetable systems show mta-subway    # prints a block to paste into config.toml
 ```
 
-If your agency is not listed, see [Providers](#providers): any agency
-that publishes a GTFS schedule works through the `gtfsrt` provider, with
-realtime predictions where it also publishes GTFS-Realtime.
+If your agency is not listed, search for it by agency or city:
+
+```bash
+urbanist-timetable agencies search lisbon
+urbanist-timetable systems show mdb-2929      # a result's block to paste
+```
+
+The search covers the ready-made systems, the
+[Mobility Database](https://mobilitydatabase.org/)'s list of feeds, and,
+with `TRANSITLAND_API_KEY` set, [Transitland](https://www.transit.land/)'s
+operators, which also name the agencies inside national feeds. Every
+result's ID works in `departures`, `stops search` and `systems show`, as
+a ready-made system's does. The agency shown is whoever published the
+data, so if a name finds nothing, try the city. Results are served by the
+`gtfsrt` provider where the feeds need no Transitland key, so departures
+spend no quota; looking up a Transitland ID takes two or more requests,
+saved for a week in the cache directory. `systems show` says when a feed
+needs a key of its own.
 
 ### 3. Find your stop
 

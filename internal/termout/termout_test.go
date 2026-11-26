@@ -149,3 +149,12 @@ func TestPartialBoardSaysSo(t *testing.T) {
 		t.Errorf("empty partial board: %q", out.String())
 	}
 }
+
+func TestTable(t *testing.T) {
+	var b bytes.Buffer
+	termout.Table(&b, [][]string{{"mdb-53", "BART", "realtime"}, {"tld-716", "Metro de Lisboa\a", "schedule"}, {"x", "", ""}})
+	want := "mdb-53   BART             realtime\ntld-716  Metro de Lisboa  schedule\nx\n"
+	if b.String() != want {
+		t.Errorf("got\n%q\nwant\n%q", b.String(), want)
+	}
+}

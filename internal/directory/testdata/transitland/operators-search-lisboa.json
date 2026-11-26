@@ -1,0 +1,269 @@
+{
+ "operators": [
+  {
+   "agencies": [
+    {
+     "agency_id": "1",
+     "agency_name": "Carris",
+     "places": [
+      {
+       "adm0_name": "Portugal",
+       "adm1_name": "Lisboa",
+       "city_name": "Lisbon"
+      },
+      {
+       "adm0_name": "Portugal",
+       "adm1_name": "Lisboa",
+       "city_name": null
+      }
+     ],
+     "route_types": [
+      3
+     ],
+     "route_types_basic": [
+      3
+     ]
+    }
+   ],
+   "feeds": [
+    {
+     "name": null,
+     "onestop_id": "f-carris~pt",
+     "spec": "GTFS"
+    }
+   ],
+   "name": "Companhia Carris de Ferro de Lisboa",
+   "onestop_id": "o-eyckr-carris",
+   "short_name": "CARRIS",
+   "website": "https://www.carris.pt/"
+  },
+  {
+   "agencies": [
+    {
+     "agency_id": "1094_CP",
+     "agency_name": "CP - Comboios de Portugal",
+     "places": [
+      {
+       "adm0_name": "Portugal",
+       "adm1_name": "Lisboa",
+       "city_name": "Lisbon"
+      },
+      {
+       "adm0_name": "Portugal",
+       "adm1_name": "Lisboa",
+       "city_name": null
+      }
+     ],
+     "route_types": [
+      2,
+      109
+     ],
+     "route_types_basic": [
+      2
+     ]
+    }
+   ],
+   "feeds": [
+    {
+     "name": null,
+     "onestop_id": "f-eyc-cp",
+     "spec": "GTFS"
+    }
+   ],
+   "name": "Comboios de Portugal",
+   "onestop_id": "o-eyc-cp",
+   "short_name": "CP",
+   "website": "https://www.cp.pt/"
+  },
+  {
+   "agencies": [
+    {
+     "agency_id": "15",
+     "agency_name": "Fertagus",
+     "places": [
+      {
+       "adm0_name": "Portugal",
+       "adm1_name": "Lisboa",
+       "city_name": null
+      },
+      {
+       "adm0_name": "Portugal",
+       "adm1_name": "Lisboa",
+       "city_name": "Lisbon"
+      },
+      {
+       "adm0_name": "Portugal",
+       "adm1_name": "Setúbal",
+       "city_name": null
+      },
+      {
+       "adm0_name": "Portugal",
+       "adm1_name": "Setúbal",
+       "city_name": "Setúbal"
+      }
+     ],
+     "route_types": [
+      2
+     ],
+     "route_types_basic": [
+      2
+     ]
+    }
+   ],
+   "feeds": [
+    {
+     "name": null,
+     "onestop_id": "f-eyce-fertagus",
+     "spec": "GTFS"
+    }
+   ],
+   "name": "Fertagus",
+   "onestop_id": "o-eyce-fertagus",
+   "short_name": null,
+   "website": "https://www.fertagus.pt/"
+  },
+  {
+   "agencies": [
+    {
+     "agency_id": "Daytrip_PT",
+     "agency_name": "Daytrip",
+     "places": [
+      {
+       "adm0_name": "Portugal",
+       "adm1_name": "Lisboa",
+       "city_name": "Lisbon"
+      },
+      {
+       "adm0_name": "Portugal",
+       "adm1_name": "Porto",
+       "city_name": null
+      },
+      {
+       "adm0_name": "Portugal",
+       "adm1_name": "Porto",
+       "city_name": "Porto"
+      },
+      {
+       "adm0_name": "Portugal",
+       "adm1_name": "Lisboa",
+       "city_name": null
+      }
+     ],
+     "route_types": [
+      3
+     ],
+     "route_types_basic": [
+      3
+     ]
+    },
+    {
+     "agency_id": "Daytrip",
+     "agency_name": "Daytrip",
+     "places": [
+      {
+       "adm0_name": "Italy",
+       "adm1_name": "Napoli",
+       "city_name": null
+      },
+      {
+       "adm0_name": "Italy",
+       "adm1_name": "Napoli",
+       "city_name": "Naples"
+      }
+     ],
+     "route_types": [
+      3
+     ],
+     "route_types_basic": [
+      3
+     ]
+    },
+    {
+     "agency_id": "Daytrip_MX",
+     "agency_name": "Daytrip",
+     "places": [
+      {
+       "adm0_name": "Mexico",
+       "adm1_name": "Quintana Roo",
+       "city_name": "Cancún"
+      },
+      {
+       "adm0_name": "Mexico",
+       "adm1_name": "Quintana Roo",
+       "city_name": "Isla Mujeres"
+      },
+      {
+       "adm0_name": "Mexico",
+       "adm1_name": "Quintana Roo",
+       "city_name": null
+      }
+     ],
+     "route_types": [
+      3
+     ],
+     "route_types_basic": [
+      3
+     ]
+    }
+   ],
+   "feeds": [
+    {
+     "name": null,
+     "onestop_id": "f-dt~it",
+     "spec": "GTFS"
+    },
+    {
+     "name": null,
+     "onestop_id": "f-dt~pt",
+     "spec": "GTFS"
+    },
+    {
+     "name": null,
+     "onestop_id": "f-dt~mx",
+     "spec": "GTFS"
+    }
+   ],
+   "name": "Daytrip Shuttle",
+   "onestop_id": "o-daytrip~shuttle",
+   "short_name": null,
+   "website": "https://daytrip.com/"
+  },
+  {
+   "agencies": [
+    {
+     "agency_id": "21",
+     "agency_name": "Cascais Próxima",
+     "places": [
+      {
+       "adm0_name": "Portugal",
+       "adm1_name": "Lisboa",
+       "city_name": null
+      },
+      {
+       "adm0_name": "Portugal",
+       "adm1_name": "Lisboa",
+       "city_name": "Lisbon"
+      }
+     ],
+     "route_types": [
+      3
+     ],
+     "route_types_basic": [
+      3
+     ]
+    }
+   ],
+   "feeds": [
+    {
+     "name": null,
+     "onestop_id": "f-eyck-cascaispróximaemsa",
+     "spec": "GTFS"
+    }
+   ],
+   "name": "Cascais Próxima E.M. S.A.",
+   "onestop_id": "o-eyck-cascaispróximaemsa",
+   "short_name": "MobiCascais",
+   "website": "http://www.mobicascais.pt/"
+  }
+ ]
+}

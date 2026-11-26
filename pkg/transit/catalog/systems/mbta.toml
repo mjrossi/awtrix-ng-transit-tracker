@@ -13,6 +13,7 @@ Subway, bus, commuter rail and ferry in one feed. Rapid transit stations
 have IDs such as "place-pktrm" (Park Street). The timetable is a 20 MB
 download."""
 mobility_db = ["mdb-437"]
+transitland_feeds = ["f-drt-mbta"]
 
 [options]
 static_url = "https://cdn.mbta.com/MBTA_GTFS.zip"

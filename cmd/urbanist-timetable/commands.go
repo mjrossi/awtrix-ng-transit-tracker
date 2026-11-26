@@ -18,6 +18,7 @@ import (
 
 	"github.com/mjrossi/urbanist-timetable/internal/clockout"
 	"github.com/mjrossi/urbanist-timetable/internal/config"
+	"github.com/mjrossi/urbanist-timetable/internal/directory"
 	"github.com/mjrossi/urbanist-timetable/internal/render"
 	"github.com/mjrossi/urbanist-timetable/internal/scheduler"
 	"github.com/mjrossi/urbanist-timetable/internal/termout"
@@ -305,12 +306,15 @@ func systemsCommand() *cli.Command {
 				"and a [providers] block to paste into the configuration.\n\n" +
 				"   urbanist-timetable systems show mta-subway",
 			ShellComplete: completeFirst(completeSystems),
-			Action: func(_ context.Context, c *cli.Command) error {
+			Action: func(ctx context.Context, c *cli.Command) error {
 				if c.Args().Len() != 1 {
 					return newUsageError(c, "give one system ID, such as `systems show bart`")
 				}
 				id := c.Args().First()
 				s, ok := catalog.Get(id)
+				if !ok && directory.IsID(id) {
+					return showDirectorySystem(ctx, c, id)
+				}
 				if !ok {
 					return unknownSystemError(id)
 				}
@@ -354,7 +358,7 @@ func stopsCommand() *cli.Command {
 				if err != nil {
 					return err
 				}
-				p, err := openSource(path, name, providerOptions(c)...)
+				p, err := openSource(ctx, path, name, newDirectory(c), providerOptions(c)...)
 				if err != nil {
 					return err
 				}
@@ -388,10 +392,11 @@ func queryConfig(c *cli.Command) (string, error) {
 
 // openSource builds the provider name refers to: a [providers.NAME] block
 // in the file at path, else a catalog system, with required options read
-// from <SYSTEM>_<OPTION> environment variables, else a provider type that
-// needs no settings. Only that block is read, so a query works before the
-// rest of the configuration does.
-func openSource(path, name string, opts ...providers.Option) (transit.Provider, error) {
+// from <SYSTEM>_<OPTION> environment variables, else, with dir, a
+// Mobility Database or Transitland system, else a provider type that needs
+// no settings. Only that block is read, so a query works before the rest
+// of the configuration does.
+func openSource(ctx context.Context, path, name string, dir *directory.Directory, opts ...providers.Option) (transit.Provider, error) {
 	settings, found, err := config.LoadProvider(path, name)
 	if err != nil {
 		return nil, err
@@ -401,6 +406,9 @@ func openSource(path, name string, opts ...providers.Option) (transit.Provider, 
 	}
 	if sys, ok := catalog.Get(name); ok {
 		return providers.Open(name, envSettings(sys), opts...)
+	}
+	if dir != nil && directory.IsID(name) {
+		return openDirectorySystem(ctx, dir, name, opts...)
 	}
 	p, err := providers.Open(name, map[string]any{}, opts...)
 	if err == nil {
@@ -525,6 +533,9 @@ func cacheCommand() *cli.Command {
 					return newUsageError(c, "the schedule cache is off (--cache-dir off); there is nothing to clear")
 				}
 				n, freed, err := providers.ClearScheduleCache(dir, clock())
+				listFreed, listErr := directory.ClearCache(dir)
+				freed += listFreed
+				err = errors.Join(err, listErr)
 				w := c.Root().Writer
 				switch {
 				case n == 1:

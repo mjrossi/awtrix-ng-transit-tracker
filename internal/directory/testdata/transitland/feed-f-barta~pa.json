@@ -1,0 +1,49 @@
+{
+ "feeds": [
+  {
+   "authorization": {
+    "info_url": "",
+    "param_name": "",
+    "type": ""
+   },
+   "feed_state": {
+    "feed_version": {
+     "feed_version_gtfs_import": {
+      "exception_log": "",
+      "in_progress": false,
+      "success": true
+     },
+     "fetched_at": "2026-07-10T19:37:59.24688Z",
+     "sha1": "ea79770af1b79ba4b71a4e3d796b73ca16327bbd",
+     "url": "https://busfinder.bartabus.com/InfoPoint/gtfs-zip.ashx"
+    }
+   },
+   "license": {
+    "attribution_instructions": "",
+    "attribution_text": "",
+    "commercial_use_allowed": "",
+    "create_derived_product": "",
+    "redistribution_allowed": "",
+    "share_alike_optional": "",
+    "spdx_identifier": "",
+    "url": "",
+    "use_without_attribution": ""
+   },
+   "name": null,
+   "onestop_id": "f-barta~pa",
+   "spec": "GTFS",
+   "urls": {
+    "gbfs_auto_discovery": "",
+    "mds_provider": "",
+    "realtime_alerts": "",
+    "realtime_trip_updates": "",
+    "realtime_vehicle_positions": "",
+    "static_current": "https://busfinder.bartabus.com/InfoPoint/gtfs-zip.ashx",
+    "static_historic": [
+     "https://github.com/transitland/gtfs-archives-not-hosted-elsewhere/raw/master/barta.zip"
+    ],
+    "static_planned": []
+   }
+  }
+ ]
+}

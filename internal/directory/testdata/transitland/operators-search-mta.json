@@ -1,0 +1,4 @@
+{"operators": [
+  {"onestop_id": "o-dr5-mtanyctbus", "name": "MTA New York City Transit", "short_name": "MTA", "agencies": [{"agency_name": "MTA New York City Transit", "places": [{"adm0_name": "United States of America", "adm1_name": "New York", "city_name": "New York"}]}], "feeds": [{"onestop_id": "f-dr5-mtanyctbusbrooklyn", "name": "Brooklyn buses", "spec": "GTFS"}]},
+  {"onestop_id": "o-9q8y-sfmta", "name": "San Francisco Municipal Transportation Agency", "short_name": "SFMTA", "agencies": [{"agency_name": "San Francisco Municipal Transportation Agency", "places": [{"adm0_name": "United States of America", "adm1_name": "California", "city_name": "San Francisco"}]}], "feeds": [{"onestop_id": "f-9q8y-sfmta", "name": "Muni", "spec": "GTFS"}]}
+]}

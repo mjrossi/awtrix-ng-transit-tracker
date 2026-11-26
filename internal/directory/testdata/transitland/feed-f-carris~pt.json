@@ -1,0 +1,49 @@
+{
+ "feeds": [
+  {
+   "authorization": {
+    "info_url": "",
+    "param_name": "",
+    "type": ""
+   },
+   "feed_state": {
+    "feed_version": {
+     "feed_version_gtfs_import": {
+      "exception_log": "",
+      "in_progress": false,
+      "success": true
+     },
+     "fetched_at": "2026-11-24T20:26:10.211129Z",
+     "sha1": "c091ca896cbb51962862abf97b26a18ba77ef4ef",
+     "url": "https://gateway.carris.pt/gateway/gtfs/api/v2.11/GTFS"
+    }
+   },
+   "license": {
+    "attribution_instructions": "",
+    "attribution_text": "",
+    "commercial_use_allowed": "",
+    "create_derived_product": "",
+    "redistribution_allowed": "",
+    "share_alike_optional": "",
+    "spdx_identifier": "",
+    "url": "https://dadosabertos.cm-lisboa.pt/dataset/informacao-sobre-transportes-publicos-da-cidade-de-lisboa-carris",
+    "use_without_attribution": ""
+   },
+   "name": null,
+   "onestop_id": "f-carris~pt",
+   "spec": "GTFS",
+   "urls": {
+    "gbfs_auto_discovery": "",
+    "mds_provider": "",
+    "realtime_alerts": "",
+    "realtime_trip_updates": "",
+    "realtime_vehicle_positions": "",
+    "static_current": "https://gateway.carris.pt/gateway/gtfs/api/v2.11/GTFS",
+    "static_historic": [
+     "http://www.transporlis.pt/Portals/0/OpenData/gtfs/zip/1/gtfs_1.zip"
+    ],
+    "static_planned": []
+   }
+  }
+ ]
+}

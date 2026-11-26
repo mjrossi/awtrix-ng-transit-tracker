@@ -12,6 +12,7 @@ notes = """
 Station IDs are four letters, such as "EMBR". Destinations are long
 ("SFO / SF / Antioch"); shorten them with [boards.clock.labels]."""
 mobility_db = ["mdb-53"]
+transitland_feeds = ["f-9q9-bart"]
 
 [options]
 static_url = "https://www.bart.gov/dev/schedules/google_transit.zip"

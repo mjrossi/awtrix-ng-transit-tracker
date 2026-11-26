@@ -1,0 +1,58 @@
+{
+ "operators": [
+  {
+   "agencies": [
+    {
+     "agency_id": "BA",
+     "agency_name": "Bay Area Rapid Transit",
+     "places": [
+      {
+       "adm0_name": "United States of America",
+       "adm1_name": "California",
+       "city_name": null
+      },
+      {
+       "adm0_name": "United States of America",
+       "adm1_name": "California",
+       "city_name": "San Francisco"
+      },
+      {
+       "adm0_name": "United States of America",
+       "adm1_name": "California",
+       "city_name": "Oakland"
+      }
+     ],
+     "route_types": [
+      1,
+      3
+     ],
+     "route_types_basic": [
+      1,
+      3
+     ]
+    }
+   ],
+   "feeds": [
+    {
+     "name": null,
+     "onestop_id": "f-9q9-bart",
+     "spec": "GTFS"
+    },
+    {
+     "name": "San Francisco Bay Area 511 Regional Feed (Daily)",
+     "onestop_id": "f-sf~bay~area~rg",
+     "spec": "GTFS"
+    },
+    {
+     "name": "San Francisco Bay Area 511 Regional Feed (Real-time)",
+     "onestop_id": "f-sf~bay~area~rg~rt",
+     "spec": "GTFS_RT"
+    }
+   ],
+   "name": "Bay Area Rapid Transit",
+   "onestop_id": "o-9q9-bart",
+   "short_name": "BART",
+   "website": null
+  }
+ ]
+}

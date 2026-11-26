@@ -1,0 +1,41 @@
+{
+ "operators": [
+  {
+   "agencies": [
+    {
+     "agency_id": "1",
+     "agency_name": "Carris",
+     "places": [
+      {
+       "adm0_name": "Portugal",
+       "adm1_name": "Lisboa",
+       "city_name": "Lisbon"
+      },
+      {
+       "adm0_name": "Portugal",
+       "adm1_name": "Lisboa",
+       "city_name": null
+      }
+     ],
+     "route_types": [
+      3
+     ],
+     "route_types_basic": [
+      3
+     ]
+    }
+   ],
+   "feeds": [
+    {
+     "name": null,
+     "onestop_id": "f-carris~pt",
+     "spec": "GTFS"
+    }
+   ],
+   "name": "Companhia Carris de Ferro de Lisboa",
+   "onestop_id": "o-eyckr-carris",
+   "short_name": "CARRIS",
+   "website": "https://www.carris.pt/"
+  }
+ ]
+}

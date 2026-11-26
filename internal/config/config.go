@@ -211,6 +211,31 @@ func LoadProvider(path, name string) (settings map[string]any, found bool, err e
 	return settings, true, nil
 }
 
+// ExpandSettings expands ${NAME} references in a provider block's settings
+// from the environment, as LoadProvider does, for blocks that come from
+// elsewhere than the file. Only the names in allowed are read: such a block
+// is built from data the user did not write, and any other reference could
+// carry an unrelated secret to the data's chosen host. name labels errors.
+func ExpandSettings(name string, settings map[string]any, allowed []string) (map[string]any, error) {
+	missing := map[string]bool{}
+	var refused []string
+	lookup := func(v string) (string, bool) {
+		if !slices.Contains(allowed, v) {
+			refused = append(refused, v)
+			return "", false
+		}
+		return os.LookupEnv(v)
+	}
+	expandAny(settings, expander(lookup, missing))
+	if len(refused) > 0 {
+		return nil, fmt.Errorf("%s: refusing to read %s from the environment", name, strings.Join(slices.Compact(slices.Sorted(slices.Values(refused))), ", "))
+	}
+	if err := missingError(missing); err != nil {
+		return nil, fmt.Errorf("%s: %w", name, err)
+	}
+	return settings, nil
+}
+
 // Names lists the board names and provider block names in the file at
 // path, without expanding or validating it, for shell completion and
 // suggestions. It returns nothing when the file cannot be read or decoded.

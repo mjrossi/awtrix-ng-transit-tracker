@@ -12,5 +12,6 @@ notes = """
 Regional buses in 15 of the 18 municipalities of the Lisbon metropolitan
 area. Stop IDs are six digits; each side of a road usually has its own."""
 mobility_db = ["mdb-2027"]
+transitland_feeds = ["f-carris~metropolitana~pt"]
 
 [options]

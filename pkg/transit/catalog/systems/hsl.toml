@@ -15,6 +15,7 @@ of memory, more during the daily refresh while the previous timetable is
 in use. The first time a stop is asked for, its timetable is read from
 the schedule in about 5 seconds, peaking near 220 MB."""
 mobility_db = ["mdb-865"]
+transitland_feeds = ["f-ud9-helsinginseudunliikenne"]
 
 [options]
 static_url = "https://infopalvelut.storage.hsldev.com/gtfs/hsl.zip"
