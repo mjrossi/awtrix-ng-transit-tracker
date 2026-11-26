@@ -103,148 +103,20 @@ every setting.
 ## On a pixel clock
 
 You need a TC002 with AWTRIX NG 1.2.2 or later on your network, and Docker
-on a machine that stays on, such as a NAS. Images for `linux/amd64` and
-`linux/arm64` are published to `ghcr.io/mjrossi/urbanist-timetable`:
-
-| Tag | Contents |
-|---|---|
-| `latest`, `1`, `1.2`, `1.2.3` | Releases |
-| `main` | The latest commit on `main`, for fixes not yet released |
-
-```bash
-docker pull ghcr.io/mjrossi/urbanist-timetable:latest
-```
-
-### 1. Create the config
+on a machine that stays on, such as a NAS. In short:
 
 ```bash
 docker run --rm ghcr.io/mjrossi/urbanist-timetable:latest config example > config.toml
-```
-
-(or `cp config.example.toml config.toml` in a clone of the repository).
-
-Set `clock.url` to your clock's address. The IP address is the safest
-choice, because `awtrixng-xxxxxx.local` names often do not resolve inside
-containers. As it ships, the example drives two boards from the `demo`
-provider, so you can see the display working before choosing a real data
-source.
-
-The remaining commands run the CLI in the container. A shell alias keeps
-them short:
-
-```bash
-alias urbanist-timetable='docker run --rm -v "$PWD/config.toml:/config/config.toml:ro" ghcr.io/mjrossi/urbanist-timetable:latest'
-```
-
-Create `config.toml` before using the alias. If the file is missing,
-Docker creates an empty directory with that name in its place.
-
-### 2. Pick a data source
-
-Search for your system by agency or city:
-
-```bash
-urbanist-timetable agencies search lisbon
-urbanist-timetable systems show mdb-2929      # prints a block to paste into config.toml
-```
-
-The search covers the [verified systems](#systems), the
-[Mobility Database](https://mobilitydatabase.org/)'s list of feeds, and,
-with `TRANSITLAND_API_KEY` set, [Transitland](https://www.transit.land/)'s
-operators. The agency shown is whoever published the data, so if a name
-finds nothing, try the city; countrywide feeds, such as national
-railways, are found by the country's name. `systems show` says when a
-feed needs a key, and how it is read; see
-[`docs/transitland.md`](./docs/transitland.md) for Transitland's quota.
-
-### 3. Find your stop
-
-```bash
-urbanist-timetable stops search mta-subway times sq
-```
-
-The first argument is a system ID or a `[providers.NAME]` block in
-`config.toml`. Where several stops share a name, such as one per
-direction or platform, each is listed with the lines that leave from it
-and where they go, such as `7X to 34 St-Hudson Yards or Flushing-Main St`.
-
-### 4. Add a board
-
-```toml
-[providers.nyc]
-system = "mta-subway"
-
-[[boards]]
-name = "uptown"
-
-[[boards.stops]]
-provider = "nyc"
-stop = "127N"        # Times Sq-42 St, northbound
-lines = ["1"]
-
-[boards.clock.labels] # names that fit the display
-"Van Cortlandt Park-242 St" = "Van Cortlandt"
-```
-
-[`config.example.toml`](./config.example.toml) documents every setting.
-Delete the demo boards and providers you do not use. With the binary
-installed, `urbanist-timetable config init --stdout` writes the provider
-and board for you, with a `[clock]` block to fill in.
-
-### 5. Check it
-
-```bash
-urbanist-timetable config validate     # checks the file and builds its providers and clock client
-urbanist-timetable clock preview         # fetches once and prints what each board would show
-urbanist-timetable clock preview --push  # ...and pushes it to the clock once
-```
-
-`clock preview` marks names too wide for their space on the display; give them shorter names
-under `[boards.clock.labels]`.
-
-### 6. Run it
-
-```bash
+# set clock.url, add your boards, then:
 docker run -d --name urbanist-timetable --restart unless-stopped \
-  -v "$PWD/config.toml:/config/config.toml:ro" \
-  -v timetable-data:/data \
+  -v "$PWD/config.toml:/config/config.toml:ro" -v timetable-data:/data \
   ghcr.io/mjrossi/urbanist-timetable:latest
-docker logs -f urbanist-timetable
 ```
 
-Or with Docker Compose:
-
-```yaml
-services:
-  urbanist-timetable:
-    image: ghcr.io/mjrossi/urbanist-timetable:latest
-    restart: unless-stopped
-    volumes:
-      - ./config.toml:/config/config.toml:ro
-      - timetable-data:/data
-    # environment:
-    #   AWTRIX_PASSWORD: ...   # referenced as ${AWTRIX_PASSWORD} in config.toml
-
-volumes:
-  timetable-data:
-```
-
-Mount a volume at `/data`, as above: it keeps the downloaded schedules and
-the list of boards, so a board you remove also leaves the clock after a
-restart. The configuration is read at startup, so restart the container
-after editing it. To update, run `docker compose pull && docker compose up -d`.
-The container only makes outgoing requests, to transit APIs and to the
-clock, so it needs no published ports.
-
-How the running service behaves (active and quiet hours, failures, removed
-boards, the data volume) is in [`docs/clock.md`](./docs/clock.md).
-
-### Secrets
-
-`${NAME}` in the `[clock]` and `[providers.*]` settings is read from the
-environment, so keys and passwords can stay out of `config.toml`. Pass
-them with `-e NAME=...` or Compose's `environment:`. A variable that is
-referenced but not set is a configuration error.
+As it ships, the example shows two boards from the `demo` provider, so
+you can see the display working first. [`docs/clock.md`](./docs/clock.md)
+walks through the setup step by step, with Docker Compose, and explains
+the layouts, when boards are shown, and how the service behaves.
 
 ## Commands
 
@@ -285,8 +157,9 @@ optional `timezone` and `quiet_hours`, one `[clock]`, one
 `[providers.NAME]` block per data source, and one `[[boards]]` entry per
 app on the clock, each with one or more stops and optional
 `active_hours`. A board's `[boards.clock]` table holds how it looks on
-the clock: layout, labels, lifetime and so on. When boards are shown is
-explained in [`docs/clock.md`](./docs/clock.md#when-boards-are-shown).
+the clock; see [layouts](./docs/clock.md#layouts). `${NAME}` in the
+`[clock]` and `[providers.*]` settings is read from the environment, so
+keys and passwords can stay out of the file.
 
 ## Systems
 

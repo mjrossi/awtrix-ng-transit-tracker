@@ -77,8 +77,8 @@ Part of the Urbanist family with *The Urbanist Lexicon* (mjrossi.com) and
   and pushes them as apps, and removes boards that left the configuration.
 - `docs/` — `ARCHITECTURE.md`, `rendering.md`, `PLAN.md` (roadmap only:
   no build log or history), and user guides too detailed for the README:
-  `clock.md` (running the clock service), `providers.md` and
-  `transitland.md`.
+  `clock.md` (setting up the clock, layouts, and how it runs),
+  `providers.md` and `transitland.md`.
 - `CHANGELOG.md` — user-visible changes, Keep a Changelog format. Add an
   entry under `Unreleased` in the same change.
 
