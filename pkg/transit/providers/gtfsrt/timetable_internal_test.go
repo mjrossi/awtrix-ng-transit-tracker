@@ -662,3 +662,103 @@ func TestCanceledWaiterLeavesTheScan(t *testing.T) {
 		t.Errorf("got %v, err %v; want S1's departure", rows(deps), err)
 	}
 }
+
+func TestStopLines(t *testing.T) {
+	p := newTown(t, town).provider(t, false)
+	var liner transit.StopLiner = p
+	got, err := liner.StopLines(t.Context(), []string{"S1", "S2", "T", "U"}, monday8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string][]string{}
+	for id, lines := range got {
+		for _, l := range lines {
+			n := l.Line.ShortName
+			if len(l.Headsigns) > 0 {
+				n += " to " + strings.Join(l.Headsigns, "|")
+			}
+			names[id] = append(names[id], n)
+		}
+	}
+	// Harbor (U) only ends trips, so no line departs from it. Trip nohead
+	// has no headsign and is named after its last stop.
+	want := map[string][]string{
+		"S1": {"1 to Harbor", "2 to Market"},
+		"S2": {"1 to Harbor", "2 to Harbor"},
+		"T":  {"1 to Central|Harbor"},
+	}
+	if diff := cmp.Diff(want, names); diff != "" {
+		t.Errorf("lines (-want +got):\n%s", diff)
+	}
+}
+
+// timetable = false hides timetabled trips, but the timetable still names
+// a stop's lines, as for New York's stations with a stop per group of lines.
+func TestStopLinesWithTimetableOff(t *testing.T) {
+	s := newTown(t, town)
+	off := false
+	cfg := Config{StaticURL: s.URL + "/gtfs.zip", RealtimeURLs: []string{s.URL + "/rt.pb"}, Timetable: &off}
+
+	t.Run("cached", func(t *testing.T) {
+		p, err := New(cfg, s.Client(), WithCacheDir(t.TempDir()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := p.StopLines(t.Context(), []string{"S1"}, monday8)
+		if err != nil || len(got["S1"]) != 2 {
+			t.Errorf("StopLines = %v, %v; want lines 1 and 2", got, err)
+		}
+	})
+	t.Run("uncached", func(t *testing.T) {
+		p, err := New(cfg, s.Client())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := p.StopLines(t.Context(), []string{"S1"}, monday8); err == nil || !strings.Contains(err.Error(), "schedule cache") {
+			t.Errorf("StopLines error = %v, want one naming the schedule cache", err)
+		}
+		if st := p.currentStatic(); st == nil || st.tt != nil {
+			t.Error("the temporary schedule file is kept with timetable = false")
+		}
+	})
+}
+
+// A refresh that replaces the schedule during a read is answered from the
+// new schedule, for StopLines as for Departures.
+func TestStopTimesAfterRefresh(t *testing.T) {
+	p := newTown(t, town).provider(t, false)
+	old, err := p.staticFor(t.Context(), monday8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fresh, err := p.downloadStatic(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.adopt(fresh)
+
+	st, sts, err := p.stopTimes(t.Context(), old, "S1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st != fresh || len(sts) == 0 {
+		t.Errorf("stopTimes = %p with %d stop times, want the new schedule %p with S1's", st, len(sts), fresh)
+	}
+}
+
+func TestTripHeadsign(t *testing.T) {
+	s := &static{
+		trips: map[string]tripInfo{"named": {headsign: "Harbor"}, "bare": {}},
+		stops: map[string]stopInfo{"P": {name: "Central"}, "P1": {name: "Central A", parent: "P"}},
+	}
+	tests := []struct{ trip, last, want string }{
+		{"named", "P1", "Harbor"},
+		{"bare", "P1", "Central"}, // the last stop's station
+		{"bare", "", ""},          // nothing to go by
+	}
+	for _, tt := range tests {
+		if got := s.tripHeadsign(tt.trip, tt.last); got != tt.want {
+			t.Errorf("tripHeadsign(%q, %q) = %q, want %q", tt.trip, tt.last, got, tt.want)
+		}
+	}
+}

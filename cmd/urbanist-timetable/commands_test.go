@@ -2,12 +2,15 @@ package main
 
 import (
 	"bytes"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -65,7 +68,7 @@ func TestSystemsCommands(t *testing.T) {
 		args []string
 		want []string
 	}{
-		"list": {[]string{"systems"}, []string{"bart", "Show how to configure one"}},
+		"list": {[]string{"systems"}, []string{"Verified systems", "bart", "Show how to configure one"}},
 		"show": {[]string{"systems", "show", "bart"}, []string{"[providers.bart]\nsystem = \"bart\"\n", "# Example stop: "}},
 	}
 	for name, tt := range tests {
@@ -417,7 +420,29 @@ func TestHint(t *testing.T) {
 	}{
 		"unknown system": {fmt.Errorf("providers.x: %w", fmt.Errorf("%w %q", catalog.ErrUnknownSystem, "atlantis")), "run `urbanist-timetable systems`"},
 		"missing keys":   {errors.Join(errors.New("other"), &catalog.MissingOptionsError{System: "metro-lisboa", Options: []string{"client_id"}}), "run `urbanist-timetable systems show metro-lisboa`"},
-		"anything else":  {errors.New("boom"), ""},
+		"refused": {
+			fmt.Errorf("stop search: schedule: gtfsrt: GET http://example.org/gtfs.zip: %w", &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("connection refused")}),
+			noAnswerHint,
+		},
+		"unknown host": {
+			fmt.Errorf("gtfsrt: GET http://example.invalid/gtfs.zip: %w", &net.OpError{Op: "dial", Net: "tcp", Err: &net.DNSError{Err: "no such host", Name: "example.invalid", IsNotFound: true}}),
+			noAnswerHint,
+		},
+		// transitland keeps the *url.Error, which is a net.Error whatever
+		// went wrong.
+		"transitland timeout": {
+			fmt.Errorf("transitland: %w", &url.Error{Op: "Get", URL: "https://transit.land/api/v2/rest/stops", Err: timeoutError{}}),
+			noAnswerHint,
+		},
+		"transitland bad certificate": {
+			fmt.Errorf("transitland: %w", &url.Error{Op: "Get", URL: "https://transit.land/api/v2/rest/stops", Err: x509.UnknownAuthorityError{}}),
+			"",
+		},
+		"connection reset mid-download": {
+			fmt.Errorf("gtfsrt: GET http://example.org/gtfs.zip: %w", &net.OpError{Op: "read", Net: "tcp", Err: errors.New("connection reset by peer")}),
+			"",
+		},
+		"anything else": {errors.New("boom"), ""},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -427,6 +452,12 @@ func TestHint(t *testing.T) {
 		})
 	}
 }
+
+type timeoutError struct{}
+
+func (timeoutError) Error() string   { return "timeout" }
+func (timeoutError) Timeout() bool   { return true }
+func (timeoutError) Temporary() bool { return true }
 
 func TestOldCommandsAreGone(t *testing.T) {
 	root := newRootCommand()

@@ -182,7 +182,7 @@ func TestCompletion(t *testing.T) {
 		want    []string
 		notWant []string
 	}{
-		"departures": {[]string{"departures"}, []string{"metro", "demo", "cm", "bart", "gtfsrt"}, nil},
+		"departures": {[]string{"departures"}, []string{"metro", "demo", "cm", "bart"}, []string{"gtfsrt", "carrismetropolitana"}},
 		"search":     {[]string{"stops", "search"}, []string{"demo", "bart"}, []string{"metro"}},
 		"show":       {[]string{"systems", "show"}, []string{"bart"}, []string{"demo"}},
 		"stop":       {[]string{"departures", "demo"}, nil, []string{"demo", "help"}},

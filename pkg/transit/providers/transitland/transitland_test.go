@@ -1,6 +1,7 @@
 package transitland_test
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -349,6 +350,43 @@ func TestSearchStops(t *testing.T) {
 				t.Errorf("query %v", q)
 			}
 		})
+	}
+}
+
+// Transitland matches several words as one phrase; a search it misses is
+// retried word by word and filtered here.
+func TestSearchStopsWordByWord(t *testing.T) {
+	fixture, err := os.ReadFile(filepath.Join("testdata", "stops_search.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var searches []string
+	var mu sync.Mutex
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query().Get("search")
+		mu.Lock()
+		searches = append(searches, q)
+		mu.Unlock()
+		if strings.Contains(q, " ") {
+			_, _ = w.Write([]byte(`{"stops":[]}`))
+			return
+		}
+		_, _ = w.Write(fixture)
+	}))
+	t.Cleanup(srv.Close)
+	p, err := transitland.New(transitland.Config{Feed: feed, APIKey: "k", BaseURL: srv.URL}, srv.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	stops, err := p.SearchStops(t.Context(), "central harbor")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stops) != 1 || stops[0].ID != "HC" {
+		t.Errorf("stops %v, want Harbor Central alone", stops)
+	}
+	if diff := cmp.Diff([]string{"central harbor", "central"}, searches); diff != "" {
+		t.Errorf("searches (-want +got):\n%s", diff)
 	}
 }
 
@@ -861,5 +899,167 @@ func TestOffsetFromServiceDay(t *testing.T) {
 				t.Errorf("start_time %q, want %q (request %v)", got, tt.wantStart, last)
 			}
 		})
+	}
+}
+
+// stopLinesDep is one departure in the shape of the live API's answers.
+func stopLinesDep(routeID, short, tripHeadsign, stopHeadsign string, at time.Time) map[string]any {
+	var sh any
+	if stopHeadsign != "" {
+		sh = stopHeadsign
+	}
+	return map[string]any{
+		"service_date":          at.Format(time.DateOnly),
+		"stop_headsign":         sh,
+		"pickup_type":           0,
+		"schedule_relationship": "SCHEDULED",
+		"departure": map[string]any{
+			"scheduled":     at.Format(time.TimeOnly),
+			"scheduled_utc": at.Format(time.RFC3339),
+			"estimated_utc": nil,
+		},
+		"trip": map[string]any{
+			"trip_id":               fmt.Sprintf("%s-%d", routeID, at.Unix()),
+			"trip_headsign":         tripHeadsign,
+			"schedule_relationship": "SCHEDULED",
+			"route": map[string]any{
+				"onestop_id": "r-" + routeID, "route_id": routeID, "route_short_name": short,
+				"route_long_name": nil, "route_color": nil, "route_type": 3,
+			},
+		},
+	}
+}
+
+// StopLines asks for a day of departures: a stop in two feeds lists one
+// line under two route IDs, a station lists its departures under its
+// platforms, and a busy stop's answer is cut off at the request's limit.
+func TestStopLines(t *testing.T) {
+	soon := now.Add(10 * time.Minute)
+	var busy []map[string]any
+	for i := range 1000 {
+		busy = append(busy, stopLinesDep("r7", "7", "Mall", "", soon.Add(time.Duration(i)*time.Minute)))
+	}
+	answers := map[string]map[string]any{
+		"HC": {"stops": []map[string]any{
+			{"stop_name": "Harbor Central", "departures": []map[string]any{
+				stopLinesDep("r10", "10", "Harbor", "", soon),
+				stopLinesDep("r2", "2", "Airport", "", soon),
+				stopLinesDep("r2", "2", "X", "Downtown", soon.Add(time.Minute)),
+			}},
+			{"stop_name": "Harbor Central", "departures": []map[string]any{
+				stopLinesDep("9002", "2", "Airport", "", soon.Add(2*time.Minute)),
+			}},
+		}},
+		"STATION": {"stops": []map[string]any{
+			{"stop_name": "Station", "departures": []map[string]any{}, "children": []map[string]any{
+				{"departures": []map[string]any{stopLinesDep("r5", "5", "Zoo", "", soon)}},
+			}},
+		}},
+		"EMPTY": {"stops": []map[string]any{{"stop_name": "Empty", "departures": []map[string]any{}}}},
+		"BUSY":  {"stops": []map[string]any{{"stop_name": "Busy", "departures": busy}}},
+	}
+	var (
+		mu   sync.Mutex
+		reqs []*http.Request
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		reqs = append(reqs, r)
+		mu.Unlock()
+		key := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/stops/"), "/departures")
+		_, stop, _ := strings.Cut(key, ":")
+		answer, ok := answers[stop]
+		if !ok {
+			answer = map[string]any{"stops": []any{}}
+		}
+		_ = json.NewEncoder(w).Encode(answer)
+	}))
+	t.Cleanup(srv.Close)
+	p, err := transitland.New(transitland.Config{Feed: feed, APIKey: "k", BaseURL: srv.URL}, srv.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := p.StopLines(t.Context(), []string{"HC", "STATION", "EMPTY", "BUSY"}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string][]string{}
+	for id, lines := range got {
+		for _, l := range lines {
+			names[id] = append(names[id], l.Line.ShortName+" to "+strings.Join(l.Headsigns, "|"))
+		}
+	}
+	want := map[string][]string{
+		"HC":      {"2 to Airport|Downtown", "10 to Harbor"},
+		"STATION": {"5 to Zoo"},
+		"BUSY":    {"7 to Mall"},
+	}
+	if diff := cmp.Diff(want, names); diff != "" {
+		t.Errorf("lines (-want +got):\n%s", diff)
+	}
+	if len(reqs) != 4 {
+		t.Errorf("%d requests, want one per stop", len(reqs))
+	}
+	for _, r := range reqs {
+		if !strings.HasSuffix(r.URL.Path, "/departures") {
+			t.Errorf("request to %s, want departures", r.URL.Path)
+		}
+		if next, _ := strconv.Atoi(r.URL.Query().Get("next")); next < 24*60*60 {
+			t.Errorf("next = %q, want at least a day", r.URL.Query().Get("next"))
+		}
+	}
+
+	// A board asks for its own window, not StopLines' day, which would
+	// otherwise be fetched again at every refresh.
+	if _, err := p.Departures(t.Context(), transit.Query{StopID: "HC", Now: now, Window: time.Hour}); err != nil {
+		t.Fatal(err)
+	}
+	if len(reqs) != 5 {
+		t.Fatalf("departures after StopLines made %d more requests, want 1", len(reqs)-4)
+	}
+	if next, _ := strconv.Atoi(reqs[4].URL.Query().Get("next")); next >= 24*60*60 {
+		t.Errorf("departures asked for next = %d, want its own window", next)
+	}
+
+	var many []string
+	for i := range transitland.MaxStopLines + 5 {
+		many = append(many, fmt.Sprintf("S%d", i))
+	}
+	reqs = nil
+	if _, err := p.StopLines(t.Context(), many, now); err == nil {
+		t.Error("StopLines found lines at stops the API does not know")
+	}
+	if len(reqs) != transitland.MaxStopLines {
+		t.Errorf("%d requests for %d stops, want %d", len(reqs), len(many), transitland.MaxStopLines)
+	}
+}
+
+func TestStopNameFromDepartures(t *testing.T) {
+	s := newServer(t)
+	p := newProvider(t, s, transitland.Config{Feed: feed})
+	var namer transit.StopNamer = p
+	if _, ok := namer.StopName(t.Context(), "HC", now); ok {
+		t.Error("a name before any fetch; it would cost a request")
+	}
+	if _, err := p.Departures(t.Context(), query("HC", time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if name, ok := namer.StopName(t.Context(), "HC", now); !ok || name != "Harbor Central" {
+		t.Errorf("StopName = %q, %v", name, ok)
+	}
+}
+
+// A search late at night still finds where lines go the next morning.
+func TestStopLinesLateAtNight(t *testing.T) {
+	zone := time.FixedZone("", -8*3600)
+	night := time.Date(2026, 11, 25, 23, 30, 0, 0, zone)
+	s := newTimetableServer(t, zone, trip{id: "morning", scheduled: time.Date(2026, 11, 26, 7, 0, 0, 0, zone)})
+	s.clock = night
+	got, err := s.provider(t).StopLines(t.Context(), []string{"f-x:1"}, night)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got["f-x:1"]) != 1 {
+		t.Errorf("StopLines at 23:30 = %v, want the 07:00 trip's line", got)
 	}
 }

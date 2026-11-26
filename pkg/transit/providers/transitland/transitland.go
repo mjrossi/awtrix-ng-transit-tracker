@@ -20,6 +20,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -59,7 +60,13 @@ const (
 	failureShared = 10 * time.Second
 
 	searchLimit = 50
-	maxBody     = 16 << 20
+	// maxStopLines is how many stops one StopLines call asks about, each
+	// costing a request.
+	maxStopLines = 10
+	// stopLinesWindow is how far ahead StopLines looks, so a search late at
+	// night still finds the next day's trips.
+	stopLinesWindow = 24 * time.Hour
+	maxBody         = 16 << 20
 )
 
 // Config is the provider's configuration block.
@@ -98,6 +105,8 @@ type Provider struct {
 	stops map[string]stopCache
 	// offsets holds each stop key's service-day offset.
 	offsets map[string]serviceOffset
+	// names holds each stop key's name, as departures answers give it.
+	names map[string]string
 }
 
 // stopCache caches a stop's answers for window, the widest asked for, which
@@ -150,6 +159,7 @@ func New(cfg Config, client *http.Client) (*Provider, error) {
 		refresh: refresh,
 		quota:   cfg.MonthlyQuota,
 		stops:   map[string]stopCache{},
+		names:   map[string]string{},
 		offsets: map[string]serviceOffset{},
 	}, nil
 }
@@ -238,19 +248,50 @@ func (p *Provider) fetch(ctx context.Context, key string, now time.Time, span ti
 	if len(resp.Stops) == 0 {
 		return timetable{}, fmt.Errorf("%w %q", transit.ErrUnknownStop, key)
 	}
+	if name := resp.Stops[0].StopName; name != "" {
+		p.mu.Lock()
+		p.names[key] = name
+		p.mu.Unlock()
+	}
 	lists := resp.lists()
 	p.learnOffset(key, lists, now)
 	return newTimetable(lists), nil
 }
 
 // SearchStops implements transit.StopSearcher with Transitland's full-text
-// stop search, limited to the configured feed if there is one. Each search
+// stop search, limited to the configured feed if there is one. Each request
 // counts against the quota.
+//
+// Transitland matches several words as one phrase, so "clark lake" misses
+// "Clark/Lake", and it keeps apostrophes, so "kings cross" misses "King's
+// Cross". When the whole search finds nothing, its longest words are tried
+// alone, at most two more requests, keeping the stops that match every word
+// as other providers' searches do.
 func (p *Provider) SearchStops(ctx context.Context, search string) ([]transit.Stop, error) {
 	search = strings.TrimSpace(search)
 	if search == "" {
 		return nil, nil
 	}
+	stops, err := p.searchStops(ctx, search)
+	words := strings.Fields(search)
+	if err != nil || len(stops) > 0 || len(words) < 2 {
+		return stops, err
+	}
+	slices.SortStableFunc(words, func(a, b string) int { return cmp.Compare(len(b), len(a)) })
+	for _, w := range words[:2] {
+		found, err := p.searchStops(ctx, w)
+		if err != nil {
+			return nil, err
+		}
+		found = slices.DeleteFunc(found, func(s transit.Stop) bool { return !transit.MatchesSearch(s.Name, search) })
+		if len(found) > 0 {
+			return found, nil
+		}
+	}
+	return nil, nil
+}
+
+func (p *Provider) searchStops(ctx context.Context, search string) ([]transit.Stop, error) {
 	params := url.Values{
 		"search": {search},
 		"limit":  {strconv.Itoa(searchLimit)},
@@ -279,6 +320,55 @@ func (p *Provider) SearchStops(ctx context.Context, search string) ([]transit.St
 			id = feed + ":" + id
 		}
 		out = append(out, transit.Stop{ID: id, Name: s.StopName})
+	}
+	return out, nil
+}
+
+// StopName implements transit.StopNamer with the names departures answers
+// gave, so it never spends a request: a stop not yet fetched is unknown.
+func (p *Provider) StopName(_ context.Context, id string, _ time.Time) (string, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	name, ok := p.names[p.stopKey(id)]
+	return name, ok
+}
+
+// StopLines implements transit.StopLiner with a day of departures from
+// each stop, for the first maxStopLines stops: one request each, counting
+// against the quota. The answer stays out of the departures cache, whose
+// every refresh would then fetch a day.
+func (p *Provider) StopLines(ctx context.Context, ids []string, now time.Time) (map[string][]transit.StopLine, error) {
+	day := transit.Query{Now: now, Window: stopLinesWindow}
+	var (
+		mu   sync.Mutex
+		out  = make(map[string][]transit.StopLine, len(ids))
+		errs []error
+		wg   sync.WaitGroup
+	)
+	for _, id := range ids[:min(len(ids), maxStopLines)] {
+		wg.Go(func() {
+			// A day cut off at departureLimit still tells where lines go.
+			tt, err := p.fetch(ctx, p.stopKey(id), now, stopLinesWindow)
+			var lines []transit.StopLine
+			for _, d := range tt.deps {
+				if day.Contains(d.Time()) {
+					lines = transit.AddStopLine(lines, d.Line, d.Headsign)
+				}
+			}
+			slices.SortFunc(lines, func(a, b transit.StopLine) int { return transit.CompareLines(a.Line, b.Line) })
+			mu.Lock()
+			defer mu.Unlock()
+			switch {
+			case err != nil:
+				errs = append(errs, err)
+			case len(lines) > 0:
+				out[id] = lines
+			}
+		})
+	}
+	wg.Wait()
+	if len(out) == 0 && len(errs) > 0 {
+		return nil, errors.Join(errs...)
 	}
 	return out, nil
 }

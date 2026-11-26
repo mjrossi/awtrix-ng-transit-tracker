@@ -6,7 +6,8 @@ package registry
 import (
 	"errors"
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"sync"
 
 	"github.com/mjrossi/urbanist-timetable/pkg/transit"
@@ -81,10 +82,5 @@ func (r *Registry) Build(name string, opts Options) (transit.Provider, error) {
 func (r *Registry) Names() []string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	names := make([]string, 0, len(r.factories))
-	for n := range r.factories {
-		names = append(names, n)
-	}
-	sort.Strings(names)
-	return names
+	return slices.Sorted(maps.Keys(r.factories))
 }

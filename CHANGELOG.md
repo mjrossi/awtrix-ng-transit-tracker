@@ -9,9 +9,19 @@ version may break configuration.
 
 ### Added
 
-- `agencies search <words>` finds systems by agency or place: the
-  ready-made ones, every feed in the Mobility Database's public list, and,
-  with `TRANSITLAND_API_KEY` set, Transitland's operators. A result's ID,
+- `agencies search <words>` finds agencies by name or place, each with the
+  system that carries it: the verified systems, every feed in the Mobility
+  Database's public list, and, with `TRANSITLAND_API_KEY` set,
+  Transitland's operators. An agency whose name or acronym is the search
+  exactly comes before ones that only contain it. A regional or national
+  feed that carries many agencies is marked as shared, and `systems show`
+  names it after the feed rather than one of its agencies. A Transitland
+  result whose agency publishes predictions reads `realtime?`, since
+  Transitland does not always pass them on; `systems show` says whether
+  a system is read through Transitland. Every ID the
+  Mobility Database uses works, including `ntd-`, `tdg-`, `jbda-` and
+  `odpt-` ones, while a mistyped verified ID such as `bart-2` still gets
+  a "did you mean" at once. A result's ID,
   such as `mdb-2929` or `f-eyc-cp`, works in `departures`, `stops search`
   and `systems show` without a configuration file. `systems show` prints
   its `[providers]` block, with `${NAME}` for any key the feeds need and
@@ -58,8 +68,9 @@ version may break configuration.
   then searches for your stop, offers to keep some of its lines, and saves
   a board; `--system` and `--stop` do the same without questions. A
   system found in the Mobility Database or Transitland is written out in
-  full, with its agency's name for the block (or its ID, for a name
-  without Latin letters) and `${NAME}` for any key, so the file does not
+  full, named after the agency you picked (or its ID, for a name
+  without Latin letters, or its place, for a list of agencies) and
+  `${NAME}` for any key, so the file does not
   depend on the search. A schedule too large for a small machine is
   warned about before it is downloaded.
 - `departures` with no arguments shows every board in the configuration,
@@ -71,10 +82,24 @@ version may break configuration.
   commands, flags, systems, provider blocks and board names.
 - `config example` prints the annotated example configuration.
 - `stops search --json`.
+- `stops search` and `config init` name the lines at each stop, and
+  where they go from it, when several stops share a name, such as one
+  per direction or platform: `Times Sq-42 St 7X to 34 St-Hudson Yards or
+  Flushing-Main St`, numbered lines in numeric order, and a line name an
+  agency repeats at the start of its headsigns left out. `gtfsrt` reads
+  them from the timetable, and with `timetable = false` from a cached
+  schedule only; `transitland` spends a departures request per stop, for
+  at most 10 stops, looking a day ahead. Library users can call
+  `transit.StopLiner` and sort lines with `transit.CompareLines`.
 - `--help` gives examples for each command, and the root help a
   getting-started sequence.
 - `systems` names the environment variables a system needs, and marks
   those already set.
+- `transitland` boards are titled with the stop's name from its
+  departures, without a request of their own, instead of its ID.
+- A feed whose server cannot be reached (an unknown host, a refused
+  connection or a timeout) gets a hint to try again later or another
+  search result.
 - `departures` says how many departures `--lines`, `--headsigns` or
   `--min-lead` hid when they hid all of them, and which lines the stop has.
 
@@ -93,7 +118,10 @@ version may break configuration.
   `system =` need the new ID; an old ID's error names the new one. The
   environment variables for Metro de Lisboa's keys are now
   `METRO_LISBOA_CLIENT_ID` and `METRO_LISBOA_CLIENT_SECRET`. `systems`
-  shows each system's agency.
+  lists them as the verified systems, with each one's agency, and points
+  to `agencies search` for the rest.
+- Completion and "did you mean" offer systems and provider blocks, no
+  longer provider types such as `gtfsrt`, which need settings to work.
 - A board's stops are fetched at the same time on each poll, rather than
   one after another.
 - Several errors at once, such as from `config validate` or from several
@@ -105,7 +133,11 @@ version may break configuration.
   commands that work without a configuration.
 - `stops search` aligns its IDs to the longest one, and at a terminal
   prints the `departures` command to use next.
-- Stop search also ignores the accents in å, ø, ý and ÿ.
+- Stop search also ignores the accents in å, ø, ý and ÿ, and apostrophes,
+  so "kings cross" finds "King's Cross". In `transitland`, a search of
+  several words that Transitland misses as a phrase, such as "clark lake"
+  for "Clark/Lake", is retried with its longest words, at most two more
+  requests.
 - Configuration: `[[boards]]` without `[clock]`, or `[clock]` without
   boards, is valid; `clock run` and `clock preview` still require both.
 - `departures --json` for configured boards prints an array of boards,

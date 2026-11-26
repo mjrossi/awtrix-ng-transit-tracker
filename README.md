@@ -27,10 +27,10 @@ screen instead, and a `grid` layout the next departure of up to four lines.
 > **Status:** early, and running on a real TC002. Supported today, in the
 > terminal and on the clock:
 > any agency publishing a GTFS schedule, with live predictions where it
-> also publishes GTFS-Realtime; six [ready-made systems](#systems) checked
-> against their live feeds; dedicated providers for Metro de Lisboa and
-> Carris Metropolitana; and [Transitland](https://www.transit.land/) for
-> thousands more. `agencies search` finds systems by agency or city. Only
+> also publishes GTFS-Realtime, found by agency or city with `agencies
+> search`; six [verified systems](#systems) checked against their live
+> feeds; dedicated providers for Metro de Lisboa and Carris Metropolitana;
+> and [Transitland](https://www.transit.land/) for thousands more. Only
 > the 52 × 16 TC002 is supported on the clock. What comes next is in
 > [`docs/PLAN.md`](./docs/PLAN.md).
 >
@@ -55,9 +55,8 @@ archive has build provenance:
 `gh attestation verify ARCHIVE -R mjrossi/urbanist-timetable`. Then:
 
 ```bash
-urbanist-timetable systems                          # ready-made systems
-urbanist-timetable agencies search lisbon           # any other agency, by name or city
-urbanist-timetable stops search mta-subway times sq # find a stop ID
+urbanist-timetable agencies search mta              # find your agency's system
+urbanist-timetable stops search mta-subway times sq # find a stop ID in it
 urbanist-timetable departures mta-subway 127N       # its next departures
 urbanist-timetable departures mta-subway 127N --lines 1,2,3 --watch
 ```
@@ -66,8 +65,8 @@ Systems that need no key work without a configuration file. For one that
 does, set its variables, which `systems show ID` names (such as
 `METRO_LISBOA_CLIENT_ID`), or add a block to
 `~/.config/urbanist-timetable/config.toml` as described under
-[Providers](#providers). An `agencies search` result's ID works the same
-way (`departures mdb-2929 3801`). Feed URLs work directly too:
+[Providers](#providers). Every result's ID works this way, verified or
+not (`departures mdb-2929 3801`). Feed URLs work directly too:
 
 ```bash
 urbanist-timetable departures --static https://example.org/gtfs.zip \
@@ -152,25 +151,24 @@ Docker creates an empty directory with that name in its place.
 
 ### 2. Pick a data source
 
-```bash
-urbanist-timetable systems                    # ready-made systems
-urbanist-timetable systems show mta-subway    # prints a block to paste into config.toml
-```
-
-If your agency is not listed, search for it by agency or city:
+Search for your system by agency or city:
 
 ```bash
 urbanist-timetable agencies search lisbon
-urbanist-timetable systems show mdb-2929      # a result's block to paste
+urbanist-timetable systems show mdb-2929      # prints a block to paste into config.toml
 ```
 
-The search covers the ready-made systems, the
+The search covers the [verified systems](#systems), the
 [Mobility Database](https://mobilitydatabase.org/)'s list of feeds, and,
 with `TRANSITLAND_API_KEY` set, [Transitland](https://www.transit.land/)'s
 operators, which also name the agencies inside national feeds. Every
-result's ID works in `departures`, `stops search` and `systems show`, as
-a ready-made system's does. The agency shown is whoever published the
-data, so if a name finds nothing, try the city. Results are served by the
+result's ID works in `departures`, `stops search` and `systems show`.
+The agency shown is whoever published the data, so if a name finds
+nothing, try the city; countrywide feeds, such as national railways, are
+found by the country's name. `realtime?` marks a Transitland result whose
+agency publishes predictions, which a system read through Transitland may
+lack; `systems show` says which way a system is read, and `departures`
+shows which times are live. Results are served by the
 `gtfsrt` provider where the feeds need no Transitland key, so departures
 spend no quota; looking up a Transitland ID takes two or more requests,
 saved for a week in the cache directory. `systems show` says when a feed
@@ -182,8 +180,10 @@ needs a key of its own.
 urbanist-timetable stops search mta-subway times sq
 ```
 
-The first argument is a `[providers.NAME]` block in `config.toml`, a
-system ID, or a provider that needs no settings.
+The first argument is a system ID or a `[providers.NAME]` block in
+`config.toml`. Where several stops share a name, such as one per
+direction or platform, each is listed with the lines that leave from it
+and where they go, such as `7X to 34 St-Hudson Yards or Flushing-Main St`.
 
 ### 4. Add a board
 
@@ -271,8 +271,9 @@ referenced but not set is a configuration error.
 ```bash
 urbanist-timetable departures SOURCE STOP...    # next departures; see --help for filters
 urbanist-timetable stops search SOURCE WORDS    # find stop IDs
-urbanist-timetable systems [show ID]            # ready-made systems; show prints a block for any system ID
-urbanist-timetable agencies search WORDS        # find systems by agency or city
+urbanist-timetable agencies search WORDS        # find an agency's system by name or city
+urbanist-timetable systems show ID              # print a system's block for config.toml
+urbanist-timetable systems                      # list the verified systems
 urbanist-timetable config init                  # write a configuration with one board
 urbanist-timetable config validate              # check the configuration
 urbanist-timetable cache clear                  # delete cached GTFS schedules and the feed list
@@ -282,9 +283,8 @@ urbanist-timetable clock preview --push         # ...and push it to the clock on
 urbanist-timetable clock preview --json         # print only the payload
 ```
 
-SOURCE is a `[providers.NAME]` block in the configuration, a system ID
-(ready-made, or from `agencies search`), or a provider that needs no
-settings.
+SOURCE is a system ID, from `agencies search`, or a `[providers.NAME]`
+block in the configuration.
 
 Global flags: `--config` (`TIMETABLE_CONFIG`, default
 `~/.config/urbanist-timetable/config.toml`, or under `$XDG_CONFIG_HOME`; in the
@@ -336,9 +336,11 @@ again.
 
 ## Systems
 
-Ready-made settings for systems known to work. An agency runs one or more
-systems (MTA runs the subway, LIRR and more), and a stop belongs to one
-system:
+An agency publishes the data; a system is one schedule with its realtime
+feeds, and an agency may run several (MTA runs the subway, LIRR and more);
+a stop belongs to one system. `agencies search` finds an agency's systems
+by its name or city. These are verified: checked against their live feeds, with short
+IDs and any settings their feeds need:
 
 | System | Agency | City | Modes |
 |---|---|---|---|
@@ -358,11 +360,11 @@ system = "mta-subway"
 
 Other settings in the block override the system's.
 
-IDs name the agency, and the system when the agency runs more than one:
-`hsl`, or `mta-subway`. Systems found with `agencies search` have the IDs
-of the directory they come from: Mobility Database IDs such as `mdb-2929`
-or `tld-716`, and Transitland feed IDs such as `f-eyc-cp`. Where a
-directory lists a ready-made system, search shows the ready-made one.
+Verified IDs name the agency, and the system when the agency runs more
+than one: `hsl`, or `mta-subway`. Other systems have the IDs of the
+directory they come from: Mobility Database IDs such as `mdb-2929` or
+`tld-716`, and Transitland feed IDs such as `f-eyc-cp`. Where a directory
+lists a verified system, search shows the verified one.
 
 ## Providers
 
@@ -405,7 +407,7 @@ Prefer an agency's own feeds where you can: they have no quota. Where that
 is awkward (a feed behind a key, realtime that Transitland merges from a
 regional feed, or a schedule zip too large for your NAS), `transitland`
 serves the agency from one API, schedule and realtime merged. Data via
-Transitland. `agencies search` picks for you: it writes a `gtfsrt` block
+Transitland. `systems show` picks for you: it writes a `gtfsrt` block
 when Transitland lists keyless feed URLs, and a `transitland` block
 otherwise.
 
@@ -564,7 +566,7 @@ which uses `catalog`.
 | `pkg/transit` | The departure model, the `Provider` interface, `Filter` and `Group` |
 | `pkg/transit/providers` | `Open`: a provider from a system or type name |
 | `pkg/transit/providers/gtfsrt` | Any agency with a GTFS schedule, GTFS-Realtime, or both, from its URLs |
-| `pkg/transit/catalog` | The ready-made systems |
+| `pkg/transit/catalog` | The verified systems |
 | `pkg/transit/transittest` | The contract suite for a provider of your own |
 | `pkg/awtrix` | A typed client for AWTRIX NG clocks |
 

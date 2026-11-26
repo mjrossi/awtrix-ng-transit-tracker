@@ -2,6 +2,7 @@ package directory
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/csv"
 	"errors"
@@ -11,13 +12,10 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
-
-	"github.com/mjrossi/urbanist-timetable/internal/fold"
-	"github.com/mjrossi/urbanist-timetable/pkg/transit/catalog"
 )
 
 // DefaultMobilityDBURL is the Mobility Database's list of every feed,
@@ -234,8 +232,8 @@ func parseMDB(b []byte) (*mdbFeeds, error) {
 			continue
 		}
 		feed := mdbFeed{
-			url:   firstNonEmpty(get("urls.direct_download"), get("urls.latest")),
-			auth:  atoi(get("urls.authentication_type")),
+			url:   cmp.Or(get("urls.direct_download"), get("urls.latest")),
+			auth:  authType(get("urls.authentication_type")),
 			info:  get("urls.authentication_info"),
 			param: get("urls.api_key_parameter_name"),
 		}
@@ -289,7 +287,7 @@ func (s *mdbSystem) finish() {
 		if _, ok := s.keys[feed.info]; ok {
 			continue
 		}
-		v := keyVar(s.sys.Agency, s.sys.ID)
+		v := keyVar(s.sys)
 		if n := len(s.keys); n > 0 {
 			v = strings.TrimSuffix(v, "_API_KEY") + fmt.Sprintf("_%d_API_KEY", n+1)
 		}
@@ -406,99 +404,12 @@ func (s *mdbSystem) block() Block {
 	return Block{Type: "gtfsrt", Options: opts, Comment: comment}
 }
 
-var acronym = regexp.MustCompile(`\(([A-Za-z][A-Za-z0-9 .\-]{1,11})\)`)
-
-// agencyShort is an agency's acronym in parentheses, as the list often
-// gives one, or its first two words. Key variables and block names are
-// made from it, so a block and its key read alike.
-func agencyShort(agency string) string {
-	if m := acronym.FindStringSubmatch(agency); m != nil {
-		return m[1]
-	}
-	words := strings.Fields(agency)
-	return strings.Join(words[:min(len(words), 2)], " ")
-}
-
-// BlockName names the system's [providers] block after its agency, as its
-// key variable is, or after its ID when the agency's name has no Latin
-// letters or digits.
-func (s System) BlockName() string {
-	var b strings.Builder
-	for _, r := range fold.String(agencyShort(s.Agency)) {
-		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
-			b.WriteRune(r)
-		case b.Len() > 0 && !strings.HasSuffix(b.String(), "-"):
-			b.WriteByte('-')
-		}
-	}
-	name := strings.Trim(b.String(), "-")
-	if len(name) > 32 {
-		name = strings.TrimRight(name[:32], "-")
-	}
-	if name == "" {
-		return s.ID
-	}
-	return name
-}
-
-// keyVar names the environment variable for an agency's key, from
-// agencyShort. Names this tool or its catalog already use get the system's
-// ID instead, so a directory entry cannot be handed another service's key.
-func keyVar(agency, id string) string {
-	var b strings.Builder
-	for _, r := range strings.ToUpper(fold.String(agencyShort(agency))) {
-		switch {
-		case r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
-			b.WriteRune(r)
-		case b.Len() > 0 && !strings.HasSuffix(b.String(), "_"):
-			b.WriteByte('_')
-		}
-	}
-	v := strings.Trim(b.String(), "_") + "_API_KEY"
-	if v == "_API_KEY" || reservedVar(v) {
-		v = strings.ToUpper(strings.ReplaceAll(id, "-", "_")) + "_API_KEY"
-	}
-	return v
-}
-
-// reservedVar reports whether v is a variable this tool reads for itself
-// or for a catalog system.
-func reservedVar(v string) bool {
-	if v == TransitlandKeyVar || strings.HasPrefix(v, "TIMETABLE_") || strings.HasPrefix(v, "AWTRIX_") {
-		return true
-	}
-	all, _ := catalog.All()
-	for _, s := range all {
-		for _, o := range s.RequiredOptions {
-			if s.EnvName(o) == v {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func firstNonEmpty(ss ...string) string {
-	for _, s := range ss {
-		if s != "" {
-			return s
-		}
-	}
-	return ""
-}
-
-func joinNonEmpty(sep string, ss ...string) string {
-	return strings.Join(slices.DeleteFunc(ss, func(s string) bool { return s == "" }), sep)
-}
-
-func atoi(s string) int {
-	n := 0
-	for _, r := range s {
-		if r < '0' || r > '9' {
-			return 0
-		}
-		n = n*10 + int(r-'0')
+// authType reads urls.authentication_type, where anything but a number
+// means no key.
+func authType(s string) int {
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return authNone
 	}
 	return n
 }

@@ -11,7 +11,7 @@ import (
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/providers"
 )
 
-// Open builds a ready-made system's provider. Keeping schedules in a cache
+// Open builds a catalog system's provider. Keeping schedules in a cache
 // directory makes later runs fast. This example calls the live feeds, so it
 // is compiled but not run.
 func ExampleOpen() {

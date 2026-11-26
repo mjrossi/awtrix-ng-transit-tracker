@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"regexp"
 	"slices"
@@ -86,16 +87,17 @@ type Block struct {
 	Comment string
 }
 
-// TOML renders the block as a [providers] table named name.
+// TOML renders the block as a [providers] table named name, with the usual
+// keys in reading order and any others after them.
 func (b Block) TOML(name string) (string, error) {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "[providers.%s]\n", tomlout.Key(name))
 	settings := b.Settings()
-	for _, k := range []string{"system", "type", "static_url", "realtime_urls", "feed", "api_key", "headers"} {
-		v, ok := settings[k]
-		if !ok {
-			continue
-		}
+	keys := slices.SortedFunc(maps.Keys(settings), func(x, y string) int {
+		return cmp.Or(cmp.Compare(keyOrder(x), keyOrder(y)), strings.Compare(x, y))
+	})
+	for _, k := range keys {
+		v := settings[k]
 		s, err := tomlout.Value(v)
 		if err != nil {
 			return "", err
@@ -103,6 +105,16 @@ func (b Block) TOML(name string) (string, error) {
 		fmt.Fprintf(&sb, "%s = %s\n", k, s)
 	}
 	return sb.String(), nil
+}
+
+// keyOrder ranks the keys blocks usually have, in the order they read
+// best; others rank after them.
+func keyOrder(k string) int {
+	order := []string{"system", "type", "static_url", "realtime_urls", "feed", "api_key", "headers"}
+	if i := slices.Index(order, k); i >= 0 {
+		return i
+	}
+	return len(order)
 }
 
 // Settings is the block as configuration settings.
@@ -141,15 +153,28 @@ type Directory struct {
 const TransitlandKeyVar = "TRANSITLAND_API_KEY"
 
 // IsID reports whether id has the shape of a directory ID: a Mobility
-// Database ID such as "mdb-53" or "tld-716", or a Transitland feed Onestop
-// ID such as "f-9q9-bart".
+// Database ID such as "mdb-53", "tld-716" or "ntd-23", or a Transitland
+// feed Onestop ID such as "f-9q9-bart".
 func IsID(id string) bool {
-	return mdbID.MatchString(id) || strings.HasPrefix(id, "f-") && len(id) > 2
+	return mdbID.MatchString(id) && !catalogPrefix(id) || strings.HasPrefix(id, "f-") && len(id) > 2
 }
 
-// mdbID names only the Mobility Database's GTFS prefixes, so a mistyped
-// catalog ID such as "bart-2" does not download its list.
-var mdbID = regexp.MustCompile(`^(mdb|tld)-[0-9]+$`)
+// mdbID takes any prefix: the Mobility Database names feeds after where it
+// found them (mdb, tld, ntd, tdg, jbda, odpt), and adds sources over time.
+// The catalog keeps its IDs out of this shape.
+var mdbID = regexp.MustCompile(`^[a-z]+-[0-9]+$`)
+
+// catalogPrefix reports whether id starts like a catalog ID, as "bart-2"
+// does: a mistyped catalog ID, better answered with a suggestion at once
+// than by loading the Mobility Database's list to find it missing.
+func catalogPrefix(id string) bool {
+	prefix, _, _ := strings.Cut(id, "-")
+	all, _ := catalog.All()
+	return slices.ContainsFunc(all, func(s catalog.System) bool {
+		first, _, _ := strings.Cut(s.ID, "-")
+		return first == prefix
+	})
+}
 
 // Results is what Search found.
 type Results struct {
@@ -168,8 +193,9 @@ type Results struct {
 const SearchLimit = 20
 
 // Search finds systems whose agency, name or place contain every word of
-// words. Catalog systems come first, then systems with realtime data, then
-// schedule-only ones; directory entries for a catalog system are left out.
+// words. Catalog systems come first, then those whose agency or name is
+// words exactly, then systems with realtime data, then schedule-only ones;
+// directory entries for a catalog system are left out.
 func (d *Directory) Search(ctx context.Context, words string) (Results, error) {
 	if strings.TrimSpace(words) == "" {
 		return Results{}, errors.New("give words to search for, such as an agency or a city")
@@ -221,7 +247,7 @@ func (d *Directory) Search(ctx context.Context, words string) (Results, error) {
 	}
 
 	slices.SortStableFunc(found, func(a, b System) int {
-		return cmp.Or(cmp.Compare(rank(a), rank(b)), cmp.Compare(sourceOrder(a.Source), sourceOrder(b.Source)))
+		return cmp.Or(cmp.Compare(rank(a, words), rank(b, words)), cmp.Compare(sourceOrder(a.Source), sourceOrder(b.Source)))
 	})
 	if len(found) > SearchLimit {
 		res.More = len(found) - SearchLimit
@@ -237,7 +263,9 @@ func (d *Directory) Search(ctx context.Context, words string) (Results, error) {
 // matches reports whether every word of search starts a word of text,
 // ignoring case and accents, so "mta" finds "MTA" but not "SFMTA". Words
 // split at anything but letters and digits; a search word with such a
-// character, as "metro-north", matches across it.
+// character, as "metro-north", matches across it. Unlike stop search
+// (transit.MatchesSearch), a word must start a word: agency names are full
+// of acronyms that contain one another.
 func matches(text, search string) bool {
 	words := strings.Fields(fold.String(search))
 	if len(words) == 0 {
@@ -268,16 +296,51 @@ func startsWord(text, w string) bool {
 
 func isWordChar(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }
 
-func rank(s System) int {
-	switch {
-	case s.Source == SourceCatalog:
+func rank(s System, words string) int {
+	if s.Source == SourceCatalog {
 		return 0
-	case s.Data == DataRealtime:
-		return 1
-	default:
-		return 2
 	}
+	r := 1
+	if !named(s, words) {
+		r += 2
+	}
+	if s.Data != DataRealtime {
+		r++
+	}
+	return r
 }
+
+// named reports whether words is the system's agency or name exactly, with
+// or without a part in parentheses, or that part or one of the names it
+// separates: an acronym such as "MTA" in "Metropolitan Transit Authority
+// (MTA)", or "Muni" in "(SFMTA - Muni)", but not "rapid" in "(Rapid
+// Transit)". "mta" then ranks New York's MTA above Nashville MTA WeGo,
+// which only contains it.
+func named(s System, words string) bool {
+	want := fold.Slug(words, ' ', 0)
+	if want == "" {
+		return false
+	}
+	for _, text := range []string{s.Agency, s.Name} {
+		names := []string{text, parens.ReplaceAllString(text, "")}
+		for _, m := range parens.FindAllStringSubmatch(text, -1) {
+			names = append(names, m[1])
+			names = append(names, nameSeparator.Split(m[1], -1)...)
+		}
+		for _, n := range names {
+			if fold.Slug(n, ' ', 0) == want {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+var parens = regexp.MustCompile(`\(([^()]*)\)`)
+
+// nameSeparator splits the names in parentheses, as in "SFMTA - Muni" or
+// "SFMTA/Muni"; a dash without spaces, as in "Metro-North", joins a name.
+var nameSeparator = regexp.MustCompile(`\s*[/,;|]\s*|\s+[-–—]\s+`)
 
 func sourceOrder(s Source) int {
 	return slices.Index([]Source{SourceCatalog, SourceMobilityDB, SourceTransitland}, s)

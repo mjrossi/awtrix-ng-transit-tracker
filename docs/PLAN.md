@@ -27,11 +27,9 @@ and *Urbanist Atlas*.
 
 ## Direction
 
-The terminal tool, the clock and the library are in place, as the
-[design](./superpowers/specs/2026-11-25-clock-cli-library-design.md)
-planned. v0.7 brings timetabled departures in `gtfsrt`, and finding an
-agency from the command line (`agencies search`, and `config init` by
-agency or city). After it, the next work comes from "Later", and a version
+The terminal tool, the clock and the library are in place. v0.7 brings
+timetabled departures in `gtfsrt`, and finding a system by agency or city
+from the command line (`agencies search`, and `config init`). After it, the next work comes from "Later", and a version
 is cut when there is a reason to; each release ships the image and
 binaries for Linux, macOS and Windows. A Homebrew tap and a mise or aqua
 registry entry wait until someone asks: `mise use github:...` already

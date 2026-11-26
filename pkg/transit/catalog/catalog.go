@@ -1,6 +1,6 @@
-// Package catalog holds ready-made provider settings for transit systems
-// known to work, so a configuration can name a system instead of spelling
-// out feed URLs:
+// Package catalog holds provider settings for transit systems verified
+// against their live feeds, so a configuration can name a system instead
+// of spelling out feed URLs:
 //
 //	[providers.nyc]
 //	system = "mta-subway"

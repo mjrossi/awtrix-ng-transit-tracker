@@ -24,6 +24,7 @@ type departuresResponse struct {
 }
 
 type wireStop struct {
+	StopName   string          `json:"stop_name"`
 	Departures []wireDeparture `json:"departures"`
 	// Children are a station's platforms; a station's departures are
 	// listed under them.

@@ -6,6 +6,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 	"unicode"
@@ -156,5 +157,66 @@ func TestTable(t *testing.T) {
 	want := "mdb-53   BART             realtime\ntld-716  Metro de Lisboa  schedule\nx\n"
 	if b.String() != want {
 		t.Errorf("got\n%q\nwant\n%q", b.String(), want)
+	}
+}
+
+func TestStopsWithLines(t *testing.T) {
+	c, e := transit.Line{ID: "r-c", ShortName: "C"}, transit.Line{ID: "r-e", ShortName: "E"}
+	stops := []transit.Stop{{ID: "431", Name: "3rd Ave & Pike St"}, {ID: "433", Name: "3rd Ave & Pike St"}, {ID: "9", Name: "Pike Place"}}
+	var b bytes.Buffer
+	termout.Stops(&b, stops, true, map[string][]transit.StopLine{
+		"431": {{Line: c, Headsigns: []string{"Downtown"}}, {Line: e}},
+		"433": {{Line: transit.Line{ID: "27", ShortName: "27"}, Headsigns: []string{"Goleta", "Isla Vista", "UCSB", "Zoo"}}},
+		"9":   {{Line: c}, {Line: e}},
+	})
+	want := "  1  431  3rd Ave & Pike St  C to Downtown; E\n" +
+		"  2  433  3rd Ave & Pike St  27 to Goleta or Isla Vista or 2 more\n" +
+		"  3  9    Pike Place         C, E\n"
+	if b.String() != want {
+		t.Errorf("got\n%s\nwant\n%s", b.String(), want)
+	}
+}
+
+func TestStopsWithManyLines(t *testing.T) {
+	var many []transit.StopLine
+	for i := 1; i <= 10; i++ {
+		n := strconv.Itoa(i)
+		many = append(many, transit.StopLine{Line: transit.Line{ID: n, ShortName: n}, Headsigns: []string{"X" + n}})
+	}
+	var b bytes.Buffer
+	termout.Stops(&b, []transit.Stop{{ID: "1", Name: "Hub"}}, false, map[string][]transit.StopLine{"1": many})
+	want := "1  Hub  1 to X1; 2 to X2; 3 to X3; 4 to X4; 5 to X5; 6 to X6; 7 to X7; 8 to X8 and 2 more lines\n"
+	if b.String() != want {
+		t.Errorf("got\n%s\nwant\n%s", b.String(), want)
+	}
+}
+
+// Some agencies start headsigns with the line's name, as SBMTD's "27 Isla
+// Vista, UCSB" does; the name is not said twice.
+func TestStopsHeadsignRepeatsLine(t *testing.T) {
+	var b bytes.Buffer
+	termout.Stops(&b, []transit.Stop{{ID: "16", Name: "Seville"}}, false, map[string][]transit.StopLine{
+		"16": {
+			{Line: transit.Line{ID: "2", ShortName: "2"}, Headsigns: []string{"27th Street"}},
+			{Line: transit.Line{ID: "27", ShortName: "27"}, Headsigns: []string{"27 Isla Vista, UCSB"}},
+		},
+	})
+	want := "16  Seville  2 to 27th Street; 27 to Isla Vista, UCSB\n"
+	if b.String() != want {
+		t.Errorf("got\n%s\nwant\n%s", b.String(), want)
+	}
+}
+
+// Headsigns that differ only by a repeated line name are one destination,
+// and stay in order once it is dropped; commas inside headsigns are not
+// mistaken for a list.
+func TestStopsHeadsignsAfterLineName(t *testing.T) {
+	var b bytes.Buffer
+	termout.Stops(&b, []transit.Stop{{ID: "15", Name: "Seville"}}, false, map[string][]transit.StopLine{
+		"15": {{Line: transit.Line{ID: "27", ShortName: "27"}, Headsigns: []string{"27 Isla Vista", "27 Camino Real Mkt, Isla Vista", "Isla Vista"}}},
+	})
+	want := "15  Seville  27 to Camino Real Mkt, Isla Vista or Isla Vista\n"
+	if b.String() != want {
+		t.Errorf("got\n%s\nwant\n%s", b.String(), want)
 	}
 }

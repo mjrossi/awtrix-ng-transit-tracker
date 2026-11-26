@@ -1,0 +1,18 @@
+{
+ "operators": [
+  {
+   "agencies": [{"agency_name": "České dráhy", "places": [{"adm0_name": "Czech Republic", "adm1_name": "Prague", "city_name": "Prague"}]}],
+   "feeds": [{"name": "Germany (DELFI)", "onestop_id": "f-delfi~de", "spec": "GTFS"}],
+   "name": "České dráhy, a.s.",
+   "onestop_id": "o-u2-ceskedrahy",
+   "short_name": "ČD"
+  },
+  {
+   "agencies": [{"agency_name": "Berliner Verkehrsbetriebe", "places": [{"adm0_name": "Germany", "adm1_name": "Berlin", "city_name": "Berlin"}]}],
+   "feeds": [{"name": "Germany (DELFI)", "onestop_id": "f-delfi~de", "spec": "GTFS"}],
+   "name": "Berliner Verkehrsbetriebe",
+   "onestop_id": "o-u33-bvg",
+   "short_name": "BVG"
+  }
+ ]
+}

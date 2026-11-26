@@ -19,6 +19,7 @@ import (
 	"github.com/mjrossi/urbanist-timetable/internal/clockout"
 	"github.com/mjrossi/urbanist-timetable/internal/config"
 	"github.com/mjrossi/urbanist-timetable/internal/directory"
+	"github.com/mjrossi/urbanist-timetable/internal/fold"
 	"github.com/mjrossi/urbanist-timetable/internal/render"
 	"github.com/mjrossi/urbanist-timetable/internal/scheduler"
 	"github.com/mjrossi/urbanist-timetable/internal/termout"
@@ -266,75 +267,6 @@ func writeQuotaUses(w io.Writer, uses []config.QuotaUse) {
 	}
 }
 
-func systemsCommand() *cli.Command {
-	return &cli.Command{
-		Name:  "systems",
-		Usage: "list ready-made transit systems, or show how to configure one",
-		Description: "Systems work by ID in `departures` and `stops search` without a configuration\n" +
-			"file. Those that need keys read them from the environment variables listed.\n" +
-			"`systems show` also takes the IDs `agencies search` finds.",
-		Action: func(_ context.Context, c *cli.Command) error {
-			if c.Args().Present() {
-				return unknownSystemsArgument(c)
-			}
-			w := c.Root().Writer
-			all, err := catalog.All()
-			if err != nil {
-				return err
-			}
-			for _, s := range all {
-				needs := ""
-				if len(s.RequiredOptions) > 0 {
-					vars := make([]string, len(s.RequiredOptions))
-					for i, k := range s.RequiredOptions {
-						vars[i] = s.EnvName(k)
-						if os.Getenv(vars[i]) != "" {
-							vars[i] += " (set)"
-						}
-					}
-					needs = "  needs " + strings.Join(vars, ", ")
-				}
-				fmt.Fprintf(w, "%-28s %-22s %-24s %s%s\n", s.ID, s.Title(), s.City, strings.Join(s.Modes, ", "), needs)
-			}
-			fmt.Fprintln(w, "\nShow how to configure one: urbanist-timetable systems show <id>")
-			return nil
-		},
-		Commands: []*cli.Command{{
-			Name:      "show",
-			Usage:     "print a system's details and a config snippet",
-			ArgsUsage: "<id>",
-			Description: "Prints what a system covers, the environment variables it needs,\n" +
-				"and a [providers] block to paste into the configuration.\n\n" +
-				"   urbanist-timetable systems show mta-subway",
-			ShellComplete: completeFirst(completeSystems),
-			Action: func(ctx context.Context, c *cli.Command) error {
-				if c.Args().Len() != 1 {
-					return newUsageError(c, "give one system ID, such as `systems show bart`")
-				}
-				id := c.Args().First()
-				s, ok := catalog.Get(id)
-				if !ok && directory.IsID(id) {
-					return showDirectorySystem(ctx, c, id)
-				}
-				if !ok {
-					return unknownSystemError(id)
-				}
-				w := c.Root().Writer
-				fmt.Fprintf(w, "# %s, %s (%s)\n", s.Title(), s.City, s.Country)
-				fmt.Fprintf(w, "# Status: %s, last verified %s. Data: %s.\n", s.Status, s.Verified, s.DataLicense)
-				fmt.Fprintf(w, "# More: %s\n", s.InfoURL)
-				for line := range strings.SplitSeq(strings.TrimSpace(s.Notes), "\n") {
-					fmt.Fprintf(w, "# %s\n", line)
-				}
-				fmt.Fprintf(w, "\n%s", providerBlock(s))
-				fmt.Fprintf(w, "\n# Find stop IDs: urbanist-timetable stops search %s <words...>\n", s.ID)
-				fmt.Fprintf(w, "# Example stop: %s\n", s.SampleStop)
-				return nil
-			},
-		}},
-	}
-}
-
 func stopsCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "stops",
@@ -343,9 +275,8 @@ func stopsCommand() *cli.Command {
 			Name:      "search",
 			Usage:     "search a source's stops by name or ID",
 			ArgsUsage: "<source> <words...>",
-			Description: "<source> is a [providers.NAME] block in the config, a system from `systems`\n" +
-				"or `agencies search`, or a provider that needs no settings. Prints stop IDs\n" +
-				"for `departures`.\n\n" +
+			Description: "<source> is a system ID from `agencies search` or a [providers.NAME] block\n" +
+				"in the config. Prints stop IDs for `departures`.\n\n" +
 				"   urbanist-timetable stops search mta-subway times sq\n" +
 				"   urbanist-timetable stops search bart embarcadero",
 			Flags:         []cli.Flag{&cli.BoolFlag{Name: "json", Usage: "print JSON instead of text"}},
@@ -372,7 +303,7 @@ func stopsCommand() *cli.Command {
 				if err != nil {
 					return err
 				}
-				return writeStops(c, name, stops)
+				return writeStops(ctx, c, name, p, stops)
 			},
 		}},
 	}
@@ -435,8 +366,9 @@ func envSettings(sys catalog.System) map[string]any {
 	return settings
 }
 
-// sourceNames lists what can name a source: the file's provider blocks,
-// catalog systems and provider types, and with boards the file's boards.
+// sourceNames lists what can name a source: the file's provider blocks and
+// catalog systems, and with boards the file's boards. Provider types are
+// left out: every one either needs settings or is behind a system.
 func sourceNames(path string, boards bool) []string {
 	boardNames, blocks := config.Names(path)
 	var names []string
@@ -444,13 +376,12 @@ func sourceNames(path string, boards bool) []string {
 		names = boardNames
 	}
 	names = append(names, blocks...)
-	names = append(names, systemIDs()...)
-	return append(names, providers.Registry().Names()...)
+	return append(names, systemIDs()...)
 }
 
 // writeStops prints search results, and at a terminal the command that
 // uses them.
-func writeStops(c *cli.Command, source string, stops []transit.Stop) error {
+func writeStops(ctx context.Context, c *cli.Command, source string, p transit.Provider, stops []transit.Stop) error {
 	w := c.Root().Writer
 	if c.Bool("json") {
 		return termout.StopsJSON(w, stops)
@@ -459,11 +390,41 @@ func writeStops(c *cli.Command, source string, stops []transit.Stop) error {
 		fmt.Fprintln(w, "no stops found")
 		return nil
 	}
-	termout.Stops(w, stops, false)
+	termout.Stops(w, stops, false, sharedNameLines(ctx, p, stops))
 	if isTerminal(w) {
 		fmt.Fprintf(c.Root().ErrWriter, "\nnext: urbanist-timetable departures %s <ID>\n", source)
 	}
 	return nil
+}
+
+// maxLinedStops caps the stops sharedNameLines asks about: each can cost
+// a request against a quota.
+const maxLinedStops = 10
+
+// sharedNameLines asks p which lines serve the stops whose names repeat,
+// such as one stop per side of a street, and where they go from each, so
+// they can be told apart. It gives nothing when p cannot tell, or the
+// names are all different; a failure only loses the hint.
+func sharedNameLines(ctx context.Context, p transit.Provider, stops []transit.Stop) map[string][]transit.StopLine {
+	liner, ok := p.(transit.StopLiner)
+	if !ok {
+		return nil
+	}
+	count := map[string]int{}
+	for _, s := range stops {
+		count[fold.String(s.Name)]++
+	}
+	var ids []string
+	for _, s := range stops {
+		if count[fold.String(s.Name)] > 1 && len(ids) < maxLinedStops {
+			ids = append(ids, s.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	lines, _ := liner.StopLines(ctx, ids, clock())
+	return lines
 }
 
 func filterBoards(boards []config.Board, name string) []config.Board {
@@ -505,23 +466,6 @@ func printRows(w io.Writer, b config.Board, rows []transit.Row, now time.Time) {
 	}
 }
 
-func unknownSystemError(id string) error {
-	if to, ok := catalog.Renamed(id); ok {
-		return fmt.Errorf("%w %q: it was renamed %q", catalog.ErrUnknownSystem, id, to)
-	}
-	return fmt.Errorf("%w %q%s", catalog.ErrUnknownSystem, id, didYouMean(id, systemIDs()))
-}
-
-// unknownSystemsArgument answers `systems ID`, which is most often meant as
-// `systems show ID`.
-func unknownSystemsArgument(c *cli.Command) error {
-	arg := c.Args().First()
-	if _, ok := catalog.Get(arg); ok && c.Args().Len() == 1 {
-		return newUsageError(c, "unknown command %q; did you mean `systems show %s`?", arg, arg)
-	}
-	return unknownCommandError(c, arg)
-}
-
 func cacheCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "cache",
@@ -530,8 +474,8 @@ func cacheCommand() *cli.Command {
 			Name:  "clear",
 			Usage: "delete the cached GTFS schedules; the next run downloads them again",
 			Action: func(_ context.Context, c *cli.Command) error {
-				dir := c.String("cache-dir")
-				if dir == "off" {
+				dir := cacheDir(c)
+				if dir == "" {
 					return newUsageError(c, "the schedule cache is off (--cache-dir off); there is nothing to clear")
 				}
 				n, freed, err := providers.ClearScheduleCache(dir, clock())

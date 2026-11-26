@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"regexp"
 	"slices"
 	"strings"
@@ -30,8 +31,8 @@ func newUsageError(c *cli.Command, format string, args ...any) error {
 	return &usageError{msg: fmt.Sprintf(format, args...), command: c.FullName()}
 }
 
-// sourceError is a source that could not be opened: a name that is no block,
-// system or provider, or a provider that needs settings the command line
+// sourceError is a source that could not be opened: a name that is no
+// system or block, or a provider type that needs settings the command line
 // cannot give.
 type sourceError struct {
 	name       string
@@ -119,11 +120,11 @@ func hint(err error) string {
 	case errors.As(err, &missing):
 		return "run `urbanist-timetable systems show " + missing.System + "`"
 	case errors.As(err, &source) && errors.Is(source, registry.ErrUnknownProvider):
-		h := fmt.Sprintf("%q is not a [providers] block in %s, a system, or a provider; ", source.name, source.configPath)
+		h := fmt.Sprintf("%q is not a system or a [providers] block in %s; ", source.name, source.configPath)
 		if source.suggestion != "" {
 			return h + fmt.Sprintf("did you mean %q?", source.suggestion)
 		}
-		return h + "list systems with `urbanist-timetable systems`, or find one with `urbanist-timetable agencies search <agency or city>`"
+		return h + "find your agency's system with `urbanist-timetable agencies search <agency or city>`"
 	case errors.As(err, &source):
 		return fmt.Sprintf("%s needs settings: add a [providers.%s] block to %s (see `urbanist-timetable config example`)", source.name, source.name, source.configPath)
 	case errors.As(err, &stops):
@@ -132,8 +133,27 @@ func hint(err error) string {
 		return "run `urbanist-timetable systems`"
 	case errors.Is(err, transit.ErrUnknownStop):
 		return "find stop IDs with `urbanist-timetable stops search <source> <words>`"
+	case unanswered(err):
+		return noAnswerHint
 	}
 	return ""
+}
+
+const noAnswerHint = "the server did not answer: try again later; if a system found with `urbanist-timetable agencies search` keeps failing, its feed may have moved, so try another result"
+
+// unanswered reports whether err is a server that could not be reached:
+// an unknown host, a refused connection, or a timeout. Other network
+// errors, such as a bad certificate or a refused redirect, are answers the
+// hint would misdescribe.
+func unanswered(err error) bool {
+	var (
+		dns *net.DNSError
+		op  *net.OpError
+		ne  net.Error
+	)
+	return errors.As(err, &dns) ||
+		errors.As(err, &op) && op.Op == "dial" ||
+		errors.As(err, &ne) && ne.Timeout()
 }
 
 // onUsageError replaces urfave/cli's response to a bad flag, which prints

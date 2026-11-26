@@ -2,7 +2,8 @@
 // terminal or on an AWTRIX NG clock.
 //
 //	urbanist-timetable departures mta-subway 127N
-//	urbanist-timetable stops search carrismetropolitana cais sodre
+//	urbanist-timetable agencies search lisbon
+//	urbanist-timetable stops search carris-metropolitana cais sodre
 //	urbanist-timetable systems show mta-subway
 //	urbanist-timetable config validate
 //	urbanist-timetable clock run
@@ -59,11 +60,10 @@ func newRootCommand() *cli.Command {
 		Usage:   "show public transit departures in a terminal or on a pixel clock",
 		Version: version,
 		Description: "Getting started:\n\n" +
-			"   urbanist-timetable systems                           # ready-made systems\n" +
-			"   urbanist-timetable stops search mta-subway times sq  # find a stop ID\n" +
+			"   urbanist-timetable agencies search mta               # find your agency's system\n" +
+			"   urbanist-timetable stops search mta-subway times sq  # find a stop ID in it\n" +
 			"   urbanist-timetable departures mta-subway 127N        # its next departures\n" +
-			"   urbanist-timetable config init                       # save stops to show by default\n\n" +
-			"Not listed? `urbanist-timetable agencies search <agency or city>` finds more.",
+			"   urbanist-timetable config init                       # save stops to show by default",
 		EnableShellCompletion:           true,
 		ConfigureShellCompletionCommand: showCompletionCommand,
 		Flags: []cli.Flag{
@@ -137,11 +137,15 @@ func defaultLogFormat() string {
 // providerOptions passes --cache-dir and the logger to the providers, so a
 // slow schedule download says what it is doing.
 func providerOptions(c *cli.Command) []providers.Option {
-	dir := c.String("cache-dir")
-	if dir == "off" {
-		dir = ""
+	return []providers.Option{providers.WithScheduleCache(cacheDir(c)), providers.WithLogger(newLogger(c))}
+}
+
+// cacheDir is --cache-dir, or empty when it is off.
+func cacheDir(c *cli.Command) string {
+	if dir := c.String("cache-dir"); dir != "off" {
+		return dir
 	}
-	return []providers.Option{providers.WithScheduleCache(dir), providers.WithLogger(newLogger(c))}
+	return ""
 }
 
 // newLogger builds the logger the global flags describe. Their validators

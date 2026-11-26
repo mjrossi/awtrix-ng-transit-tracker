@@ -162,53 +162,13 @@ func (p *Provider) Departures(ctx context.Context, q transit.Query) ([]transit.D
 		return nil, staticErr
 	}
 
-	var (
-		feeds          []feed
-		problems       []error
-		servedByOK     bool
-		servedByFailed bool
-	)
-	for _, u := range p.cfg.RealtimeURLs {
-		// On failure, f is the last feed that decoded, or empty if none has.
-		f, err := p.feeds[u].Get(ctx, q.Now)
-		if err != nil {
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
-			}
-			problems = append(problems, err)
-			servedByFailed = servedByFailed || f.serves(st, q.StopID)
-			continue
-		}
-		servedByOK = servedByOK || f.serves(st, q.StopID)
-		feeds = append(feeds, f)
+	feeds, problems, servedByOK, servedByFailed, err := p.readFeeds(ctx, st, q)
+	if err != nil {
+		return nil, err
 	}
-
-	var (
-		plans    []planned
-		hasTimes bool
-		ttErr    error
-	)
-	if st != nil && st.tt != nil {
-		// Trips are looked for from a while before q.Now, since a late one
-		// can still be ahead, and a little after the window for early ones.
-		from, to := q.Now.Add(-maxDelay), q.Now.Add(q.Window+maxEarly)
-		sts, err := st.tt.stopTimes(ctx, q.StopID)
-		if errors.Is(err, errTimetableClosed) {
-			// A refresh replaced the schedule during the query.
-			if cur := p.currentStatic(); cur != st && cur.tt != nil {
-				st = cur
-				sts, err = st.tt.stopTimes(ctx, q.StopID)
-			}
-		}
-		switch {
-		case ctx.Err() != nil:
-			return nil, ctx.Err()
-		case err != nil:
-			ttErr = fmt.Errorf("timetable: %w", err)
-		default:
-			hasTimes = len(sts) > 0
-			plans = st.planned(sts, from, to)
-		}
+	st, plans, hasTimes, ttErr := p.timetabled(ctx, st, q)
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 
 	if !hasTimes && len(p.cfg.RealtimeURLs) > 0 && (len(feeds) == 0 || servedByFailed && !servedByOK) {
@@ -256,6 +216,59 @@ func (p *Provider) Departures(ctx context.Context, q transit.Query) ([]transit.D
 		return out, &transit.PartialError{Err: errors.Join(problems...)}
 	}
 	return out, nil
+}
+
+// readFeeds gets every realtime feed, and reports whether one that loaded,
+// or one that failed, is known to serve q.StopID. It fails only when ctx
+// ends; a feed's failure is one of the problems.
+func (p *Provider) readFeeds(ctx context.Context, st *static, q transit.Query) (feeds []feed, problems []error, servedByOK, servedByFailed bool, err error) {
+	for _, u := range p.cfg.RealtimeURLs {
+		// On failure, f is the last feed that decoded, or empty if none has.
+		f, err := p.feeds[u].Get(ctx, q.Now)
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil, nil, false, false, ctx.Err()
+			}
+			problems = append(problems, err)
+			servedByFailed = servedByFailed || f.serves(st, q.StopID)
+			continue
+		}
+		servedByOK = servedByOK || f.serves(st, q.StopID)
+		feeds = append(feeds, f)
+	}
+	return feeds, problems, servedByOK, servedByFailed, nil
+}
+
+// timetabled returns the trips the timetable plans at q.StopID, with the
+// schedule they came from, which a refresh may have replaced, and whether
+// the stop has any stop times at all.
+func (p *Provider) timetabled(ctx context.Context, st *static, q transit.Query) (_ *static, plans []planned, hasTimes bool, err error) {
+	if st == nil || st.tt == nil || !p.timetableOn() {
+		return st, nil, false, nil
+	}
+	// Trips are looked for from a while before q.Now, since a late one can
+	// still be ahead, and a little after the window for early ones.
+	from, to := q.Now.Add(-maxDelay), q.Now.Add(q.Window+maxEarly)
+	st, sts, err := p.stopTimes(ctx, st, q.StopID)
+	if err != nil {
+		return st, nil, false, fmt.Errorf("timetable: %w", err)
+	}
+	plans = st.planned(sts, from, to)
+	return st, plans, len(sts) > 0, nil
+}
+
+// stopTimes reads id's stop times from st's timetable, or from the current
+// schedule's when a refresh replaced st during the read, and returns the
+// schedule they came from.
+func (p *Provider) stopTimes(ctx context.Context, st *static, id string) (*static, []stopTime, error) {
+	sts, err := st.tt.stopTimes(ctx, id)
+	if errors.Is(err, errTimetableClosed) {
+		if cur := p.currentStatic(); cur != st && cur.tt != nil {
+			st = cur
+			sts, err = st.tt.stopTimes(ctx, id)
+		}
+	}
+	return st, sts, err
 }
 
 const (
@@ -582,10 +595,15 @@ func (s *static) headsign(tu tripUpdate) string {
 // plannedHeadsign is a timetabled trip's headsign, or the name of its last
 // stop, as for realtime trips.
 func (s *static) plannedHeadsign(pl planned) string {
-	if h := s.trips[pl.trip].headsign; h != "" {
+	return s.tripHeadsign(pl.trip, pl.last)
+}
+
+// tripHeadsign is a trip's headsign, or the name of last, its last stop.
+func (s *static) tripHeadsign(trip, last string) string {
+	if h := s.trips[trip].headsign; h != "" {
 		return h
 	}
-	return s.stopTitle(pl.last)
+	return s.stopTitle(last)
 }
 
 // stopTitle names a stop after its parent station when it has one.
@@ -645,9 +663,12 @@ func (p *Provider) timetableOn() bool { return p.cfg.Timetable == nil || *p.cfg.
 
 // adopt makes st the current schedule: it gives st a timetable that keeps
 // the schedule's file open, or closes the file, and closes the timetable of
-// the schedule st replaces.
+// the schedule st replaces. With timetable = false a timetable is kept only
+// for a cached schedule, to name the lines at each stop for StopLines: that
+// file is on disk anyway, while an uncached one is a temporary copy, often
+// 100 MB, that a long-running service would hold for nothing.
 func (p *Provider) adopt(st *static) {
-	if p.timetableOn() && st.file != nil && st.hasTimetable() {
+	if st.file != nil && st.hasTimetable() && (p.timetableOn() || st.cached) {
 		dir := ""
 		if st.cached {
 			dir = p.cacheDir
@@ -838,7 +859,9 @@ func (p *Provider) SearchStops(ctx context.Context, search string) ([]transit.St
 		if err == nil {
 			err = ctx.Err()
 		}
-		return nil, fmt.Errorf("%s: stop search: %w", Name, err)
+		// Download errors name the provider already, as "schedule: gtfsrt:
+		// GET ...".
+		return nil, fmt.Errorf("stop search: %w", err)
 	}
 	search = strings.TrimSpace(search)
 	if info, ok := st.stops[search]; ok {
@@ -868,4 +891,60 @@ func (p *Provider) StopName(ctx context.Context, id string, now time.Time) (stri
 	}
 	info, ok := st.stops[id]
 	return info.name, ok && info.name != ""
+}
+
+// StopLines implements transit.StopLiner from the timetable. It fails
+// without one: no static_url, a schedule without stop times, one that could
+// not be kept in a temporary file, or timetable = false without the
+// schedule cache.
+func (p *Provider) StopLines(ctx context.Context, ids []string, now time.Time) (map[string][]transit.StopLine, error) {
+	st, err := p.staticFor(ctx, now)
+	if st == nil {
+		return nil, cmp.Or(err, ctx.Err(), errNoTimetable)
+	}
+	if st.tt == nil {
+		if !p.timetableOn() {
+			return nil, fmt.Errorf("%s: with timetable = false, stop lines need the schedule cache", Name)
+		}
+		return nil, fmt.Errorf("%s: stop lines need the schedule's timetable", Name)
+	}
+	var (
+		mu   sync.Mutex
+		out  = make(map[string][]transit.StopLine, len(ids))
+		errs []error
+		wg   sync.WaitGroup
+	)
+	// The timetable gathers stops asked for within scanGather into one scan
+	// of stop_times.txt, so these usually share it.
+	for _, id := range ids {
+		wg.Go(func() {
+			from, sts, err := p.stopTimes(ctx, st, id)
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				errs = append(errs, err)
+				return
+			}
+			if lines := from.stopLines(sts); len(lines) > 0 {
+				out[id] = lines
+			}
+		})
+	}
+	wg.Wait()
+	if len(out) == 0 && len(errs) > 0 {
+		return nil, errors.Join(errs...)
+	}
+	return out, nil
+}
+
+// stopLines lists the lines of sts's trips once each, with where they go.
+func (s *static) stopLines(sts []stopTime) []transit.StopLine {
+	var lines []transit.StopLine
+	for _, t := range sts {
+		if routeID := s.trips[t.trip].routeID; routeID != "" {
+			lines = transit.AddStopLine(lines, s.routeLine(routeID), s.tripHeadsign(t.trip, t.last))
+		}
+	}
+	slices.SortFunc(lines, func(a, b transit.StopLine) int { return transit.CompareLines(a.Line, b.Line) })
+	return lines
 }
