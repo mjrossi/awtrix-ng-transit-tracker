@@ -33,6 +33,7 @@ jobs:
       - run: just lint
       - run: just test
       - run: just example
+      - run: just release-check
       - name: Validate example config
         run: go run ./cmd/urbanist-timetable --config config.example.toml config validate
 

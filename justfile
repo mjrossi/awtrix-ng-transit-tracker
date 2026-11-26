@@ -54,6 +54,12 @@ catalog-check:
 example:
     cd examples/departures && go vet ./... && go build -o /dev/null .
 
+# validate the GoReleaser config and build a snapshot for this machine
+[group('verify')]
+release-check:
+    goreleaser check
+    goreleaser build --snapshot --clean --single-target
+
 # everything CI runs
 [group('verify')]
 ci: lint test example
