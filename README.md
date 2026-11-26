@@ -66,6 +66,8 @@ urbanist-timetable departures --static https://example.org/gtfs.zip \
   --realtime https://example.org/tripupdates.pb STOP_ID
 ```
 
+Leave out `--realtime` for an agency that publishes only a schedule.
+
 To see the same stops without typing them each time, save them as boards.
 `urbanist-timetable config init` asks for an agency or city, lets you pick
 a system from the same search as `agencies search`, searches for your stop

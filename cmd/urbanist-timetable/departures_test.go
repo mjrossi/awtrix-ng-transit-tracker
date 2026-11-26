@@ -364,3 +364,38 @@ func TestServerTextCannotDriveTheTerminal(t *testing.T) {
 		}
 	}
 }
+
+// A schedule alone, without --realtime, gives timetabled departures.
+func TestDeparturesFromAScheduleAlone(t *testing.T) {
+	files := map[string]string{
+		"agency.txt":     "agency_id,agency_name,agency_url,agency_timezone\nA,Town,https://example.com,UTC\n",
+		"routes.txt":     "route_id,route_short_name,route_type\nR1,1,3\n",
+		"stops.txt":      "stop_id,stop_name\nS,Central\nT,Harbor\n",
+		"trips.txt":      "route_id,service_id,trip_id,trip_headsign\nR1,ALL,t1,Harbor\n",
+		"calendar.txt":   "service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\nALL,1,1,1,1,1,1,1,20260101,20261231\n",
+		"stop_times.txt": "trip_id,arrival_time,departure_time,stop_id,stop_sequence\nt1,14:05:00,14:05:00,S,1\nt1,14:20:00,14:20:00,T,2\n",
+	}
+	var zipped bytes.Buffer
+	zw := zip.NewWriter(&zipped)
+	for name, body := range files {
+		w, err := zw.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = w.Write([]byte(body))
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(zipped.Bytes()) }))
+	t.Cleanup(srv.Close)
+	at(t, time.Date(2026, 11, 26, 14, 0, 0, 0, time.UTC))
+
+	out, _, err := runCLIOut(t, "", "departures", "--static", srv.URL+"/gtfs.zip", "--json", "S")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, `"headsign": "Harbor"`) || strings.Contains(out, `"predicted"`) {
+		t.Errorf("output %s, want a timetabled departure to Harbor", out)
+	}
+}

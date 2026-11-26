@@ -26,7 +26,8 @@ version may break configuration.
   carried forward from an earlier stop, now apply. Feeds that name trips
   by route and start time instead of trip ID, such as HSL's, are matched
   too. `realtime_urls` is optional, so an agency that publishes only a
-  schedule works. Trips without a headsign are named after their last
+  schedule works, and `departures --static URL STOP` needs no
+  `--realtime`. Trips without a headsign are named after their last
   stop. Where realtime trips do not match the schedule's, lines with
   realtime trips show only those and a warning is logged;
   `timetable = false` turns timetabled trips off, as `mta-subway` does.
