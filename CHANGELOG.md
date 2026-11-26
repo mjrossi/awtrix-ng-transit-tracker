@@ -19,7 +19,6 @@ version may break configuration.
   machine. Where Transitland lists the feed URLs and they need no key, the
   block uses `gtfsrt`, which spends no Transitland quota. `cache clear`
   also removes the saved feed list.
-
 - `gtfsrt` shows timetabled trips from the schedule, with the realtime
   prediction where a feed has one, so a stop no longer reads "No
   departures" while a scheduled bus is 20 minutes away, and a realtime
@@ -33,7 +32,6 @@ version may break configuration.
   `timetable = false` turns timetabled trips off, as `mta-subway` does.
   The first query for a stop reads the schedule's `stop_times.txt` (about
   5 seconds for HSL), and the result is saved in the cache directory.
-
 - `cache clear` deletes the cached GTFS schedules, which otherwise stay in
   the cache directory even after no board uses them. Library users can call
   `providers.ClearScheduleCache` or `gtfsrt.ClearCache`.

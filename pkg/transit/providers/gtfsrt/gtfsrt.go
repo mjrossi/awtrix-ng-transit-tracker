@@ -1,6 +1,6 @@
 // Package gtfsrt is the generic provider for any agency that publishes a
-// GTFS schedule feed and GTFS-Realtime TripUpdates. It serves agencies
-// through configuration alone, so they need no code of their own.
+// GTFS schedule feed, GTFS-Realtime TripUpdates, or both. It serves
+// agencies through configuration alone, so they need no code of their own.
 //
 // The static feed supplies line names and colors, station structure,
 // headsigns and the timetable; the realtime feeds supply predictions. Trips

@@ -38,9 +38,10 @@ func departuresCommand() *cli.Command {
 		ArgsUsage: "[<board> | <source> <stop>...]",
 		Description: "Without arguments, prints every [[boards]] entry in the config; with one, that\n" +
 			"board. Otherwise <source> is a [providers.NAME] block in the config, a system\n" +
-			"from `systems`, or a provider that needs no settings. With --realtime there is\n" +
-			"no source. Flags replace a board's settings. gtfsrt sources show only\n" +
-			"departures with realtime predictions. The --json shape may change before 1.0.\n\n" +
+			"from `systems` or `agencies search`, or a provider that needs no settings.\n" +
+			"With --realtime there is no source. Flags replace a board's settings. Times\n" +
+			"marked * are timetabled, without a live prediction. The --json shape may\n" +
+			"change before 1.0.\n\n" +
 			"   urbanist-timetable departures\n" +
 			"   urbanist-timetable departures mta-subway 127N\n" +
 			"   urbanist-timetable departures mta-subway 127N --lines 1,2,3 --watch\n" +
