@@ -36,7 +36,11 @@ func departuresCommand() *cli.Command {
 		Description: "<source> is a [providers.NAME] block in the config, a system from `systems`,\n" +
 			"or a provider that needs no settings. With --realtime there is no source.\n" +
 			"gtfsrt sources show only departures with realtime predictions.\n" +
-			"The --json shape may change before 1.0.",
+			"The --json shape may change before 1.0.\n\n" +
+			"   urbanist-timetable departures nyc-subway 127N\n" +
+			"   urbanist-timetable departures nyc-subway 127N --lines 1,2,3 --watch\n" +
+			"   urbanist-timetable departures --static URL.zip --realtime URL.pb STOP_ID",
+		ShellComplete: completeFirst(completeSources(true)),
 		Flags: []cli.Flag{
 			&cli.StringSliceFlag{Name: "lines", Usage: "only these lines (IDs or short names)"},
 			&cli.StringSliceFlag{Name: "headsigns", Usage: "only destinations containing one of these"},

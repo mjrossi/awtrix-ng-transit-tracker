@@ -58,6 +58,14 @@ func newRootCommand() *cli.Command {
 		Name:    "urbanist-timetable",
 		Usage:   "show public transit departures in a terminal or on a pixel clock",
 		Version: version,
+		Description: "Getting started:\n\n" +
+			"   urbanist-timetable systems                           # ready-made systems\n" +
+			"   urbanist-timetable stops search nyc-subway times sq  # find a stop ID\n" +
+			"   urbanist-timetable departures nyc-subway 127N        # its next departures\n" +
+			"   urbanist-timetable config init                       # save stops to show by default\n\n" +
+			"Any agency with GTFS-Realtime works too; see `urbanist-timetable config example`.",
+		EnableShellCompletion:           true,
+		ConfigureShellCompletionCommand: showCompletionCommand,
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    "config",

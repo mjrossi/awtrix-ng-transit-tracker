@@ -14,6 +14,14 @@ version may break configuration.
   name given where an ID belongs gets the `stops search` command that
   finds its ID. A provider that needs settings gets a pointer to where they
   go.
+- Shell completion for bash, zsh and fish (`completion`), covering
+  commands, flags, systems, provider blocks and board names.
+- `config example` prints the annotated example configuration.
+- `stops search --json`.
+- `--help` gives examples for each command, and the root help a
+  getting-started sequence.
+- `systems` names the environment variables a system needs, and marks
+  those already set.
 - `departures` says how many departures `--lines`, `--headsigns` or
   `--min-lead` hid when they hid all of them, and which lines the stop has.
 
@@ -30,6 +38,8 @@ version may break configuration.
 - A file named with `--config` must exist. `TIMETABLE_CONFIG` may still
   name one that does not, as the Docker image does by default, for
   commands that work without a configuration.
+- `stops search` aligns its IDs to the longest one, and at a terminal
+  prints the `departures` command to use next.
 - `--log-format` is `text` by default when stderr is a terminal, and
   `json` otherwise.
 

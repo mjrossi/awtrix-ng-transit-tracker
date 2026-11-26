@@ -69,6 +69,11 @@ Schedules are downloaded once a day into your cache directory (`--cache-dir`;
 scripts; its shape may change before 1.0. Times marked `*` are from the
 schedule, without a live prediction.
 
+Tab completion of commands, systems and sources is available for bash, zsh
+and fish; `urbanist-timetable completion --help` shows how to turn it on.
+`urbanist-timetable config example` prints a configuration that explains
+every setting.
+
 ## On a pixel clock
 
 You need a TC002 with AWTRIX NG 1.2.2 or later on your network, and Docker

@@ -20,6 +20,7 @@ import (
 	"github.com/mjrossi/urbanist-timetable/internal/config"
 	"github.com/mjrossi/urbanist-timetable/internal/render"
 	"github.com/mjrossi/urbanist-timetable/internal/scheduler"
+	"github.com/mjrossi/urbanist-timetable/internal/termout"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/catalog"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/providers"
@@ -139,8 +140,9 @@ func logQuotaUses(ctx context.Context, log *slog.Logger, uses []config.QuotaUse)
 
 func previewCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "preview",
-		Usage: "fetch once and print each board's rows and payload, optionally pushing it",
+		Name:          "preview",
+		Usage:         "fetch once and print each board's rows and payload, optionally pushing it",
+		ShellComplete: completeBoardFlag,
 		Flags: []cli.Flag{
 			&cli.StringFlag{Name: "board", Usage: "only this board"},
 			&cli.BoolFlag{Name: "push", Usage: "also push the payload to the clock"},
@@ -217,8 +219,15 @@ func writePreview(w io.Writer, b config.Board, out *clockout.Output, snap schedu
 func configCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "config",
-		Usage: "configuration tools",
+		Usage: "create, check or explain the configuration file",
 		Commands: []*cli.Command{{
+			Name:  "example",
+			Usage: "print an example configuration that explains every setting",
+			Action: func(_ context.Context, c *cli.Command) error {
+				_, err := io.WriteString(c.Root().Writer, config.Example())
+				return err
+			},
+		}, {
 			Name:  "validate",
 			Usage: "check the configuration file and build its providers and clock client",
 			Action: func(_ context.Context, c *cli.Command) error {
@@ -261,6 +270,8 @@ func systemsCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "systems",
 		Usage: "list ready-made transit systems, or show how to configure one",
+		Description: "Systems work by ID in `departures` and `stops search` without a configuration\n" +
+			"file. Those that need keys read them from the environment variables listed.",
 		Action: func(_ context.Context, c *cli.Command) error {
 			if c.Args().Present() {
 				return unknownSystemsArgument(c)
@@ -273,7 +284,14 @@ func systemsCommand() *cli.Command {
 			for _, s := range all {
 				needs := ""
 				if len(s.RequiredOptions) > 0 {
-					needs = "  (needs " + strings.Join(s.RequiredOptions, ", ") + ")"
+					vars := make([]string, len(s.RequiredOptions))
+					for i, k := range s.RequiredOptions {
+						vars[i] = s.EnvName(k)
+						if os.Getenv(vars[i]) != "" {
+							vars[i] += " (set)"
+						}
+					}
+					needs = "  needs " + strings.Join(vars, ", ")
 				}
 				fmt.Fprintf(w, "%-28s %-22s %-24s %s%s\n", s.ID, s.Name, s.City, strings.Join(s.Modes, ", "), needs)
 			}
@@ -284,6 +302,10 @@ func systemsCommand() *cli.Command {
 			Name:      "show",
 			Usage:     "print a system's details and a config snippet",
 			ArgsUsage: "<id>",
+			Description: "Prints what a system covers, the environment variables it needs,\n" +
+				"and a [providers] block to paste into the configuration.\n\n" +
+				"   urbanist-timetable systems show nyc-subway",
+			ShellComplete: completeFirst(completeSystems),
 			Action: func(_ context.Context, c *cli.Command) error {
 				if c.Args().Len() != 1 {
 					return newUsageError(c, "give one system ID, such as `systems show sf-bart`")
@@ -318,8 +340,14 @@ func stopsCommand() *cli.Command {
 		Usage: "find stop IDs",
 		Commands: []*cli.Command{{
 			Name:      "search",
-			Usage:     "search a provider's stops by name or ID",
-			ArgsUsage: "<provider> <words...>",
+			Usage:     "search a source's stops by name or ID",
+			ArgsUsage: "<source> <words...>",
+			Description: "<source> is a [providers.NAME] block in the config, a system from `systems`,\n" +
+				"or a provider that needs no settings. Prints stop IDs for `departures`.\n\n" +
+				"   urbanist-timetable stops search nyc-subway times sq\n" +
+				"   urbanist-timetable stops search sf-bart embarcadero",
+			Flags:         []cli.Flag{&cli.BoolFlag{Name: "json", Usage: "print JSON instead of text"}},
+			ShellComplete: completeFirst(completeSources(false)),
 			Action: func(ctx context.Context, c *cli.Command) error {
 				if c.Args().Len() < 2 {
 					return newUsageError(c, "give a source and words to search for, such as `stops search nyc-subway times sq`")
@@ -342,14 +370,7 @@ func stopsCommand() *cli.Command {
 				if err != nil {
 					return err
 				}
-				w := c.Root().Writer
-				if len(stops) == 0 {
-					fmt.Fprintln(w, "no stops found")
-				}
-				for _, s := range stops {
-					fmt.Fprintf(w, "%-10s %s\n", s.ID, s.Name)
-				}
-				return nil
+				return writeStops(c, name, stops)
 			},
 		}},
 	}
@@ -408,16 +429,51 @@ func openSource(path, name string, opts ...providers.Option) (transit.Provider, 
 // catalog systems and provider types, and with boards the file's boards.
 func sourceNames(path string, boards bool) []string {
 	boardNames, blocks := config.Names(path)
-	names := blocks
+	var names []string
 	if boards {
-		names = append(names, boardNames...)
+		names = boardNames
 	}
+	names = append(names, blocks...)
 	if all, err := catalog.All(); err == nil {
 		for _, s := range all {
 			names = append(names, s.ID)
 		}
 	}
 	return append(names, providers.Registry().Names()...)
+}
+
+// writeStops prints search results, and at a terminal the command that
+// uses them.
+func writeStops(c *cli.Command, source string, stops []transit.Stop) error {
+	w := c.Root().Writer
+	if c.Bool("json") {
+		type jsonStop struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		}
+		out := make([]jsonStop, len(stops))
+		for i, s := range stops {
+			out[i] = jsonStop{ID: s.ID, Name: s.Name}
+		}
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", "  ")
+		return enc.Encode(out)
+	}
+	if len(stops) == 0 {
+		fmt.Fprintln(w, "no stops found")
+		return nil
+	}
+	width := 0
+	for _, s := range stops {
+		width = max(width, len(termout.Clean(s.ID)))
+	}
+	for _, s := range stops {
+		fmt.Fprintf(w, "%-*s  %s\n", width, termout.Clean(s.ID), termout.Clean(s.Name))
+	}
+	if isTerminal(w) {
+		fmt.Fprintf(c.Root().ErrWriter, "\nnext: urbanist-timetable departures %s <ID>\n", source)
+	}
+	return nil
 }
 
 func filterBoards(boards []config.Board, name string) []config.Board {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -171,5 +172,46 @@ func TestDeparturesSaysWhatTheFiltersHid(t *testing.T) {
 	}
 	if _, stderr, _ := runCLIOut(t, demoConfig, "departures", "--json", "--lines", "x", "demo", "s1"); stderr != "" {
 		t.Errorf("--json printed %q", stderr)
+	}
+}
+
+func TestCompletion(t *testing.T) {
+	src := demoConfig + "[providers.cm]\nsystem = \"lisbon-carris-metropolitana\"\n"
+	tests := map[string]struct {
+		args    []string
+		want    []string
+		notWant []string
+	}{
+		"departures": {[]string{"departures"}, []string{"metro", "demo", "cm", "sf-bart", "gtfsrt"}, nil},
+		"search":     {[]string{"stops", "search"}, []string{"demo", "sf-bart"}, []string{"metro"}},
+		"show":       {[]string{"systems", "show"}, []string{"sf-bart"}, []string{"demo"}},
+		"stop":       {[]string{"departures", "demo"}, nil, []string{"demo", "help"}},
+		"board flag": {[]string{"clock", "preview", "--board"}, []string{"metro"}, []string{"demo"}},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			out, _, err := runCLIOut(t, src, append(tt.args, "--generate-shell-completion")...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			lines := strings.Split(out, "\n")
+			for _, w := range tt.want {
+				if !slices.Contains(lines, w) {
+					t.Errorf("completions %q lack %q", lines, w)
+				}
+			}
+			for _, w := range tt.notWant {
+				if slices.Contains(lines, w) {
+					t.Errorf("completions %q include %q", lines, w)
+				}
+			}
+		})
+	}
+}
+
+func TestConfigExample(t *testing.T) {
+	out, _, err := runCLIOut(t, "", "config", "example")
+	if err != nil || !strings.Contains(out, "[[boards]]") {
+		t.Errorf("err = %v, output starts %.80q", err, out)
 	}
 }
