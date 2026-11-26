@@ -16,6 +16,8 @@ func TestMatchesSearch(t *testing.T) {
 		{"São Sebastião", "sao sebastiao", true},
 		{"Baixa/Chiado", "chiado baixa", true},
 		{"Baixa/Chiado", "chiado rossio", false},
+		{"Rautatientori", "tori", true},
+		{"King's Cross St. Pancras", "kings cross", true},
 		{"Alameda", "", false},
 		{"Alameda", "   ", false},
 	}

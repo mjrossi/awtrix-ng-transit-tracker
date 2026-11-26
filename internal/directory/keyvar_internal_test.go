@@ -60,3 +60,23 @@ func TestStartsWord(t *testing.T) {
 		}
 	}
 }
+
+func TestNamed(t *testing.T) {
+	tests := []struct {
+		agency, name, words string
+		want                bool
+	}{
+		{"Metropolitan Transit Authority (MTA)", "Long Island Rail Road", "mta", true},
+		{"Metropolitan Transit Authority (MTA)", "Long Island Rail Road", "long island rail road", true},
+		{"Nashville MTA WeGo Public Transit", "", "mta", false},
+		{"San Francisco Municipal Transportation Agency (SFMTA - Muni)", "", "muni", true},
+		{"RATP (RER)", "", "ratp", true},
+		{"RATP Cap Arc Sud et Ouest", "", "ratp", false},
+		{"Carris", "", "CARRIS", true},
+	}
+	for _, tt := range tests {
+		if got := named(System{Agency: tt.agency, Name: tt.name}, tt.words); got != tt.want {
+			t.Errorf("named(%q, %q, %q) = %v, want %v", tt.agency, tt.name, tt.words, got, tt.want)
+		}
+	}
+}

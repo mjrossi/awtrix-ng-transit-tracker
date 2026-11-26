@@ -161,14 +161,14 @@ func TestPrompterAsksForEverything(t *testing.T) {
 	input := "99\nmta-subway\nnowhere\ntimes\n\ntimes\n2\n1, 2\nmy board\n\n"
 	var out bytes.Buffer
 	var opened string
-	p := prompter{
+	p := withCatalog(prompter{
 		in:  bufio.NewReader(strings.NewReader(input)),
 		out: &out,
 		open: func(name string) (transit.Provider, error) {
 			opened = name
 			return fakeSource{stops: []transit.Stop{{ID: "127", Name: "Times Sq-42 St"}, {ID: "R16", Name: "Times Sq-42 St"}}}, nil
 		},
-	}
+	})
 	a, err := p.ask(t.Context())
 	if err != nil {
 		t.Fatalf("%v; prompts:\n%s", err, out.String())
@@ -191,14 +191,14 @@ func TestPrompterWithoutKeysAsksForAStopID(t *testing.T) {
 	t.Setenv("METRO_LISBOA_CLIENT_ID", "")
 	t.Setenv("METRO_LISBOA_CLIENT_SECRET", "")
 	var out bytes.Buffer
-	p := prompter{
+	p := withCatalog(prompter{
 		in:  bufio.NewReader(strings.NewReader("metro-lisboa\nMP\n\nmp\n")),
 		out: &out,
 		open: func(string) (transit.Provider, error) {
 			t.Error("opened a source that lacks its keys")
 			return nil, errors.New("no")
 		},
-	}
+	})
 	a, err := p.ask(t.Context())
 	if err != nil {
 		t.Fatal(err)
@@ -209,9 +209,9 @@ func TestPrompterWithoutKeysAsksForAStopID(t *testing.T) {
 }
 
 func TestPrompterStopsWhenInputEnds(t *testing.T) {
-	p := prompter{in: bufio.NewReader(strings.NewReader("mta-subway\n")), out: &bytes.Buffer{}, open: func(string) (transit.Provider, error) {
+	p := withCatalog(prompter{in: bufio.NewReader(strings.NewReader("mta-subway\n")), out: &bytes.Buffer{}, open: func(string) (transit.Provider, error) {
 		return fakeSource{}, nil
-	}}
+	}})
 	if _, err := p.ask(t.Context()); !errors.Is(err, errInputEnded) {
 		t.Errorf("err = %v, want errInputEnded", err)
 	}
@@ -223,9 +223,9 @@ func TestPrompterStopsWhenCanceled(t *testing.T) {
 		r, w := io.Pipe()
 		t.Cleanup(func() { _ = w.Close() })
 		ctx, cancel := context.WithCancel(t.Context())
-		p := prompter{in: bufio.NewReader(r), out: &bytes.Buffer{}, open: func(string) (transit.Provider, error) {
+		p := withCatalog(prompter{in: bufio.NewReader(r), out: &bytes.Buffer{}, open: func(string) (transit.Provider, error) {
 			return fakeSource{}, nil
-		}}
+		}})
 		done := make(chan error, 1)
 		go func() {
 			_, err := p.ask(ctx)
@@ -243,9 +243,9 @@ func TestPrompterStopsWhenCanceled(t *testing.T) {
 	})
 	t.Run("while searching", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(t.Context())
-		p := prompter{in: bufio.NewReader(strings.NewReader("mta-subway\ntimes\ntimes\n")), out: &bytes.Buffer{}, open: func(string) (transit.Provider, error) {
+		p := withCatalog(prompter{in: bufio.NewReader(strings.NewReader("mta-subway\ntimes\ntimes\n")), out: &bytes.Buffer{}, open: func(string) (transit.Provider, error) {
 			return cancelingSource{cancel: cancel}, nil
-		}}
+		}})
 		if _, err := p.ask(ctx); !errors.Is(err, context.Canceled) {
 			t.Errorf("err = %v, want context.Canceled", err)
 		}
@@ -269,14 +269,14 @@ func TestPrompterPicksFromASearch(t *testing.T) {
 	// search), then a pick.
 	input := "lisbon\n9\nlisbon\n1\ncais\n1\n\n\n"
 	var out bytes.Buffer
-	p := prompter{in: bufio.NewReader(strings.NewReader(input)), out: &out, open: func(string) (transit.Provider, error) {
+	p := withCatalog(prompter{in: bufio.NewReader(strings.NewReader(input)), out: &out, open: func(string) (transit.Provider, error) {
 		return fakeSource{stops: []transit.Stop{{ID: "060001", Name: "Cais do Sodré"}}}, nil
-	}}
+	}})
 	a, err := p.ask(t.Context())
 	if err != nil {
 		t.Fatalf("%v; prompts:\n%s", err, out.String())
 	}
-	if a.system.source != "carris-metropolitana" || !strings.Contains(out.String(), "  2  metro-lisboa") || !strings.Contains(out.String(), "Give a number from 1 to") {
+	if a.system.source != "carris-metropolitana" || !strings.Contains(out.String(), "  2  Metro de Lisboa") || !strings.Contains(out.String(), "Give a number from 1 to") {
 		t.Errorf("chose %q; prompts:\n%s", a.system.source, out.String())
 	}
 }
@@ -307,7 +307,7 @@ func TestPrompterPicksADirectorySystem(t *testing.T) {
 	if a.system.source != "mdb-54" || a.system.name != "caltrain" || a.stops[0].ID != "70011" {
 		t.Errorf("answers %+v", a)
 	}
-	for _, want := range []string{"Searching…", "  1  mdb-54", "mdb-54 needs CALTRAIN_API_KEY", "Set TRANSITLAND_API_KEY to also search Transitland"} {
+	for _, want := range []string{"Searching…", "  1  Caltrain  mdb-54", "mdb-54 needs CALTRAIN_API_KEY", "Set TRANSITLAND_API_KEY to also search Transitland"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("prompts lack %q:\n%s", want, out.String())
 		}
@@ -371,5 +371,48 @@ func TestConfigInitFromADirectorySystem(t *testing.T) {
 	t.Setenv("CALTRAIN_API_KEY", "k")
 	if _, err := config.Load(path); err != nil {
 		t.Errorf("written config does not load: %v", err)
+	}
+}
+
+// withCatalog gives p a system search and lookup over the catalog alone, so
+// a test needs no directory.
+func withCatalog(p prompter) prompter {
+	p.find = func(_ context.Context, words string) (directory.Results, error) {
+		all, err := catalog.All()
+		if err != nil {
+			return directory.Results{}, err
+		}
+		var res directory.Results
+		for _, s := range all {
+			if transit.MatchesSearch(strings.Join([]string{s.ID, s.Agency, s.Name, s.City}, " "), words) {
+				res.Systems = append(res.Systems, directory.System{ID: s.ID, Agency: s.Agency, Name: s.Name, Place: s.City, Source: directory.SourceCatalog})
+			}
+		}
+		return res, nil
+	}
+	p.resolve = func(_ context.Context, id string) (chosenSystem, error) {
+		if s, ok := catalog.Get(id); ok {
+			return catalogChoice(s), nil
+		}
+		return chosenSystem{}, unknownSystemError(id)
+	}
+	return p
+}
+
+// A shared feed picked from a search row is named after that row's agency,
+// not after the feed or whichever agency the lookup returned.
+func TestChosenSystemAsRow(t *testing.T) {
+	sys := directory.System{ID: "f-delfi~de", Agency: "Germany (DELFI)", Source: directory.SourceTransitland, Needs: []string{directory.TransitlandKeyVar}}
+	b := directory.Block{Type: "transitland", Options: map[string]any{"feed": "f-delfi~de"}, Comment: "Through Transitland."}
+	c, err := directoryChoice(sys, b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err = c.as(directory.System{ID: "f-delfi~de", Agency: "Berliner Verkehrsbetriebe (BVG)", Name: "Germany (DELFI)", Place: "Berlin, Germany"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.name != "bvg" || c.title != "Berliner Verkehrsbetriebe (BVG) Germany (DELFI)" || c.place != "Berlin, Germany" || !strings.Contains(c.block, "[providers.bvg]") {
+		t.Errorf("chose %+v", c)
 	}
 }

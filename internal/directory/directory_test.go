@@ -248,6 +248,34 @@ func TestResolve(t *testing.T) {
 	}
 }
 
+// A feed several operators share is named after the feed, not after the
+// operator Transitland happens to list first.
+func TestResolveSharedFeed(t *testing.T) {
+	sys, b, err := newServer(t).directory("", "key").Resolve(t.Context(), "f-delfi~de")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sys.Agency != "Germany (DELFI)" || sys.Place != "" || sys.BlockName() != "delfi" {
+		t.Errorf("agency %q, place %q, block %q; want the feed's name", sys.Agency, sys.Place, sys.BlockName())
+	}
+	if b.Type != "transitland" || !strings.Contains(b.Comment, "several agencies") {
+		t.Errorf("block %+v", b)
+	}
+}
+
+// Without a name of its own, a shared feed is named after its operators,
+// and keeps the place those that have one share.
+func TestResolveUnnamedSharedFeed(t *testing.T) {
+	sys, _, err := newServer(t).directory("", "key").Resolve(t.Context(), "f-dru-chittendoncounty~vt~us")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "Green Mountain Transit (GMT) and Special Services Transportation Agency"
+	if sys.Agency != want || sys.Place != "Burlington, Vermont, United States of America" || sys.BlockName() != "gmt" {
+		t.Errorf("agency %q, place %q, block %q", sys.Agency, sys.Place, sys.BlockName())
+	}
+}
+
 func TestResolveHeaderKey(t *testing.T) {
 	_, b, err := newServer(t).directory("", "").Resolve(t.Context(), "mdb-448")
 	if err != nil {
@@ -316,7 +344,7 @@ func TestListIsCached(t *testing.T) {
 }
 
 func TestIsID(t *testing.T) {
-	for id, want := range map[string]bool{"mdb-53": true, "tld-716": true, "f-9q9-bart": true, "bart": false, "mta-subway": false, "f-": false, "bart-2": false} {
+	for id, want := range map[string]bool{"mdb-53": true, "tld-716": true, "f-9q9-bart": true, "bart": false, "mta-subway": false, "f-": false, "ntd-23": true, "jbda-1234": true, "metro-lisboa": false} {
 		if got := directory.IsID(id); got != want {
 			t.Errorf("IsID(%q) = %v", id, got)
 		}
@@ -393,5 +421,25 @@ func TestTransitlandLookupsAreCached(t *testing.T) {
 	}
 	if freed, err := directory.ClearCache(d.CacheDir); err != nil || freed == 0 {
 		t.Errorf("ClearCache = %d, %v", freed, err)
+	}
+}
+
+func TestBlockTOMLKeepsEveryKey(t *testing.T) {
+	b := directory.Block{Type: "gtfsrt", Options: map[string]any{
+		"timetable":     false,
+		"realtime_urls": []any{"https://example.org/rt.pb"},
+		"static_url":    "https://example.org/gtfs.zip",
+	}}
+	got, err := b.TOML("town")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "[providers.town]\n" +
+		"type = \"gtfsrt\"\n" +
+		"static_url = \"https://example.org/gtfs.zip\"\n" +
+		"realtime_urls = [\"https://example.org/rt.pb\"]\n" +
+		"timetable = false\n"
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("TOML (-want +got):\n%s", diff)
 	}
 }

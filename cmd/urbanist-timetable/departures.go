@@ -37,8 +37,8 @@ func departuresCommand() *cli.Command {
 		Usage:     "print the next departures at one or more stops",
 		ArgsUsage: "[<board> | <source> <stop>...]",
 		Description: "Without arguments, prints every [[boards]] entry in the config; with one, that\n" +
-			"board. Otherwise <source> is a [providers.NAME] block in the config, a system\n" +
-			"from `systems` or `agencies search`, or a provider that needs no settings.\n" +
+			"board. Otherwise <source> is a system ID from `agencies search` or a\n" +
+			"[providers.NAME] block in the config.\n" +
 			"With --static or --realtime there is no source. Flags replace a board's\n" +
 			"settings. Times marked * are timetabled, without a live prediction. The\n" +
 			"--json shape may change before 1.0.\n\n" +

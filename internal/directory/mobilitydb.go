@@ -2,6 +2,7 @@ package directory
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/csv"
 	"errors"
@@ -13,6 +14,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -234,8 +236,8 @@ func parseMDB(b []byte) (*mdbFeeds, error) {
 			continue
 		}
 		feed := mdbFeed{
-			url:   firstNonEmpty(get("urls.direct_download"), get("urls.latest")),
-			auth:  atoi(get("urls.authentication_type")),
+			url:   cmp.Or(get("urls.direct_download"), get("urls.latest")),
+			auth:  authType(get("urls.authentication_type")),
 			info:  get("urls.authentication_info"),
 			param: get("urls.api_key_parameter_name"),
 		}
@@ -423,40 +425,16 @@ func agencyShort(agency string) string {
 // key variable is, or after its ID when the agency's name has no Latin
 // letters or digits.
 func (s System) BlockName() string {
-	var b strings.Builder
-	for _, r := range fold.String(agencyShort(s.Agency)) {
-		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
-			b.WriteRune(r)
-		case b.Len() > 0 && !strings.HasSuffix(b.String(), "-"):
-			b.WriteByte('-')
-		}
-	}
-	name := strings.Trim(b.String(), "-")
-	if len(name) > 32 {
-		name = strings.TrimRight(name[:32], "-")
-	}
-	if name == "" {
-		return s.ID
-	}
-	return name
+	return cmp.Or(fold.Slug(agencyShort(s.Agency), '-', 32), s.ID)
 }
 
 // keyVar names the environment variable for an agency's key, from
 // agencyShort. Names this tool or its catalog already use get the system's
 // ID instead, so a directory entry cannot be handed another service's key.
 func keyVar(agency, id string) string {
-	var b strings.Builder
-	for _, r := range strings.ToUpper(fold.String(agencyShort(agency))) {
-		switch {
-		case r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
-			b.WriteRune(r)
-		case b.Len() > 0 && !strings.HasSuffix(b.String(), "_"):
-			b.WriteByte('_')
-		}
-	}
-	v := strings.Trim(b.String(), "_") + "_API_KEY"
-	if v == "_API_KEY" || reservedVar(v) {
+	name := strings.ToUpper(fold.Slug(agencyShort(agency), '_', 0))
+	v := name + "_API_KEY"
+	if name == "" || reservedVar(v) {
 		v = strings.ToUpper(strings.ReplaceAll(id, "-", "_")) + "_API_KEY"
 	}
 	return v
@@ -479,26 +457,16 @@ func reservedVar(v string) bool {
 	return false
 }
 
-func firstNonEmpty(ss ...string) string {
-	for _, s := range ss {
-		if s != "" {
-			return s
-		}
-	}
-	return ""
-}
-
 func joinNonEmpty(sep string, ss ...string) string {
 	return strings.Join(slices.DeleteFunc(ss, func(s string) bool { return s == "" }), sep)
 }
 
-func atoi(s string) int {
-	n := 0
-	for _, r := range s {
-		if r < '0' || r > '9' {
-			return 0
-		}
-		n = n*10 + int(r-'0')
+// authType reads urls.authentication_type, where anything but a number
+// means no key.
+func authType(s string) int {
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return authNone
 	}
 	return n
 }

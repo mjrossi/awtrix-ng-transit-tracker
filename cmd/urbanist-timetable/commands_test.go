@@ -65,7 +65,7 @@ func TestSystemsCommands(t *testing.T) {
 		args []string
 		want []string
 	}{
-		"list": {[]string{"systems"}, []string{"bart", "Show how to configure one"}},
+		"list": {[]string{"systems"}, []string{"Verified systems", "bart", "Show how to configure one"}},
 		"show": {[]string{"systems", "show", "bart"}, []string{"[providers.bart]\nsystem = \"bart\"\n", "# Example stop: "}},
 	}
 	for name, tt := range tests {

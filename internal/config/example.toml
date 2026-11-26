@@ -27,9 +27,10 @@ url = "http://awtrixng-a1b2c3.local"
 # so one type can serve several agencies. Find stop IDs with:
 #   urbanist-timetable stops search <NAME> <words...>
 #
-# Ready-made systems: list them with `urbanist-timetable systems`. Find
-# others with `urbanist-timetable agencies search <agency or city>`;
-# `urbanist-timetable systems show <id>` prints the block to paste here.
+# A system: find your agency's with `urbanist-timetable agencies search
+# <agency or city>`, then `urbanist-timetable systems show <id>` prints the
+# block to paste here. Verified systems, listed by `urbanist-timetable systems`,
+# take a block this short:
 # [providers.nyc]
 # system = "mta-subway"
 #

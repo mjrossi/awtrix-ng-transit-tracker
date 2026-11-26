@@ -12,4 +12,6 @@ operator with two schedules (`f-9q9-bart`).
 Hand-written, not recorded: the last row of `feeds_v2.csv`
 (`mdb-990001`), whose URL holds a `${NAME}` reference, and
 `transitland/operators-search-mta.json`, an operator search where
-Transitland's looser matching returns SFMTA beside MTA.
+Transitland's looser matching returns SFMTA beside MTA, and the
+`f-delfi~de` files, a national feed shared by two operators, and the
+`f-dru-chittendoncounty~vt~us` files, a shared feed without a name.

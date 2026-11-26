@@ -30,8 +30,8 @@ func newUsageError(c *cli.Command, format string, args ...any) error {
 	return &usageError{msg: fmt.Sprintf(format, args...), command: c.FullName()}
 }
 
-// sourceError is a source that could not be opened: a name that is no block,
-// system or provider, or a provider that needs settings the command line
+// sourceError is a source that could not be opened: a name that is no
+// system or block, or a provider type that needs settings the command line
 // cannot give.
 type sourceError struct {
 	name       string
@@ -119,11 +119,11 @@ func hint(err error) string {
 	case errors.As(err, &missing):
 		return "run `urbanist-timetable systems show " + missing.System + "`"
 	case errors.As(err, &source) && errors.Is(source, registry.ErrUnknownProvider):
-		h := fmt.Sprintf("%q is not a [providers] block in %s, a system, or a provider; ", source.name, source.configPath)
+		h := fmt.Sprintf("%q is not a system or a [providers] block in %s; ", source.name, source.configPath)
 		if source.suggestion != "" {
 			return h + fmt.Sprintf("did you mean %q?", source.suggestion)
 		}
-		return h + "list systems with `urbanist-timetable systems`, or find one with `urbanist-timetable agencies search <agency or city>`"
+		return h + "find your agency's system with `urbanist-timetable agencies search <agency or city>`"
 	case errors.As(err, &source):
 		return fmt.Sprintf("%s needs settings: add a [providers.%s] block to %s (see `urbanist-timetable config example`)", source.name, source.name, source.configPath)
 	case errors.As(err, &stops):

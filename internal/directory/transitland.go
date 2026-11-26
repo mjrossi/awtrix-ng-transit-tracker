@@ -1,6 +1,7 @@
 package directory
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -49,8 +50,9 @@ type tlFeeds struct {
 }
 
 type tlFeed struct {
-	OnestopID string `json:"onestop_id"`
-	Spec      string `json:"spec"`
+	OnestopID string  `json:"onestop_id"`
+	Name      *string `json:"name"`
+	Spec      string  `json:"spec"`
 	URLs      struct {
 		StaticCurrent       string `json:"static_current"`
 		RealtimeTripUpdates string `json:"realtime_trip_updates"`
@@ -173,12 +175,21 @@ func (d *Directory) lookupTransitland(ctx context.Context, id string) (System, B
 	if err := d.transitland(ctx, "/operators?"+url.Values{"feed_onestop_id": {id}}.Encode(), &ops); err != nil {
 		return System{}, Block{}, err
 	}
-	sys := System{ID: id, Agency: id, Data: DataSchedule, Source: SourceTransitland, License: firstNonEmpty(feed.License.SPDX, feed.License.URL), StaticURL: feed.URLs.StaticCurrent}
+	sys := System{ID: id, Agency: id, Data: DataSchedule, Source: SourceTransitland, License: cmp.Or(feed.License.SPDX, feed.License.URL), StaticURL: feed.URLs.StaticCurrent}
 	var rtRefs []string
 	schedules := 0
+	if len(ops.Operators) > 1 {
+		// A regional or national feed: naming it after one of its agencies,
+		// whichever Transitland lists first, would name it wrongly for the
+		// rest.
+		sys.Agency, sys.Name = cmp.Or(deref(feed.Name), operatorNames(ops.Operators)), ""
+		sys.Place = sharedPlace(ops.Operators)
+	}
 	if len(ops.Operators) > 0 {
 		op := ops.Operators[0]
-		sys.Agency, sys.Place = op.title(), op.place()
+		if len(ops.Operators) == 1 {
+			sys.Agency, sys.Place = op.title(), op.place()
+		}
 		for _, f := range op.Feeds {
 			switch {
 			case strings.EqualFold(f.Spec, specGTFS):
@@ -223,8 +234,44 @@ func (d *Directory) lookupTransitland(ctx context.Context, id string) (System, B
 	return sys, Block{
 		Type:    "transitland",
 		Options: map[string]any{"feed": id, "api_key": "${" + TransitlandKeyVar + "}"},
-		Comment: fmt.Sprintf("Through Transitland (%s); requests count against its monthly quota.", id),
+		Comment: transitlandComment(id, len(ops.Operators) > 1),
 	}, nil
+}
+
+// operatorNames names a feed's operators: all of them when there are two,
+// else the first two and how many more.
+func operatorNames(ops []tlOperator) string {
+	names := make([]string, len(ops))
+	for i, op := range ops {
+		names[i] = op.title()
+	}
+	if len(names) == 2 {
+		return names[0] + " and " + names[1]
+	}
+	return fmt.Sprintf("%s, %s and %d more", names[0], names[1], len(names)-2)
+}
+
+// sharedPlace is the place every operator with one shares, or empty.
+func sharedPlace(ops []tlOperator) string {
+	place := ""
+	for _, op := range ops {
+		switch p := op.place(); {
+		case p == "":
+		case place == "":
+			place = p
+		case p != place:
+			return ""
+		}
+	}
+	return place
+}
+
+func transitlandComment(id string, shared bool) string {
+	c := fmt.Sprintf("Through Transitland (%s); requests count against its monthly quota.", id)
+	if shared {
+		c += " The feed serves several agencies; its stops cover all of them."
+	}
+	return c
 }
 
 func (d *Directory) transitlandFeed(ctx context.Context, id string) (tlFeed, error) {

@@ -1,0 +1,12 @@
+{
+ "feeds": [
+  {
+   "authorization": {"info_url": "", "param_name": "", "type": ""},
+   "license": {"spdx_identifier": "CC-BY-4.0", "url": ""},
+   "name": "Germany (DELFI)",
+   "onestop_id": "f-delfi~de",
+   "spec": "GTFS",
+   "urls": {"static_current": "https://example.org/delfi.zip"}
+  }
+ ]
+}

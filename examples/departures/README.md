@@ -8,7 +8,7 @@ nothing it needs is in `internal/`.
 go run . mta-subway 127N
 ```
 
-It opens a ready-made system with `providers.Open` and prints the next
+It opens a verified system with `providers.Open` and prints the next
 hour's departures at one stop: live predictions where the feed has them,
 and timetabled times otherwise. Systems that need keys, such as
 `metro-lisboa`, need them passed in the settings map.

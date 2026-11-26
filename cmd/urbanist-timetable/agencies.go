@@ -6,51 +6,54 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/urfave/cli/v3"
 
-	"github.com/mjrossi/urbanist-timetable/internal/config"
 	"github.com/mjrossi/urbanist-timetable/internal/directory"
 	"github.com/mjrossi/urbanist-timetable/internal/termout"
-	"github.com/mjrossi/urbanist-timetable/pkg/transit"
-	"github.com/mjrossi/urbanist-timetable/pkg/transit/providers"
 )
 
 func agenciesCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "agencies",
-		Usage: "find transit systems beyond the ready-made ones",
+		Usage: "find the transit system of an agency",
 		Commands: []*cli.Command{{
 			Name:      "search",
-			Usage:     "search agencies and places for systems",
+			Usage:     "search agencies by name or place, for the systems that carry them",
 			ArgsUsage: "<words...>",
-			Description: "Searches the ready-made systems, the Mobility Database's list of feeds, and,\n" +
-				"with " + directory.TransitlandKeyVar + " set, Transitland's operators. Each result is a system\n" +
-				"whose ID works in `departures`, `stops search` and `systems show`.\n" +
-				"The agency is whoever published the data, so search by place too.\n\n" +
+			Description: "Searches the verified systems, the Mobility Database's list of feeds, and,\n" +
+				"with " + directory.TransitlandKeyVar + " set, Transitland's operators. Each result is an agency\n" +
+				"and the system that carries it, whose ID works in `departures`, `stops search`\n" +
+				"and `systems show`. A regional or national feed carries many agencies, so its\n" +
+				"ID can appear on several rows. The agency is whoever published the data, so\n" +
+				"if a name finds nothing, try the city. Countrywide feeds, such as national\n" +
+				"railways, are found by the country's name.\n\n" +
 				"   urbanist-timetable agencies search lisbon\n" +
 				"   urbanist-timetable agencies search metro-north",
-			Flags: []cli.Flag{&cli.BoolFlag{Name: "json", Usage: "print JSON instead of text"}},
-			Action: func(ctx context.Context, c *cli.Command) error {
-				if !c.Args().Present() {
-					return newUsageError(c, "give words to search for, such as `agencies search lisbon`")
-				}
-				res, err := newDirectory(c).Search(ctx, strings.Join(c.Args().Slice(), " "))
-				for _, p := range res.Problems {
-					fmt.Fprintf(c.Root().ErrWriter, "warning: %s\n", termout.Clean(p.Error()))
-				}
-				if err != nil && len(res.Systems) == 0 {
-					return err
-				}
-				if c.Bool("json") {
-					return writeSystemsJSON(c.Root().Writer, res.Systems)
-				}
-				writeSystems(c, res)
-				return nil
-			},
+			Flags:  []cli.Flag{&cli.BoolFlag{Name: "json", Usage: "print JSON instead of text"}},
+			Action: searchAgencies,
 		}},
 	}
+}
+
+func searchAgencies(ctx context.Context, c *cli.Command) error {
+	if !c.Args().Present() {
+		return newUsageError(c, "give an agency or city to search for, such as `agencies search lisbon`")
+	}
+	res, err := newDirectory(c).Search(ctx, strings.Join(c.Args().Slice(), " "))
+	for _, p := range res.Problems {
+		fmt.Fprintf(c.Root().ErrWriter, "warning: %s\n", termout.Clean(p.Error()))
+	}
+	if err != nil && len(res.Systems) == 0 {
+		return err
+	}
+	if c.Bool("json") {
+		return writeSystemsJSON(c.Root().Writer, res.Systems)
+	}
+	writeSystems(c, res)
+	return nil
 }
 
 func writeSystemsJSON(w io.Writer, systems []directory.System) error {
@@ -65,13 +68,11 @@ func writeSystemsJSON(w io.Writer, systems []directory.System) error {
 func writeSystems(c *cli.Command, res directory.Results) {
 	w, ew := c.Root().Writer, c.Root().ErrWriter
 	if len(res.Systems) == 0 {
-		fmt.Fprintln(w, "no systems found; try the city or region instead")
+		fmt.Fprintln(w, "no agencies found; try the city or region, or the country for national railways and other countrywide feeds")
 	}
-	rows := make([][]string, 0, len(res.Systems))
-	for _, s := range res.Systems {
-		rows = append(rows, []string{s.ID, shorten(s.Title(), 44), shorten(s.Place, 32), string(s.Data), systemNote(s)})
+	if len(res.Systems) > 0 {
+		termout.Table(w, systemRows(res.Systems, false))
 	}
-	termout.Table(w, rows)
 	if res.More > 0 {
 		fmt.Fprintf(ew, "%d more; add words to narrow the search\n", res.More)
 	}
@@ -83,10 +84,52 @@ func writeSystems(c *cli.Command, res directory.Results) {
 	}
 }
 
+// systemRows lays out search results agency first, each with the system
+// that carries it, under a header; numbered adds a column for picking one.
+func systemRows(systems []directory.System, numbered bool) [][]string {
+	uses := map[string]int{}
+	name := func(s directory.System) string {
+		if strings.EqualFold(s.Name, s.Agency) {
+			return ""
+		}
+		return s.Name
+	}
+	named := false
+	for _, s := range systems {
+		uses[s.ID]++
+		named = named || name(s) != ""
+	}
+	rows := [][]string{{"AGENCY", "SYSTEM", "NAME", "PLACE", "DATA", "NOTES"}}
+	for _, s := range systems {
+		note := systemNote(s)
+		if uses[s.ID] > 1 {
+			// A regional or national feed: picking any of these rows
+			// gives the same system, with every agency's stops.
+			note = strings.TrimPrefix(note+", shared feed", ", ")
+		}
+		rows = append(rows, []string{shorten(s.Agency, 40), s.ID, shorten(name(s), 28), shorten(s.Place, 30), string(s.Data), note})
+	}
+	if !named {
+		for i, r := range rows {
+			rows[i] = append(r[:2], r[3:]...)
+		}
+	}
+	if numbered {
+		for i := range rows {
+			n := ""
+			if i > 0 {
+				n = strconv.Itoa(i)
+			}
+			rows[i] = append([]string{"  " + n}, rows[i]...)
+		}
+	}
+	return rows
+}
+
 func systemNote(s directory.System) string {
 	var notes []string
 	if s.Source == directory.SourceCatalog {
-		notes = append(notes, "ready-made")
+		notes = append(notes, "verified")
 	}
 	if s.Source == directory.SourceTransitland {
 		notes = append(notes, "via Transitland")
@@ -111,71 +154,4 @@ func shorten(s string, n int) string {
 		return s
 	}
 	return strings.TrimSpace(string(r[:n-1])) + "…"
-}
-
-// newDirectory searches with the cache directory and Transitland key the
-// command line and environment give.
-func newDirectory(c *cli.Command) *directory.Directory {
-	dir := c.String("cache-dir")
-	if dir == "off" {
-		dir = ""
-	}
-	return &directory.Directory{
-		CacheDir: dir, TransitlandKey: os.Getenv(directory.TransitlandKeyVar), Log: newLogger(c), Now: clock,
-		MobilityDBURL: directoryURLs.mobilityDB, TransitlandURL: directoryURLs.transitland,
-	}
-}
-
-// directoryURLs replace the directories' addresses in tests.
-var directoryURLs struct{ mobilityDB, transitland string }
-
-// openDirectorySystem builds the provider for a directory ID, reading the
-// keys its block needs from the environment.
-func openDirectorySystem(ctx context.Context, dir *directory.Directory, id string, opts ...providers.Option) (transit.Provider, error) {
-	sys, b, err := dir.Resolve(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	settings, err := config.ExpandSettings(id, b.Settings(), sys.Needs)
-	if err != nil {
-		if sys.KeyInfo != "" {
-			return nil, fmt.Errorf("%w (get a key: %s)", err, sys.KeyInfo)
-		}
-		return nil, err
-	}
-	return providers.Open(id, settings, opts...)
-}
-
-// showDirectorySystem prints a directory system's block for `systems show`.
-func showDirectorySystem(ctx context.Context, c *cli.Command, id string) error {
-	dir := newDirectory(c)
-	sys, b, err := dir.Resolve(ctx, id)
-	if err != nil {
-		return err
-	}
-	w := c.Root().Writer
-	fmt.Fprintf(w, "# %s", termout.Clean(sys.Title()))
-	if sys.Place != "" {
-		fmt.Fprintf(w, ", %s", termout.Clean(sys.Place))
-	}
-	fmt.Fprintf(w, " (%s)\n# %s\n", sys.Data, termout.Clean(b.Comment))
-	if len(sys.Needs) > 0 {
-		fmt.Fprintf(w, "# Needs %s", strings.Join(sys.Needs, ", "))
-		if sys.KeyInfo != "" {
-			fmt.Fprintf(w, "; get a key at %s", termout.Clean(sys.KeyInfo))
-		}
-		fmt.Fprintln(w)
-	}
-	if sys.StaticURL != "" {
-		if n, ok := dir.ScheduleSize(ctx, sys.StaticURL); ok && n > directory.LargeSchedule {
-			fmt.Fprintf(w, "# The schedule is %d MB, which a small machine such as a NAS may struggle to load.\n", n>>20)
-		}
-	}
-	block, err := b.TOML(id)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(w, "\n%s", block)
-	fmt.Fprintf(w, "\n# Find stop IDs: urbanist-timetable stops search %s <words...>\n", id)
-	return nil
 }

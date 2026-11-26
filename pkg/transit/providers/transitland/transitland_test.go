@@ -352,6 +352,43 @@ func TestSearchStops(t *testing.T) {
 	}
 }
 
+// Transitland matches several words as one phrase; a search it misses is
+// retried word by word and filtered here.
+func TestSearchStopsWordByWord(t *testing.T) {
+	fixture, err := os.ReadFile(filepath.Join("testdata", "stops_search.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var searches []string
+	var mu sync.Mutex
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query().Get("search")
+		mu.Lock()
+		searches = append(searches, q)
+		mu.Unlock()
+		if strings.Contains(q, " ") {
+			_, _ = w.Write([]byte(`{"stops":[]}`))
+			return
+		}
+		_, _ = w.Write(fixture)
+	}))
+	t.Cleanup(srv.Close)
+	p, err := transitland.New(transitland.Config{Feed: feed, APIKey: "k", BaseURL: srv.URL}, srv.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	stops, err := p.SearchStops(t.Context(), "central harbor")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stops) != 1 || stops[0].ID != "HC" {
+		t.Errorf("stops %v, want Harbor Central alone", stops)
+	}
+	if diff := cmp.Diff([]string{"central harbor", "central"}, searches); diff != "" {
+		t.Errorf("searches (-want +got):\n%s", diff)
+	}
+}
+
 func TestSearchNamesTheFailedRequest(t *testing.T) {
 	s := newServer(t)
 	s.status.Store(http.StatusNotFound)

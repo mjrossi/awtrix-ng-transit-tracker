@@ -38,7 +38,7 @@ func TestAgenciesSearch(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimSpace(out), "\n")
-	if len(lines) < 2 || !strings.HasPrefix(lines[0], "mta-subway") || !strings.Contains(lines[0], "ready-made") || !strings.HasPrefix(lines[1], "mdb-507") {
+	if len(lines) < 3 || !strings.HasPrefix(lines[0], "AGENCY") || !strings.HasPrefix(lines[1], "MTA ") || !strings.Contains(lines[1], "mta-subway") || !strings.Contains(lines[1], "verified") || !strings.Contains(lines[2], "mdb-507") {
 		t.Errorf("output:\n%s\nwant the catalog's mta-subway first, then LIRR", out)
 	}
 	if strings.Contains(out, "mdb-516") {

@@ -47,17 +47,19 @@ Part of the Urbanist family with *The Urbanist Lexicon* (mjrossi.com) and
 ## Layout
 
 - `cmd/urbanist-timetable/` — thin urfave/cli wrapper: `departures`,
-  `stops search`, `systems`, `config init|example|validate`, `cache clear`,
+  `stops search`, `systems [search|show]`, `config init|example|validate`, `cache clear`,
   `clock run`, `clock preview`, `completion`. No business logic.
 - `pkg/transit/` — the importable core: model, `Provider`, `Filter`,
   `Group`.
 - `pkg/transit/registry/` — building providers by name from configuration.
 - `pkg/transit/transittest/` — the provider contract suite.
-- `pkg/transit/catalog/` — ready-made systems, one TOML file each in
+- `pkg/transit/catalog/` — verified systems, one TOML file each in
   `systems/`. `just catalog-check` verifies them live; update `verified`
   when it passes.
 - `pkg/transit/providers/<name>/` — one package per provider, registered in
   `pkg/transit/providers/providers.go`.
+- `pkg/transit/internal/upstream/` — what providers share for reading
+  upstream APIs: a cache for loaded data, URL checks, HTTP redirects.
 - `pkg/awtrix/` — typed AWTRIX NG HTTP client.
 - `internal/config/` — TOML loading and validation.
 - `internal/render/` — departure rows to TC002 layouts.
@@ -71,6 +73,8 @@ Part of the Urbanist family with *The Urbanist Lexicon* (mjrossi.com) and
   Database and Transitland: `agencies search` and directory system IDs.
 - `internal/scheduler/` — polling, active and quiet hours, backoff,
   last-good cache.
+- `internal/clockout/` — the scheduler output for the clock: renders boards
+  and pushes them as apps, and removes boards that left the configuration.
 - `docs/` — `ARCHITECTURE.md`, `rendering.md`, `PLAN.md` (roadmap only:
   no build log or history).
 - `CHANGELOG.md` — user-visible changes, Keep a Changelog format. Add an

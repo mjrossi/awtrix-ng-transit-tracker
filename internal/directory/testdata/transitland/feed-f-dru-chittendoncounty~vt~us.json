@@ -1,0 +1,12 @@
+{
+ "feeds": [
+  {
+   "authorization": {"info_url": "", "param_name": "", "type": ""},
+   "license": {"spdx_identifier": "", "url": ""},
+   "name": null,
+   "onestop_id": "f-dru-chittendoncounty~vt~us",
+   "spec": "GTFS",
+   "urls": {"static_current": "https://example.org/gmt.zip"}
+  }
+ ]
+}

@@ -23,6 +23,7 @@ mise.local.toml
 
 # ── Local configuration (config.example.toml is committed) ──
 /config.toml
+/config.toml.*
 
 # ── Go ──────────────────────────────────────────────
 /bin/
@@ -36,6 +37,7 @@ mise.local.toml
 
 # ── Brainstorming / Claude scratch ──────────────────
 .superpowers/
+/docs/superpowers/
 .claude/
 
 # ── Scratch ─────────────────────────────────────────

@@ -20,6 +20,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -244,13 +245,39 @@ func (p *Provider) fetch(ctx context.Context, key string, now time.Time, span ti
 }
 
 // SearchStops implements transit.StopSearcher with Transitland's full-text
-// stop search, limited to the configured feed if there is one. Each search
+// stop search, limited to the configured feed if there is one. Each request
 // counts against the quota.
+//
+// Transitland matches several words as one phrase, so "clark lake" misses
+// "Clark/Lake", and it keeps apostrophes, so "kings cross" misses "King's
+// Cross". When the whole search finds nothing, its longest words are tried
+// alone, at most two more requests, keeping the stops that match every word
+// as other providers' searches do.
 func (p *Provider) SearchStops(ctx context.Context, search string) ([]transit.Stop, error) {
 	search = strings.TrimSpace(search)
 	if search == "" {
 		return nil, nil
 	}
+	stops, err := p.searchStops(ctx, search)
+	words := strings.Fields(search)
+	if err != nil || len(stops) > 0 || len(words) < 2 {
+		return stops, err
+	}
+	slices.SortStableFunc(words, func(a, b string) int { return cmp.Compare(len(b), len(a)) })
+	for _, w := range words[:2] {
+		found, err := p.searchStops(ctx, w)
+		if err != nil {
+			return nil, err
+		}
+		found = slices.DeleteFunc(found, func(s transit.Stop) bool { return !transit.MatchesSearch(s.Name, search) })
+		if len(found) > 0 {
+			return found, nil
+		}
+	}
+	return nil, nil
+}
+
+func (p *Provider) searchStops(ctx context.Context, search string) ([]transit.Stop, error) {
 	params := url.Values{
 		"search": {search},
 		"limit":  {strconv.Itoa(searchLimit)},

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -43,11 +44,13 @@ func Key(k string) string {
 	return k
 }
 
-// Value writes a string, a list or a table of them inline.
+// Value writes a string, a bool, or a list or table of them inline.
 func Value(v any) (string, error) {
 	switch x := v.(type) {
 	case string:
 		return String(x), nil
+	case bool:
+		return strconv.FormatBool(x), nil
 	case []any:
 		parts := make([]string, len(x))
 		for i, e := range x {

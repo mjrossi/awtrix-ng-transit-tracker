@@ -1,0 +1,17 @@
+{
+ "operators": [
+  {
+   "agencies": [{"agency_name": "Green Mountain Transit", "places": [{"adm0_name": "United States of America", "adm1_name": "Vermont", "city_name": "Burlington"}]}],
+   "feeds": [{"name": null, "onestop_id": "f-dru-chittendoncounty~vt~us", "spec": "GTFS"}],
+   "name": "Green Mountain Transit",
+   "onestop_id": "o-dru-gmt",
+   "short_name": "GMT"
+  },
+  {
+   "agencies": [{"agency_name": "Special Services Transportation Agency", "places": []}],
+   "feeds": [{"name": null, "onestop_id": "f-dru-chittendoncounty~vt~us", "spec": "GTFS"}],
+   "name": "Special Services Transportation Agency",
+   "onestop_id": "o-dru-ssta"
+  }
+ ]
+}

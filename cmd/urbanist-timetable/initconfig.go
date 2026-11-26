@@ -12,7 +12,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"unicode"
 
 	"github.com/urfave/cli/v3"
 
@@ -79,6 +78,23 @@ type chosenSystem struct {
 	block string
 	// warning is printed once the system is chosen.
 	warning string
+	// found and foundBlock are the directory's system and block, for as.
+	found      *directory.System
+	foundBlock directory.Block
+}
+
+// as names a directory system after the search row it was picked from. A
+// regional or national feed carries many agencies, and the lookup by ID
+// cannot know which one the person was looking for.
+func (c chosenSystem) as(row directory.System) (chosenSystem, error) {
+	if c.found == nil || row.Agency == "" {
+		return c, nil
+	}
+	sys := *c.found
+	sys.Agency, sys.Name, sys.Place = row.Agency, row.Name, cmp.Or(row.Place, sys.Place)
+	out, err := directoryChoice(sys, c.foundBlock)
+	out.warning = c.warning
+	return out, err
 }
 
 func catalogChoice(sys catalog.System) chosenSystem {
@@ -99,6 +115,7 @@ func directoryChoice(sys directory.System, b directory.Block) (chosenSystem, err
 		source: sys.ID, name: name, title: sys.Title(), place: sys.Place,
 		needs: sys.Needs, keyInfo: sys.KeyInfo,
 		block: "# " + termout.Clean(b.Comment) + "\n" + text,
+		found: &sys, foundBlock: b,
 	}, nil
 }
 
@@ -119,7 +136,7 @@ func resolveChoice(ctx context.Context, dir *directory.Directory, id string) (ch
 	if sys, ok := catalog.Get(id); ok {
 		return catalogChoice(sys), nil
 	}
-	if dir == nil || !directory.IsID(id) {
+	if !directory.IsID(id) {
 		return chosenSystem{}, unknownSystemError(id)
 	}
 	sys, b, err := dir.Resolve(ctx, id)
@@ -240,7 +257,7 @@ var errInputEnded = errors.New("config init: input ended before the configuratio
 
 // prompter asks for the answers at a terminal. open builds a source by
 // name, find searches for systems and resolve looks one up by ID, so tests
-// can give fakes; without find and resolve, only the catalog is used.
+// can give fakes.
 type prompter struct {
 	in      *bufio.Reader
 	out     io.Writer
@@ -286,13 +303,6 @@ func (p prompter) ask(ctx context.Context) (initAnswers, error) {
 }
 
 func (p prompter) askSystem(ctx context.Context) (chosenSystem, error) {
-	resolve, find := p.resolve, p.find
-	if resolve == nil {
-		resolve = func(ctx context.Context, id string) (chosenSystem, error) { return resolveChoice(ctx, nil, id) }
-	}
-	if find == nil {
-		find = searchCatalog
-	}
 	fmt.Fprintln(p.out, "Find your transit system by agency or city, such as \"lisbon\" or \"mta\", or give a system ID.")
 	words := ""
 	for {
@@ -302,7 +312,7 @@ func (p prompter) askSystem(ctx context.Context) (chosenSystem, error) {
 				return chosenSystem{}, err
 			}
 		}
-		c, err := resolve(ctx, words)
+		c, err := p.resolve(ctx, words)
 		switch {
 		case err == nil:
 			return c, nil
@@ -316,7 +326,7 @@ func (p prompter) askSystem(ctx context.Context) (chosenSystem, error) {
 			continue
 		}
 		fmt.Fprintln(p.out, "Searching…")
-		res, err := find(ctx, words)
+		res, err := p.find(ctx, words)
 		if ctx.Err() != nil {
 			return chosenSystem{}, ctx.Err()
 		}
@@ -324,25 +334,21 @@ func (p prompter) askSystem(ctx context.Context) (chosenSystem, error) {
 			fmt.Fprintf(p.out, "warning: %s\n", oneLine(problem))
 		}
 		if err != nil || len(res.Systems) == 0 {
-			fmt.Fprintln(p.out, "No systems found; try the city or region, or other words.")
+			fmt.Fprintln(p.out, "No systems found; try the city or region, or the country for national railways.")
 			if res.NoTransitland {
 				fmt.Fprintf(p.out, "Set %s to also search Transitland.\n", directory.TransitlandKeyVar)
 			}
 			words = ""
 			continue
 		}
-		rows := make([][]string, len(res.Systems))
-		for i, s := range res.Systems {
-			rows[i] = []string{fmt.Sprintf("  %d", i+1), s.ID, shorten(s.Title(), 44), shorten(s.Place, 32), string(s.Data), systemNote(s)}
-		}
-		termout.Table(p.out, rows)
+		termout.Table(p.out, systemRows(res.Systems, true))
 		if res.More > 0 {
 			fmt.Fprintf(p.out, "  … and %d more; search with more words to narrow them.\n", res.More)
 		}
 		if res.NoTransitland {
 			fmt.Fprintf(p.out, "  Set %s to also search Transitland.\n", directory.TransitlandKeyVar)
 		}
-		chosen, next, err := p.pickSystem(ctx, res.Systems, resolve)
+		chosen, next, err := p.pickSystem(ctx, res.Systems)
 		switch {
 		case err != nil:
 			return chosenSystem{}, err
@@ -356,7 +362,7 @@ func (p prompter) askSystem(ctx context.Context) (chosenSystem, error) {
 // pickSystem asks for a number from systems. It returns the chosen system,
 // or else the words to search for next: an answer that is not a number, or
 // empty to ask for an agency again.
-func (p prompter) pickSystem(ctx context.Context, systems []directory.System, resolve func(context.Context, string) (chosenSystem, error)) (*chosenSystem, string, error) {
+func (p prompter) pickSystem(ctx context.Context, systems []directory.System) (*chosenSystem, string, error) {
 	for {
 		answer, err := p.line(ctx, fmt.Sprintf("System [1-%d], other words to search, or Enter to start over: ", len(systems)))
 		if err != nil {
@@ -370,12 +376,16 @@ func (p prompter) pickSystem(ctx context.Context, systems []directory.System, re
 			fmt.Fprintf(p.out, "Give a number from 1 to %d.\n", len(systems))
 			continue
 		}
-		c, err := resolve(ctx, systems[n-1].ID)
+		row := systems[n-1]
+		c, err := p.resolve(ctx, row.ID)
+		if err == nil {
+			c, err = c.as(row)
+		}
 		if ctx.Err() != nil {
 			return nil, "", ctx.Err()
 		}
 		if err != nil {
-			fmt.Fprintf(p.out, "Could not use %s: %s\n", systems[n-1].ID, oneLine(err))
+			fmt.Fprintf(p.out, "Could not use %s: %s\n", row.ID, oneLine(err))
 			continue
 		}
 		return &c, "", nil
@@ -386,21 +396,6 @@ func (p prompter) pickSystem(ctx context.Context, systems []directory.System, re
 func number(s string) (int, bool) {
 	n, err := strconv.Atoi(s)
 	return n, err == nil
-}
-
-// searchCatalog searches the catalog alone.
-func searchCatalog(_ context.Context, words string) (directory.Results, error) {
-	all, err := catalog.All()
-	if err != nil {
-		return directory.Results{}, err
-	}
-	var res directory.Results
-	for _, s := range all {
-		if transit.MatchesSearch(strings.Join([]string{s.ID, s.Agency, s.Name, s.City}, " "), words) {
-			res.Systems = append(res.Systems, directory.System{ID: s.ID, Agency: s.Agency, Name: s.Name, Place: s.City, Source: directory.SourceCatalog})
-		}
-	}
-	return res, nil
 }
 
 // askStop searches for a stop where prov can search, and otherwise asks for
@@ -591,23 +586,5 @@ func providerBlock(sys catalog.System) string {
 // slug turns s into a board name: lowercase letters, digits and dashes, at
 // most 32 characters.
 func slug(s string) string {
-	var b strings.Builder
-	dash := false
-	for _, r := range fold.String(s) {
-		if r < unicode.MaxASCII && (unicode.IsLetter(r) || unicode.IsDigit(r)) {
-			b.WriteRune(r)
-			dash = false
-		} else if !dash && b.Len() > 0 {
-			b.WriteByte('-')
-			dash = true
-		}
-	}
-	out := strings.Trim(b.String(), "-")
-	if len(out) > 32 {
-		out = strings.TrimRight(out[:32], "-")
-	}
-	if out == "" {
-		return "stop"
-	}
-	return out
+	return cmp.Or(fold.Slug(s, '-', 32), "stop")
 }
