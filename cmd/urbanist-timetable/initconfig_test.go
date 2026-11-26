@@ -416,3 +416,33 @@ func TestChosenSystemAsRow(t *testing.T) {
 		t.Errorf("chose %+v", c)
 	}
 }
+
+// linerSource records which stops it is asked for lines about.
+type linerSource struct {
+	fakeSource
+	asked *[]string
+}
+
+func (s linerSource) StopLines(_ context.Context, ids []string, _ time.Time) (map[string][]transit.Line, error) {
+	*s.asked = append(*s.asked, ids...)
+	out := map[string][]transit.Line{}
+	for _, id := range ids {
+		out[id] = []transit.Line{{ID: "L" + id, ShortName: "L" + id}}
+	}
+	return out, nil
+}
+
+func TestSharedNameLinesAsksOnlyAboutRepeatedNames(t *testing.T) {
+	var asked []string
+	stops := []transit.Stop{{ID: "1", Name: "Pike St"}, {ID: "2", Name: "Market"}, {ID: "3", Name: "PIKE ST"}}
+	got := sharedNameLines(t.Context(), linerSource{asked: &asked}, stops)
+	if diff := cmp.Diff([]string{"1", "3"}, asked); diff != "" {
+		t.Errorf("asked (-want +got):\n%s", diff)
+	}
+	if len(got) != 2 {
+		t.Errorf("lines %v", got)
+	}
+	if got := sharedNameLines(t.Context(), fakeSource{}, stops); got != nil {
+		t.Errorf("a provider without StopLines gave %v", got)
+	}
+}

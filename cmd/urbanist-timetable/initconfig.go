@@ -424,7 +424,7 @@ func (p prompter) askStop(ctx context.Context, prov transit.Provider) (transit.S
 			continue
 		}
 		shown := stops[:min(len(stops), maxListed)]
-		termout.Stops(p.out, shown, true)
+		termout.Stops(p.out, shown, true, sharedNameLines(ctx, prov, shown))
 		if len(stops) > len(shown) {
 			fmt.Fprintf(p.out, "  … and %d more; search with more words to narrow them.\n", len(stops)-len(shown))
 		}

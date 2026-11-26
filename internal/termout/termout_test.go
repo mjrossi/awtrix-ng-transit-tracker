@@ -158,3 +158,22 @@ func TestTable(t *testing.T) {
 		t.Errorf("got\n%q\nwant\n%q", b.String(), want)
 	}
 }
+
+func TestStopsWithLines(t *testing.T) {
+	var b bytes.Buffer
+	stops := []transit.Stop{{ID: "431", Name: "3rd Ave & Pike St"}, {ID: "433", Name: "3rd Ave & Pike St"}, {ID: "9", Name: "Pike Place"}}
+	var many []transit.Line
+	for _, n := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10"} {
+		many = append(many, transit.Line{ID: n, ShortName: n})
+	}
+	termout.Stops(&b, stops, true, map[string][]transit.Line{
+		"431": {{ID: "r-c", ShortName: "C"}, {ID: "r-e", ShortName: "E"}},
+		"433": many,
+	})
+	want := "  1  431  3rd Ave & Pike St  C, E\n" +
+		"  2  433  3rd Ave & Pike St  1, 2, 3, 4, 5, 6, 7, 8 and 2 more\n" +
+		"  3  9    Pike Place\n"
+	if b.String() != want {
+		t.Errorf("got\n%s\nwant\n%s", b.String(), want)
+	}
+}

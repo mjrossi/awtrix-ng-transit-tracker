@@ -900,3 +900,40 @@ func TestOffsetFromServiceDay(t *testing.T) {
 		})
 	}
 }
+
+func TestStopLines(t *testing.T) {
+	var paths []string
+	var mu sync.Mutex
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		paths = append(paths, r.URL.EscapedPath())
+		mu.Unlock()
+		if strings.HasSuffix(r.URL.Path, ":HC") {
+			_, _ = w.Write([]byte(`{"stops":[{"route_stops":[
+				{"route":{"onestop_id":"r-b","route_short_name":"B"}},
+				{"route":{"onestop_id":"r-a","route_short_name":"","route_long_name":"Airport"}},
+				{"route":{"onestop_id":"r-b","route_short_name":"B"}}]}]}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"stops":[{"route_stops":[]}]}`))
+	}))
+	t.Cleanup(srv.Close)
+	p, err := transitland.New(transitland.Config{Feed: feed, APIKey: "k", BaseURL: srv.URL}, srv.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := p.StopLines(t.Context(), []string{"HC", "QUIET"}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, l := range got["HC"] {
+		names = append(names, l.ShortName)
+	}
+	if diff := cmp.Diff([]string{"Airport", "B"}, names); diff != "" || len(got) != 1 {
+		t.Errorf("lines %v (-want +got):\n%s", got, diff)
+	}
+	if len(paths) != 2 {
+		t.Errorf("requests %v, want one per stop", paths)
+	}
+}

@@ -310,6 +310,63 @@ func (p *Provider) searchStops(ctx context.Context, search string) ([]transit.St
 	return out, nil
 }
 
+// StopLines implements transit.StopLiner with one request per stop, each
+// counting against the quota.
+func (p *Provider) StopLines(ctx context.Context, ids []string, _ time.Time) (map[string][]transit.Line, error) {
+	var (
+		mu   sync.Mutex
+		out  = make(map[string][]transit.Line, len(ids))
+		errs []error
+		wg   sync.WaitGroup
+	)
+	for _, id := range ids {
+		wg.Go(func() {
+			lines, err := p.stopLines(ctx, p.stopKey(id))
+			mu.Lock()
+			defer mu.Unlock()
+			switch {
+			case err != nil:
+				errs = append(errs, err)
+			case len(lines) > 0:
+				out[id] = lines
+			}
+		})
+	}
+	wg.Wait()
+	if len(out) == 0 && len(errs) > 0 {
+		return nil, errors.Join(errs...)
+	}
+	return out, nil
+}
+
+func (p *Provider) stopLines(ctx context.Context, key string) ([]transit.Line, error) {
+	var resp struct {
+		Stops []struct {
+			RouteStops []struct {
+				Route struct {
+					OnestopID string `json:"onestop_id"`
+					ShortName string `json:"route_short_name"`
+					LongName  string `json:"route_long_name"`
+				} `json:"route"`
+			} `json:"route_stops"`
+		} `json:"stops"`
+	}
+	if err := p.get(ctx, "stops/"+url.PathEscape(key), nil, &resp); err != nil {
+		return nil, err
+	}
+	var lines []transit.Line
+	for _, st := range resp.Stops {
+		for _, rs := range st.RouteStops {
+			r := rs.Route
+			if !slices.ContainsFunc(lines, func(l transit.Line) bool { return l.ID == r.OnestopID }) {
+				lines = append(lines, transit.Line{ID: r.OnestopID, ShortName: cmp.Or(r.ShortName, r.LongName)})
+			}
+		}
+	}
+	slices.SortFunc(lines, func(a, b transit.Line) int { return strings.Compare(a.ShortName, b.ShortName) })
+	return lines, nil
+}
+
 // get requests path, which must already be escaped, below the base URL.
 func (p *Provider) get(ctx context.Context, path string, params url.Values, v any) error {
 	u := p.base.JoinPath(path)

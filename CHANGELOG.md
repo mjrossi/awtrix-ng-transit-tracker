@@ -77,6 +77,12 @@ version may break configuration.
   commands, flags, systems, provider blocks and board names.
 - `config example` prints the annotated example configuration.
 - `stops search --json`.
+- `stops search` and `config init` name the lines at each stop when
+  several stops share a name, such as one per side of a street or per
+  platform: `3rd Ave & Pike St  C Line, D Line, E Line`. `gtfsrt` reads
+  them from the timetable, also with `timetable = false`; `transitland`
+  spends a request per stop, for at most 10 stops. Library users can
+  call `transit.StopLiner`.
 - `--help` gives examples for each command, and the root help a
   getting-started sequence.
 - `systems` names the environment variables a system needs, and marks

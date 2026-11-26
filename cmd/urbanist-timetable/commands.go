@@ -19,6 +19,7 @@ import (
 	"github.com/mjrossi/urbanist-timetable/internal/clockout"
 	"github.com/mjrossi/urbanist-timetable/internal/config"
 	"github.com/mjrossi/urbanist-timetable/internal/directory"
+	"github.com/mjrossi/urbanist-timetable/internal/fold"
 	"github.com/mjrossi/urbanist-timetable/internal/render"
 	"github.com/mjrossi/urbanist-timetable/internal/scheduler"
 	"github.com/mjrossi/urbanist-timetable/internal/termout"
@@ -302,7 +303,7 @@ func stopsCommand() *cli.Command {
 				if err != nil {
 					return err
 				}
-				return writeStops(c, name, stops)
+				return writeStops(ctx, c, name, p, stops)
 			},
 		}},
 	}
@@ -380,7 +381,7 @@ func sourceNames(path string, boards bool) []string {
 
 // writeStops prints search results, and at a terminal the command that
 // uses them.
-func writeStops(c *cli.Command, source string, stops []transit.Stop) error {
+func writeStops(ctx context.Context, c *cli.Command, source string, p transit.Provider, stops []transit.Stop) error {
 	w := c.Root().Writer
 	if c.Bool("json") {
 		return termout.StopsJSON(w, stops)
@@ -389,11 +390,41 @@ func writeStops(c *cli.Command, source string, stops []transit.Stop) error {
 		fmt.Fprintln(w, "no stops found")
 		return nil
 	}
-	termout.Stops(w, stops, false)
+	termout.Stops(w, stops, false, sharedNameLines(ctx, p, stops))
 	if isTerminal(w) {
 		fmt.Fprintf(c.Root().ErrWriter, "\nnext: urbanist-timetable departures %s <ID>\n", source)
 	}
 	return nil
+}
+
+// maxLinedStops caps the stops sharedNameLines asks about: each can cost
+// a request against a quota.
+const maxLinedStops = 10
+
+// sharedNameLines asks p which lines serve the stops whose names repeat,
+// such as one stop per side of a street, so they can be told apart. It
+// gives nothing when p cannot tell, or the names are all different; a
+// failure only loses the hint.
+func sharedNameLines(ctx context.Context, p transit.Provider, stops []transit.Stop) map[string][]transit.Line {
+	liner, ok := p.(transit.StopLiner)
+	if !ok {
+		return nil
+	}
+	count := map[string]int{}
+	for _, s := range stops {
+		count[fold.String(s.Name)]++
+	}
+	var ids []string
+	for _, s := range stops {
+		if count[fold.String(s.Name)] > 1 && len(ids) < maxLinedStops {
+			ids = append(ids, s.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	lines, _ := liner.StopLines(ctx, ids, clock())
+	return lines
 }
 
 func filterBoards(boards []config.Board, name string) []config.Board {

@@ -221,8 +221,20 @@ func JSONList(w io.Writer, boards []Board) error {
 }
 
 // Stops writes stop search results as aligned ID and name columns, with
-// numbered set to number them from 1 for a prompt.
-func Stops(w io.Writer, stops []transit.Stop, numbered bool) {
+// numbered set to number them from 1 for a prompt, and after each name the
+// lines lines gives for its stop, if any.
+func Stops(w io.Writer, stops []transit.Stop, numbered bool, lines map[string][]transit.Line) {
+	if len(lines) > 0 {
+		rows := make([][]string, len(stops))
+		for i, s := range stops {
+			rows[i] = []string{s.ID, s.Name, lineList(lines[s.ID])}
+			if numbered {
+				rows[i] = append([]string{"  " + strconv.Itoa(i+1)}, rows[i]...)
+			}
+		}
+		Table(w, rows)
+		return
+	}
 	idWidth := 0
 	for _, s := range stops {
 		idWidth = max(idWidth, width(Clean(s.ID)))
@@ -233,6 +245,24 @@ func Stops(w io.Writer, stops []transit.Stop, numbered bool) {
 		}
 		fmt.Fprintf(w, "%s  %s\n", pad(Clean(s.ID), idWidth), Clean(s.Name))
 	}
+}
+
+// maxLines caps the lines listed for one stop, so a busy station does not
+// run off the screen.
+const maxLines = 8
+
+// lineList names lines by short name, or ID, up to maxLines.
+func lineList(lines []transit.Line) string {
+	var names []string
+	for _, l := range lines {
+		if n := cmp.Or(l.ShortName, l.ID); n != "" && !slices.Contains(names, n) {
+			names = append(names, n)
+		}
+	}
+	if len(names) > maxLines {
+		return strings.Join(names[:maxLines], ", ") + fmt.Sprintf(" and %d more", len(names)-maxLines)
+	}
+	return strings.Join(names, ", ")
 }
 
 // Table writes rows as columns two spaces apart, removing control

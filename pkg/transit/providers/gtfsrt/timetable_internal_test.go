@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -660,5 +661,48 @@ func TestCanceledWaiterLeavesTheScan(t *testing.T) {
 	deps, err := p.Departures(t.Context(), transit.Query{StopID: "S1", Now: monday8, Window: time.Hour})
 	if err != nil || len(deps) != 1 {
 		t.Errorf("got %v, err %v; want S1's departure", rows(deps), err)
+	}
+}
+
+func TestStopLines(t *testing.T) {
+	p := newTown(t, town).provider(t, false)
+	var liner transit.StopLiner = p
+	got, err := liner.StopLines(t.Context(), []string{"S1", "T", "U"}, monday8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string][]string{}
+	for id, lines := range got {
+		for _, l := range lines {
+			names[id] = append(names[id], l.ShortName)
+		}
+	}
+	// Harbor (U) only ends trips, so no line departs from it.
+	want := map[string][]string{"S1": {"1", "2"}, "T": {"1"}}
+	if diff := cmp.Diff(want, names); diff != "" {
+		t.Errorf("lines (-want +got):\n%s", diff)
+	}
+}
+
+// timetable = false hides timetabled trips, but the timetable still names
+// a stop's lines, as for New York's stations with a stop per group of lines.
+func TestStopLinesWithTimetableOff(t *testing.T) {
+	s := newTown(t, town)
+	off := false
+	p, err := New(Config{StaticURL: s.URL + "/gtfs.zip", RealtimeURLs: []string{s.URL + "/rt.pb"}, Timetable: &off}, s.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := p.StopLines(t.Context(), []string{"S1"}, monday8)
+	if err != nil || len(got["S1"]) != 2 {
+		t.Errorf("StopLines = %v, %v; want lines 1 and 2", got, err)
+	}
+}
+
+func TestCompareLineNames(t *testing.T) {
+	names := []string{"E", "10", "C", "2", "21"}
+	slices.SortFunc(names, compareLineNames)
+	if diff := cmp.Diff([]string{"2", "10", "21", "C", "E"}, names); diff != "" {
+		t.Errorf("order (-want +got):\n%s", diff)
 	}
 }

@@ -31,7 +31,7 @@ type static struct {
 	freqs    map[string][]frequency
 	// zr is the schedule zip, or nil once it cannot be read again.
 	zr *zip.Reader
-	// tt is nil when the provider shows no timetabled trips.
+	// tt is nil when the schedule's stop times cannot be read.
 	tt *timetable
 	// file holds zr's data until the provider adopts the schedule.
 	file io.Closer

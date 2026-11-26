@@ -77,6 +77,14 @@ type StopNamer interface {
 	StopName(ctx context.Context, id string, now time.Time) (name string, ok bool)
 }
 
+// StopLiner is implemented by providers that can tell which lines serve
+// each of a list of stops, so stops that share a name can be told apart.
+// It can cost a scan of the schedule or a request per stop, so callers ask
+// only where it helps. Stops whose lines are unknown are left out.
+type StopLiner interface {
+	StopLines(ctx context.Context, ids []string, now time.Time) (map[string][]Line, error)
+}
+
 // Metered is implemented by providers whose upstream API has a monthly
 // request quota, so the configuration can be checked against it.
 type Metered interface {
