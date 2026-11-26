@@ -81,6 +81,6 @@ interpreted.
   schedules in `/data/cache` (`--cache-dir`), named by a hash of their URL.
   Without a cache directory, schedules are staged as temporary files in
   `/tmp`, and with a read-only root filesystem downloads fall back to
-  memory.
+  memory, without timetabled trips.
 - Images are built by GitHub Actions, from version tags and from `main`,
   only after `just ci` passes.
