@@ -1,0 +1,37 @@
+# Release archives for `go install`-less users; the image is built by the
+# publish workflow's image job. Run `just release-check` after editing.
+version: 2
+
+project_name: urbanist-timetable
+
+builds:
+  - main: ./cmd/urbanist-timetable
+    binary: urbanist-timetable
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+
+archives:
+  # Plain os_arch names let mise's github backend and ubi pick the asset.
+  - name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+      - NOTICE
+      - README.md
+      - CHANGELOG.md
+
+checksum:
+  name_template: checksums.txt
+
+# Release notes come from CHANGELOG.md (see the publish workflow).
+changelog:
+  disable: true

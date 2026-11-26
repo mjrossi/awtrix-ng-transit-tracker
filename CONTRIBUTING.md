@@ -76,16 +76,19 @@ Run `just ci`, and add user-visible changes under `Unreleased` in
 
 ## Releasing
 
+Cut a version when users would notice: when `Unreleased` holds a change
+worth installing. Fixes go out as patch versions. There is no schedule.
+
 1. Set `version` in `cmd/urbanist-timetable/main.go` to the new version, for
    builds outside the image. In `CHANGELOG.md`, rename `Unreleased` to the
    version and date, and update the compare links. Merge both to `main`.
 2. Tag and push: `git tag v1.2.3 && git push origin v1.2.3`. The `publish`
-   workflow runs `just ci`, then pushes the multi-arch image.
-3. Publish that version's changelog section as the release notes:
-   ```sh
-   awk '/^## \[1.2.3\]/{f=1;next} /^## \[/{f=0} f' CHANGELOG.md |
-     gh release create v1.2.3 --notes-file -
-   ```
-4. On an arm64 machine, check that
-   `docker run --rm ghcr.io/mjrossi/urbanist-timetable:1.2.3 --version`
-   prints `1.2.3`.
+   workflow runs `just ci`, then pushes the multi-arch image and, with
+   GoReleaser, creates the GitHub release: archives for Linux, macOS and
+   Windows on amd64 and arm64, `checksums.txt`, build provenance, and that
+   version's `CHANGELOG.md` section as the notes. It fails if the section
+   is missing.
+3. Check that the binaries report the version:
+   `docker run --rm ghcr.io/mjrossi/urbanist-timetable:1.2.3 --version` on
+   an arm64 machine, and `mise exec github:mjrossi/urbanist-timetable@1.2.3
+   -- urbanist-timetable --version` on a Mac, both print `1.2.3`.

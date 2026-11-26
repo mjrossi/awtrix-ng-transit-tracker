@@ -32,7 +32,10 @@ The terminal tool, the clock and the library are in place, as the
 planned. v0.7 brings timetabled departures in `gtfsrt`, and finding an
 agency from the command line (`agencies search`, and `config init` by
 agency or city). After it, the next work comes from "Later", and a version
-is cut when there is a reason to.
+is cut when there is a reason to; each release ships the image and
+binaries for Linux, macOS and Windows. A Homebrew tap and a mise or aqua
+registry entry wait until someone asks: `mise use github:...` already
+works without one.
 
 ## Data sources: agencies are data, adapters are code
 

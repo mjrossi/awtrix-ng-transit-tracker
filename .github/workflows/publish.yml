@@ -1,7 +1,8 @@
 name: publish
 
-# Version tags publish 1.2.3, 1.2, 1 and latest; pushes to main publish
-# main and sha-<short>, so a fix can be pulled before it is released.
+# Version tags publish 1.2.3, 1.2, 1 and latest, and a GitHub release with
+# binaries; pushes to main publish main and sha-<short>, so a fix can be
+# pulled before it is released.
 on:
   push:
     branches: [main]
@@ -89,3 +90,31 @@ jobs:
           annotations: ${{ steps.meta.outputs.annotations }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  release:
+    needs: ci
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: jdx/mise-action@v4
+      - name: Release notes from CHANGELOG.md
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v v="$version" '$0 ~ "^## \\[" v "\\]" {f=1; next} /^## \[/ {f=0} f' \
+            CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+          test -s "$RUNNER_TEMP/notes.md" || { echo "no CHANGELOG section for $version" >&2; exit 1; }
+      - run: goreleaser release --clean --release-notes "$RUNNER_TEMP/notes.md"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            dist/*.tar.gz
+            dist/*.zip

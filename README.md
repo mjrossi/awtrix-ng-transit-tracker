@@ -42,11 +42,19 @@ screen instead, and a `grid` layout the next departure of up to four lines.
 
 ## In your terminal
 
-With Go installed:
+Install a release binary for Linux, macOS or Windows, one of:
 
 ```bash
+mise use -g github:mjrossi/urbanist-timetable    # with mise
 go install github.com/mjrossi/urbanist-timetable/cmd/urbanist-timetable@latest
+```
 
+or download an archive from
+[Releases](https://github.com/mjrossi/urbanist-timetable/releases). Each
+archive has build provenance:
+`gh attestation verify ARCHIVE -R mjrossi/urbanist-timetable`. Then:
+
+```bash
 urbanist-timetable systems                          # ready-made systems
 urbanist-timetable agencies search lisbon           # any other agency, by name or city
 urbanist-timetable stops search mta-subway times sq # find a stop ID
@@ -581,7 +589,7 @@ for _, row := range transit.Group(deps, 0, 3) {
 ## Development
 
 ```bash
-mise install     # Go, just, golangci-lint
+mise install     # Go, just, golangci-lint, GoReleaser
 just             # list commands
 just ci          # lint, test, validate the example config
 ```
@@ -594,6 +602,7 @@ just ci          # lint, test, validate the example config
 | `just golden` | Rewrites the renderer's golden files after an intended layout change |
 | `just catalog-check` | Checks every catalog system against its live feeds |
 | `just example` | Builds the example importer, a module of its own |
+| `just release-check` | Validates the GoReleaser config and builds a snapshot |
 | `just docker-build` / `just docker-run [config]` | Builds the image; runs it against `config.toml` |
 
 Secrets for local runs go in `mise.local.toml` (gitignored); copy

@@ -7,6 +7,7 @@
 go = "1.27.3"
 "aqua:casey/just" = "1.51.0"
 "aqua:golangci/golangci-lint" = "2.15.0"
+"aqua:goreleaser/goreleaser" = "2.20.3"
 
 [env]
 # The CLI defaults to ~/.config/urbanist-timetable/config.toml; work in this

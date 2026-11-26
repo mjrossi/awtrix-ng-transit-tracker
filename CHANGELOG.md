@@ -37,6 +37,9 @@ version may break configuration.
   rather than an empty board.
   The first query for a stop reads the schedule's `stop_times.txt` (about
   5 seconds for HSL), and the result is saved in the cache directory.
+- Release binaries for Linux, macOS and Windows (amd64 and arm64), with
+  checksums and build provenance, on each GitHub release. Install with
+  `mise use -g github:mjrossi/urbanist-timetable` or from the release page.
 - `cache clear` deletes the cached GTFS schedules, which otherwise stay in
   the cache directory even after no board uses them. Library users can call
   `providers.ClearScheduleCache` or `gtfsrt.ClearCache`.

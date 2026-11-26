@@ -78,10 +78,11 @@ Part of the Urbanist family with *The Urbanist Lexicon* (mjrossi.com) and
 
 ## Tooling
 
-mise pins Go, just and golangci-lint: `mise install`, then `just` lists
-the commands. The `go` line in `go.mod` is the oldest Go that importers may
-use, and CI's `oldest-go` job builds with it; mise pins the newer version
-used for development. `just ci` runs what CI runs. After an intended layout
+mise pins Go, just, golangci-lint and GoReleaser: `mise install`, then
+`just` lists the commands. The `go` line in `go.mod` is the oldest Go that
+importers may use, and CI's `oldest-go` job builds with it; mise pins the
+newer version used for development. `just ci` runs what CI runs, apart from
+`just release-check`, which checks the GoReleaser config. After an intended layout
 change, `just golden` rewrites the renderer's golden files; review the
 diff.
 
