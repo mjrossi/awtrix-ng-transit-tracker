@@ -10,8 +10,10 @@ info_url = "https://www.hsl.fi/en/opendata"
 data_license = "CC BY 4.0"
 notes = """
 All HSL modes in one feed. The timetable is a 90 MB download, staged in a
-temporary file once a day; loading it peaks at about 95 MB of memory,
-more during the daily refresh while the previous timetable is in use."""
+temporary file once a day; with it loaded the process uses about 145 MB
+of memory, more during the daily refresh while the previous timetable is
+in use. The first time a stop is asked for, its timetable is read from
+the schedule in about 5 seconds, peaking near 220 MB."""
 
 [options]
 static_url = "https://infopalvelut.storage.hsldev.com/gtfs/hsl.zip"

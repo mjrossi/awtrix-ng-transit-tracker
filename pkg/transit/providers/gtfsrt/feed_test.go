@@ -41,8 +41,9 @@ func TestDecodeHandBuilt(t *testing.T) {
 		bytesField(2, // entity
 			bytesField(1, []byte("e1")), // id
 			bytesField(3, // trip_update
-				bytesField(1, bytesField(1, []byte("t1")), varint(4, tripCanceled), bytesField(5, []byte("R"))),
+				bytesField(1, bytesField(1, []byte("t1")), bytesField(2, []byte("25:10:00")), bytesField(3, []byte("20231114")), varint(4, tripCanceled), bytesField(5, []byte("R")), varint(6, 1)),
 				bytesField(2, // stop_time_update
+					varint(1, 7),
 					bytesField(2, varint(1, uint64(negDelay)), varint(2, 1700000300)),
 					bytesField(4, []byte("S1N")),
 					varint(5, stopSkipped),
@@ -57,8 +58,8 @@ func TestDecodeHandBuilt(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := feed{trips: []tripUpdate{{
-		tripID: "t1", routeID: "R", relation: tripCanceled,
-		stops: []stopTimeUpdate{{stopID: "S1N", relation: stopSkipped, arrival: event{time: 1700000300, hasTime: true, delay: -90}}},
+		tripID: "t1", routeID: "R", startDate: "20231114", startTime: "25:10:00", direction: 1, relation: tripCanceled,
+		stops: []stopTimeUpdate{{stopID: "S1N", seq: 7, hasSeq: true, relation: stopSkipped, arrival: event{time: 1700000300, hasTime: true, delay: -90, hasDelay: true}}},
 	}}}
 	if diff := cmp.Diff(want, f, cmp.AllowUnexported(feed{}, tripUpdate{}, stopTimeUpdate{}, event{})); diff != "" {
 		t.Errorf("mismatch (-want +got):\n%s", diff)
@@ -117,7 +118,7 @@ func TestDepartureRules(t *testing.T) {
 		// Feeds that publish only the next stop give no hint of the end.
 		{tripID: "next", routeID: "R", stops: []stopTimeUpdate{{stopID: "S", arrival: at(10)}}},
 	}}
-	deps := departures(nil, f, transit.Query{StopID: "S", Now: now, Window: time.Hour})
+	deps := departures(nil, f, transit.Query{StopID: "S", Now: now, Window: time.Hour}, nil)
 	var got []string
 	for _, d := range deps {
 		got = append(got, string(d.Status))

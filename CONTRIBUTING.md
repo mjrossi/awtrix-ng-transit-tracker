@@ -2,10 +2,10 @@
 
 ## Adding your city
 
-Most agencies need **no code**. If your agency publishes static GTFS and a
-GTFS-Realtime `TripUpdates` feed (look it up in the
-[Mobility Database](https://mobilitydatabase.org/)), the generic `gtfsrt`
-provider serves it from configuration alone:
+Most agencies need **no code**. If your agency publishes a static GTFS
+schedule, with or without a GTFS-Realtime `TripUpdates` feed (look it up in
+the [Mobility Database](https://mobilitydatabase.org/)), the generic
+`gtfsrt` provider serves it from configuration alone:
 
 ```toml
 [providers.myagency]

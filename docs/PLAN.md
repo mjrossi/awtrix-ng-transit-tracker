@@ -29,10 +29,8 @@ and *Urbanist Atlas*.
 
 The terminal tool, the clock and the library are in place, as the
 [design](./superpowers/specs/2026-11-25-clock-cli-library-design.md)
-planned. No release is planned; the next work comes from "Later", and a
-version is cut when there is a reason to. Of the items there,
-schedule-only departures in `gtfsrt` would help the terminal most, since
-many agencies' stops look empty until a vehicle is near.
+planned. v0.7 brings timetabled departures in `gtfsrt` (done) and finding
+an agency from the command line, below in "Later".
 
 ## Data sources: agencies are data, adapters are code
 
@@ -42,7 +40,7 @@ with the number of agencies.
 
 | Provider | Agencies | Code per agency | Notes |
 |---|---|---|---|
-| `gtfsrt` (generic) | Thousands: anything with static GTFS + GTFS-RT `TripUpdates` | None: a TOML entry | The default path. Feeds are listed in the [Mobility Database](https://mobilitydatabase.org/). |
+| `gtfsrt` (generic) | Thousands: anything with static GTFS, with or without GTFS-RT `TripUpdates` | None: a TOML entry | The default path. Feeds are listed in the [Mobility Database](https://mobilitydatabase.org/). |
 | `transitland` | Thousands, merged into JSON by [Transitland](https://www.transit.land/) | None: a TOML entry with a feed Onestop ID | Done. The fallback where an agency's own feeds are awkward, and the way to show timetabled trips today. Every request counts against a monthly quota (10,000 free, 50,000 Hobbyist/Academic), so each stop is fetched once per `refresh_interval` and boards count down from that. The quota belongs to the API key, so blocks sharing a key are added up. |
 | Custom adapters | One each | A few hundred lines | Only for agencies without usable GTFS-RT `TripUpdates`. |
 
@@ -57,8 +55,8 @@ lacks). New adapters are frozen unless the maintainer needs one.
 |---|---|---|
 | Carris Metropolitana (regional bus) | Own JSON API, `https://api.carrismetropolitana.pt/v2/arrivals/by_stop/{id}`, no key. Returns the whole service day; `Cache-Control: max-age=20`; unknown stops get 404. Live line IDs carry a `[XXXXX]` feed prefix that `/lines` does not. Data CC BY 4.0 | **Done** (`carrismetropolitana` provider) |
 | Metro de Lisboa | EstadoServicoML API behind a WSO2 gateway; free registration and a client-credentials OAuth token. Wait times have no line field (read per line), errors come as HTTP 200 with `codigo`, some platforms are frozen since 2024, and terminals list trains twice. Data CC BY 4.0 | **Done** (`metrolisboa` provider) |
-| Carris (city bus and tram) | GTFS and GTFS-RT vehicle positions on `https://gateway.carris.pt/gateway/gtfs/api/v2.11/GTFS`; its trip updates and alerts paths answer 404. The GTFS has no headsigns. Transitland has the schedule (`f-carris~pt`) but no realtime | **Schedule only**, through `transitland` |
-| CP (rail) | Transitland has the schedule (`f-eyc-cp`); a third-party `TripUpdates` feed exists (see Open questions) | **Schedule only**, through `transitland` |
+| Carris (city bus and tram) | GTFS and GTFS-RT vehicle positions on `https://gateway.carris.pt/gateway/gtfs/api/v2.11/GTFS`; its trip updates and alerts paths answer 404. The GTFS has no headsigns, so destinations are the last stop's name. Transitland has the schedule (`f-carris~pt`) but no realtime | **Schedule only**, through `gtfsrt` or `transitland` |
+| CP (rail) | GTFS in the Mobility Database (`mdb-2057`); Transitland has it too (`f-eyc-cp`); a third-party `TripUpdates` feed exists (see Open questions) | **Schedule only**, through `gtfsrt` or `transitland` |
 | Fertagus, ferries | — | Not researched |
 
 ## Where the rest lives
@@ -75,17 +73,6 @@ lacks). New adapters are frozen unless the maintainer needs one.
 Not needed for the maintainer's setup (TC002, Docker on a NAS, Lisbon
 providers). Each widens who the project works for.
 
-- **Schedule-only departures and delay-only updates in `gtfsrt`.**
-  Realtime feeds often list only trips that have started or are about
-  to, so a board shows "No departures" while a timetabled bus is 20
-  minutes away, and a realtime outage blanks the board although the
-  timetable is known. Some agencies, many in Europe, send delays without
-  clock times, and those updates are skipped today. Needs `stop_times.txt`
-  and calendar handling (`calendar.txt`, `calendar_dates.txt`, times past
-  24:00, `frequencies.txt`). The file is large (37 MB uncompressed for the
-  NYC subway, 1.1 GB for HSL), so index only the stops in the
-  configuration while streaming it. Until then, `transitland` shows
-  timetabled trips for the agencies it covers.
 - **Replace schedules by what they cover, not by age.** A cached schedule
   is checked with the server after 24 hours and kept until `cache clear`,
   even when no configuration names it any more. The schedule itself says
@@ -102,14 +89,14 @@ providers). Each widens who the project works for.
   more needs one board per group of `lines`. AWTRIX NG accepts an array of
   apps and numbers them, but an array that shrinks, withdrawing a board, the
   state file and the rotation order all need a design.
-- **Destinations from the last stop.** Carris publishes no headsigns, so its
-  departures have none. `transitland` could look up a trip's last stop once
-  per route pattern. Each is a request against the quota, and may
+- **Destinations from the last stop in `transitland`.** Carris publishes no
+  headsigns, so its departures there have none (`gtfsrt` names the last
+  stop). `transitland` could look up a trip's last stop once per route
+  pattern. Each is a request against the quota, and may
   have to be repeated for each new feed version, which Carris has daily.
 - **First departure in the empty state.** Instead of "No departures",
   show when service starts ("First 5:42"). Needs a departure beyond the
-  board's window, so the scheduler would have to look further ahead, and
-  for `gtfsrt` the schedule-only support above.
+  board's window, so the scheduler would have to look further ahead.
 - **Section cards.** With boards from several agencies, "which board is
   this?" becomes a question the clock should answer. A short card (2–3 s)
   ahead of each agency's boards in the rotation would: the agency's icon

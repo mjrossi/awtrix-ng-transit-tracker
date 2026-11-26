@@ -44,7 +44,8 @@ type validators struct {
 // It is a single file so that processes replacing it concurrently cannot
 // pair one's validators with another's zip. Its modification time is when
 // it was last downloaded or revalidated. The file stays open from header to
-// parse, so a replacement renamed into place meanwhile does not affect it.
+// parse, and then for as long as the schedule's timetable reads stop times
+// from it, so a replacement renamed into place meanwhile does not affect it.
 type cacheFile struct {
 	f        *os.File
 	valid    validators
@@ -88,12 +89,25 @@ func readCacheHeader(f *os.File) (*cacheFile, error) {
 	return cf, nil
 }
 
+// parse reads the schedule. On success the schedule holds the file, which
+// Close then leaves open.
 func (cf *cacheFile) parse() (*static, error) {
-	return parseStatic(io.NewSectionReader(cf.f, cf.zipStart, cf.size-cf.zipStart), cf.size-cf.zipStart)
+	st, err := parseStatic(io.NewSectionReader(cf.f, cf.zipStart, cf.size-cf.zipStart), cf.size-cf.zipStart)
+	if err != nil {
+		return nil, err
+	}
+	st.file, st.cached = cf.f, true
+	cf.f = nil
+	return st, nil
 }
 
-// Close closes the file.
-func (cf *cacheFile) Close() error { return cf.f.Close() }
+// Close closes the file unless a parsed schedule holds it.
+func (cf *cacheFile) Close() error {
+	if cf.f == nil {
+		return nil
+	}
+	return cf.f.Close()
+}
 
 // removeAbandonedDownloads deletes partial downloads that no process can
 // still be writing, such as ones cut off when a container stopped, and
@@ -111,8 +125,9 @@ func removeAbandonedDownloads(dir string, now time.Time) int64 {
 	return freed
 }
 
-// ClearCache deletes the schedules cached in dir by WithCacheDir, and
-// partial downloads no process is still writing. It returns how many
+// ClearCache deletes the schedules cached in dir by WithCacheDir, the stop
+// indexes saved with them, and partial downloads no process is still
+// writing. It returns how many
 // schedules it deleted and how many bytes it freed. A process using a
 // deleted schedule keeps its copy in memory and downloads a new one at its
 // next refresh. Other files in dir are left alone.
@@ -122,7 +137,9 @@ func ClearCache(dir string, now time.Time) (schedules int, freed int64, err erro
 	if err != nil {
 		return 0, freed, err
 	}
-	var errs []error
+	indexFreed, indexErr := clearIndexes(dir)
+	freed += indexFreed
+	errs := []error{indexErr}
 	for _, p := range paths {
 		fi, err := os.Lstat(p)
 		if err != nil || !fi.Mode().IsRegular() {
@@ -191,8 +208,13 @@ func (p *Provider) refreshCache(ctx context.Context, now time.Time, path string,
 	if err != nil {
 		return nil, errCacheUnusable
 	}
+	var fresh *cacheFile
 	defer func() {
-		_ = tmp.Close()
+		if fresh != nil {
+			_ = fresh.Close()
+		} else {
+			_ = tmp.Close()
+		}
 		_ = os.Remove(tmp.Name())
 	}()
 
@@ -232,7 +254,7 @@ func (p *Provider) refreshCache(ctx context.Context, now time.Time, path string,
 	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
 		return nil, err
 	}
-	fresh, err := readCacheHeader(tmp)
+	fresh, err = readCacheHeader(tmp)
 	if err != nil {
 		return nil, err
 	}
@@ -242,9 +264,11 @@ func (p *Provider) refreshCache(ctx context.Context, now time.Time, path string,
 	}
 	p.logDownloaded(ctx, size, start)
 	if err := os.Chtimes(tmp.Name(), now, now); err != nil {
+		st.release()
 		return nil, err
 	}
 	if err := os.Rename(tmp.Name(), path); err != nil {
+		st.release()
 		return nil, err
 	}
 	return st, nil

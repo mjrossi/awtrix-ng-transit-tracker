@@ -14,6 +14,9 @@ direction. Some complexes have a station per group of lines."""
 
 [options]
 static_url = "http://web.mta.info/developers/data/nyct/subway/google_transit.zip"
+# Realtime trip IDs do not match the schedule's, so timetabled trips would
+# show beside the same trips from the feeds.
+timetable = false
 realtime_urls = [
   "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs",
   "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-ace",
