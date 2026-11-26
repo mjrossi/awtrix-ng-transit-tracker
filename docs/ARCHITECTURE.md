@@ -59,7 +59,8 @@ Mobility Database's feed list to the cache directory (`--cache-dir`).
 | `internal/scheduler` | polling, backoff, last-good cache, active and quiet hours, `Snapshot`, the `Output` interface | `transit` |
 | `internal/termout` | departures and stop lists → aligned terminal text or JSON | `transit` |
 | `internal/fold` | lowercase, unaccented text for stop search and board names | none |
-| `internal/directory` | systems beyond the catalog: searching the Mobility Database's feed list (cached a week) and Transitland's operators, and turning a result's ID into a provider block | `fold`, `catalog` |
+| `internal/tomlout` | TOML values for generated files | none |
+| `internal/directory` | systems beyond the catalog: searching the Mobility Database's feed list (cached a week) and Transitland's operators, and turning a result's ID into a provider block (Transitland lookups cached a week) | `fold`, `tomlout`, `catalog` |
 | `internal/clockout` | the clock `Output`: snapshot → TC002 app → push or expire; cleanup of removed boards | `scheduler`, `render`, `awtrix` |
 | `internal/config` | TOML decoding, `${NAME}` expansion, validation, reading one provider block (`LoadProvider`), expanding a block from elsewhere (`ExpandSettings`), monthly request estimates | `transit`, `catalog`, `render`, `awtrix` |
 | `cmd/urbanist-timetable` | CLI commands and wiring (`wire.go`) | everything |
@@ -82,7 +83,8 @@ Rules, from [CLAUDE.md](../CLAUDE.md):
   `Snapshot.Rows` copies before it changes anything.
 - All runners share one output. `clockout.Output` keeps each board's last
   push time, under a mutex.
-- Within a tick, a board refreshes its due sources one after another.
+- Within a tick, a board refreshes its due sources at the same time, each
+  touching only its own state.
 - `buildProviders` (`cmd/urbanist-timetable/wire.go`) builds each
   `[providers.NAME]` block **once**. Boards that name the same block share
   the instance, and with it its caches. Providers must therefore be safe for
@@ -95,7 +97,7 @@ Rules, from [CLAUDE.md](../CLAUDE.md):
   |---|---|---|---|
   | `gtfsrt` | schedule zip, in memory and, with a cache directory, on disk | 24 h, then a conditional request on disk | keep last, retry in 15 min; a new process uses an expired file and reports the failure |
   | `gtfsrt` | each realtime feed | 15 s | failure cached for 15 s too |
-  | `gtfsrt` | stop times of each stop asked for, in memory and, with a cache directory, on disk | as long as the schedule; stops first asked within 100 ms share one scan of `stop_times.txt` | realtime only, partial result; scan retried in 15 min |
+  | `gtfsrt` | stop times of each stop asked for, in memory and, with a cache directory, on disk | as long as the schedule; stops first asked within 100 ms share one scan of `stop_times.txt`, and a stop asked for during a scan that covers it waits for that scan; a board's sources refresh at once, so its stops share a scan too | realtime only, partial result; scan retried in 15 min |
   | `metrolisboa` | stations | 24 h | keep last, retry in 15 min; with none yet, retry next poll |
   | `metrolisboa` | destinations | 24 h | keep last, retry in 15 min |
   | `metrolisboa` | each line's wait times | 15 s | not cached |

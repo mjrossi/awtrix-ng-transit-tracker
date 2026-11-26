@@ -255,11 +255,17 @@ func (r *Runner) hide(ctx context.Context, p phase) {
 // when no source has usable data.
 func (r *Runner) Snapshot(ctx context.Context, now time.Time) (snap Snapshot, ok bool) {
 	snap = Snapshot{Board: r.board.Name, At: now, PerRow: r.board.PerRow}
+	// Sources refresh together, so stops on one provider can share a
+	// download or a pass over its schedule. Each touches only its own state.
+	var wg sync.WaitGroup
+	for i, src := range r.board.Sources {
+		if st := &r.state[i]; !now.Before(st.nextAttempt) {
+			wg.Go(func() { r.refresh(ctx, src, st, now) })
+		}
+	}
+	wg.Wait()
 	for i, src := range r.board.Sources {
 		st := &r.state[i]
-		if !now.Before(st.nextAttempt) {
-			r.refresh(ctx, src, st, now)
-		}
 		res := SourceResult{
 			Name:      src.Name,
 			StopID:    src.StopID,

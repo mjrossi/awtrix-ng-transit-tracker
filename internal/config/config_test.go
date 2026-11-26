@@ -463,3 +463,16 @@ name = "work"
 		t.Errorf("missing file: %v %v", b, p)
 	}
 }
+
+func TestExpandSettingsReadsOnlyAllowedNames(t *testing.T) {
+	t.Setenv("TOWN_API_KEY", "k")
+	t.Setenv("OTHER_SECRET", "s")
+	got, err := config.ExpandSettings("mdb-1", map[string]any{"static_url": "https://x/gtfs.zip?key=${TOWN_API_KEY}"}, []string{"TOWN_API_KEY"})
+	if err != nil || got["static_url"] != "https://x/gtfs.zip?key=k" {
+		t.Errorf("got %v, err %v", got, err)
+	}
+	_, err = config.ExpandSettings("mdb-1", map[string]any{"realtime_urls": []any{"https://evil.example/?k=${OTHER_SECRET}"}}, []string{"TOWN_API_KEY"})
+	if err == nil || strings.Contains(err.Error(), "s\"") || !strings.Contains(err.Error(), "OTHER_SECRET") {
+		t.Errorf("err = %v; want OTHER_SECRET refused", err)
+	}
+}

@@ -104,6 +104,9 @@ func New(cfg Config, client *http.Client, opts ...Option) (*Provider, error) {
 	if len(cfg.RealtimeURLs) == 0 && cfg.StaticURL == "" {
 		return nil, errors.New("give static_url, realtime_urls (GTFS-RT TripUpdates), or both")
 	}
+	if len(cfg.RealtimeURLs) == 0 && cfg.Timetable != nil && !*cfg.Timetable {
+		return nil, errors.New("timetable = false needs realtime_urls, or nothing is left to show")
+	}
 	for i, u := range cfg.RealtimeURLs {
 		if _, err := upstream.HTTPURL(fmt.Sprintf("realtime_urls[%d]", i), u); err != nil {
 			return nil, err
@@ -218,6 +221,16 @@ func (p *Provider) Departures(ctx context.Context, q transit.Query) ([]transit.D
 			return nil, fmt.Errorf("%w %q", transit.ErrUnknownStop, q.StopID)
 		}
 	}
+	// With the timetable the only source, an empty board would claim no
+	// departures when none could be read.
+	if st != nil && len(p.cfg.RealtimeURLs) == 0 {
+		switch {
+		case ttErr != nil:
+			return nil, errors.Join(ttErr, staticErr)
+		case st.tt == nil:
+			return nil, errors.Join(fmt.Errorf("%s: %w", Name, errNoTimetable), staticErr)
+		}
+	}
 
 	out, used := merge(st, plans, feeds, q)
 	var live []transit.Departure
@@ -326,29 +339,45 @@ func startOf(tu *tripUpdate) (tripStart, bool) {
 
 // matchUpdate finds the update for a timetabled trip: by trip ID, where an
 // update without a start date matches any day, or else by route, direction
-// and start.
+// and start. Every run of a frequency trip shares its trip ID, so GTFS-RT
+// names the run by its start time too, and an update without one matches
+// none of them.
 func matchUpdate(byTrip map[string][]*tripUpdate, byStart map[tripStart]*tripUpdate, pl planned) *tripUpdate {
 	day := pl.day.String()
 	for _, tu := range byTrip[pl.trip] {
-		if tu.startDate == "" || tu.startDate == day {
-			return tu
+		if tu.startDate != "" && tu.startDate != day {
+			continue
 		}
+		if pl.freq {
+			if secs, ok := parseClock(tu.startTime); !ok || secs != pl.start {
+				continue
+			}
+		}
+		return tu
 	}
 	if len(byStart) == 0 {
 		return nil
 	}
 	k := tripStart{route: pl.route, dir: int(pl.dir), start: pl.start, day: day}
-	if tu, ok := byStart[k]; ok {
-		return tu
+	dirs := []int{int(pl.dir), -1}
+	if pl.dir < 0 {
+		// The schedule gives no direction, but the feed may.
+		dirs = []int{-1, 0, 1}
 	}
-	k.dir = -1
-	return byStart[k]
+	for _, k.dir = range dirs {
+		if tu, ok := byStart[k]; ok {
+			return tu
+		}
+	}
+	return nil
 }
 
 // predict returns a timetabled departure's predicted time from its trip
 // update: the update for the stop, or the delay of the latest earlier stop,
-// which GTFS-RT says carries forward. skipped is true when the update says
-// the trip will not stop there.
+// which GTFS-RT says carries forward. Only updates with a stop_sequence can
+// be placed before the stop, and an earlier stop with a time but no delay
+// carries nothing, since its scheduled time is not kept. skipped is true
+// when the update says the trip will not stop there.
 func predict(st *static, tu *tripUpdate, pl planned, stop string) (at time.Time, skipped, ok bool) {
 	var (
 		delay    int32

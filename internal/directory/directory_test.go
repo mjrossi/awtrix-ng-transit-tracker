@@ -25,13 +25,15 @@ type server struct {
 	notModified atomic.Int32
 	csvDown     atomic.Bool
 	tlCalls     atomic.Int32
+	// modified is when the list last changed.
+	modified atomic.Pointer[time.Time]
 }
-
-var listModified = time.Date(2026, 11, 20, 0, 0, 0, 0, time.UTC)
 
 func newServer(t *testing.T) *server {
 	t.Helper()
 	s := &server{}
+	listModified := time.Date(2026, 11, 20, 0, 0, 0, 0, time.UTC)
+	s.modified.Store(&listModified)
 	csv, err := os.ReadFile("testdata/feeds_v2.csv")
 	if err != nil {
 		t.Fatal(err)
@@ -43,12 +45,13 @@ func newServer(t *testing.T) *server {
 			http.Error(w, "down", http.StatusBadGateway)
 			return
 		}
-		if since, err := http.ParseTime(r.Header.Get("If-Modified-Since")); err == nil && !listModified.After(since) {
+		modified := *s.modified.Load()
+		if since, err := http.ParseTime(r.Header.Get("If-Modified-Since")); err == nil && !modified.After(since) {
 			s.notModified.Add(1)
 			w.WriteHeader(http.StatusNotModified)
 			return
 		}
-		w.Header().Set("Last-Modified", listModified.Format(http.TimeFormat))
+		w.Header().Set("Last-Modified", modified.Format(http.TimeFormat))
 		_, _ = w.Write(csv)
 	})
 	tl := func(w http.ResponseWriter, r *http.Request, file string) {
@@ -69,7 +72,7 @@ func newServer(t *testing.T) *server {
 			tl(w, r, "operators-feed-"+f+".json")
 			return
 		}
-		tl(w, r, "operators-search-lisboa.json")
+		tl(w, r, "operators-search-"+r.URL.Query().Get("search")+".json")
 	})
 	mux.HandleFunc("GET /tl/feeds/{id}", func(w http.ResponseWriter, r *http.Request) {
 		tl(w, r, "feed-"+r.PathValue("id")+".json")
@@ -253,6 +256,9 @@ func TestResolveHeaderKey(t *testing.T) {
 	if diff := cmp.Diff(map[string]any{"authorization": "${RCT_API_KEY}"}, b.Options["headers"]); diff != "" {
 		t.Errorf("headers mismatch (-want +got):\n%s", diff)
 	}
+	if !strings.Contains(b.Comment, "data.trilliumtransit.com, api.goswift.ly") {
+		t.Errorf("comment %q does not say the key header reaches both hosts", b.Comment)
+	}
 }
 
 func TestResolveErrors(t *testing.T) {
@@ -289,9 +295,20 @@ func TestListIsCached(t *testing.T) {
 		t.Error("a week-old list was not revalidated")
 	}
 
+	// The list changes, then a refresh fails: the old copy is used, and
+	// the next refresh still asks for changes since the last real check.
+	changed := now.Add(24 * time.Hour)
+	s.modified.Store(&changed)
 	now = now.Add(8 * 24 * time.Hour)
 	s.csvDown.Store(true)
 	search()
+	s.csvDown.Store(false)
+	now = now.Add(time.Hour)
+	calls := s.csvCalls.Load()
+	search()
+	if s.csvCalls.Load() != calls+1 || s.notModified.Load() != 1 {
+		t.Error("after a failed refresh, the changed list was not downloaded")
+	}
 
 	if freed, err := directory.ClearCache(dir); err != nil || freed == 0 {
 		t.Errorf("ClearCache = %d, %v", freed, err)
@@ -299,7 +316,7 @@ func TestListIsCached(t *testing.T) {
 }
 
 func TestIsID(t *testing.T) {
-	for id, want := range map[string]bool{"mdb-53": true, "tld-716": true, "f-9q9-bart": true, "bart": false, "mta-subway": false, "f-": false} {
+	for id, want := range map[string]bool{"mdb-53": true, "tld-716": true, "f-9q9-bart": true, "bart": false, "mta-subway": false, "f-": false, "bart-2": false} {
 		if got := directory.IsID(id); got != want {
 			t.Errorf("IsID(%q) = %v", id, got)
 		}
@@ -314,5 +331,67 @@ func TestWordStarts(t *testing.T) {
 	// "Railroad" starts with "rail"; nothing should match inside a word.
 	if got := ids(res.Systems); !slices.Contains(got, "mdb-524") || slices.Contains(got, "mdb-1077") {
 		t.Errorf("got %v", got)
+	}
+}
+
+// Transitland's search is looser than the others'; its operators are kept
+// only when the words start words of their names, agencies or place.
+func TestSearchTransitlandWordStarts(t *testing.T) {
+	res, err := newServer(t).directory("", "key").Search(t.Context(), "mta")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := ids(res.Systems)
+	if !slices.Contains(got, "f-dr5-mtanyctbusbrooklyn") || slices.Contains(got, "f-9q8y-sfmta") {
+		t.Errorf("got %v; want MTA's feed and not SFMTA's", got)
+	}
+}
+
+// A ${NAME} in the list would read the environment once the block is
+// expanded, and could carry a secret to the list's chosen host.
+func TestEnvReferencesInTheListAreDropped(t *testing.T) {
+	d := newServer(t).directory("", "")
+	if res, err := d.Search(t.Context(), "exfiltration"); err != nil || len(res.Systems) != 0 {
+		t.Errorf("got %v, err %v; want the row left out", ids(res.Systems), err)
+	}
+	if _, _, err := d.Resolve(t.Context(), "mdb-990001"); !errors.Is(err, directory.ErrUnknownID) {
+		t.Errorf("err = %v, want unknown", err)
+	}
+}
+
+func TestTransitlandKeyStaysOnItsHost(t *testing.T) {
+	var leaked atomic.Bool
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		leaked.Store(r.Header.Get("Apikey") != "")
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(other.Close)
+	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, other.URL+r.URL.Path, http.StatusFound)
+	}))
+	t.Cleanup(first.Close)
+	d := &directory.Directory{TransitlandKey: "key", TransitlandURL: first.URL}
+	_, _, _ = d.Resolve(t.Context(), "f-x")
+	if leaked.Load() {
+		t.Error("the Transitland key followed a redirect to another host")
+	}
+}
+
+func TestTransitlandLookupsAreCached(t *testing.T) {
+	s := newServer(t)
+	d := s.directory(t.TempDir(), "key")
+	if _, _, err := d.Resolve(t.Context(), "f-carris~pt"); err != nil {
+		t.Fatal(err)
+	}
+	calls := s.tlCalls.Load()
+	sys, b, err := d.Resolve(t.Context(), "f-carris~pt")
+	if err != nil || s.tlCalls.Load() != calls {
+		t.Errorf("err %v, %d more requests; want the saved lookup", err, s.tlCalls.Load()-calls)
+	}
+	if b.Type != "gtfsrt" || sys.StaticURL == "" {
+		t.Errorf("saved lookup lost its block or schedule: %+v %+v", sys, b)
+	}
+	if freed, err := directory.ClearCache(d.CacheDir); err != nil || freed == 0 {
+		t.Errorf("ClearCache = %d, %v", freed, err)
 	}
 }

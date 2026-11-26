@@ -317,7 +317,7 @@ func TestBlockName(t *testing.T) {
 		"Companhia Carris de Ferro de Lisboa": "companhia-carris",
 		"Helsingin seudun liikenne (HSL)":     "hsl",
 		"Transtejo Soflusa (TTSL)":            "ttsl",
-		"SĮ 'Susisiekimo paslaugos'":          "s-susisiekimo",
+		"SĮ 'Susisiekimo paslaugos'":          "si-susisiekimo",
 	} {
 		if got := blockName(directory.System{Agency: agency}); got != want {
 			t.Errorf("blockName(%q) = %q, want %q", agency, got, want)

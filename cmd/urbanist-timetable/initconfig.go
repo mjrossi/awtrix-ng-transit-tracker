@@ -21,6 +21,7 @@ import (
 	"github.com/mjrossi/urbanist-timetable/internal/directory"
 	"github.com/mjrossi/urbanist-timetable/internal/fold"
 	"github.com/mjrossi/urbanist-timetable/internal/termout"
+	"github.com/mjrossi/urbanist-timetable/internal/tomlout"
 	"github.com/mjrossi/urbanist-timetable/pkg/awtrix"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/catalog"
@@ -90,7 +91,7 @@ func catalogChoice(sys catalog.System) chosenSystem {
 
 func directoryChoice(sys directory.System, b directory.Block) (chosenSystem, error) {
 	name := blockName(sys)
-	text, err := directoryBlock(name, b)
+	text, err := b.TOML(name)
 	if err != nil {
 		return chosenSystem{}, err
 	}
@@ -494,11 +495,11 @@ func renderConfig(a initAnswers) (string, error) {
 	b.WriteString(a.system.block)
 	fmt.Fprintf(&b, "\n# `urbanist-timetable departures` shows every board; `departures %s`, this one.\n", a.board)
 	b.WriteString("[[boards]]\n")
-	fmt.Fprintf(&b, "name = %s\n", tomlString(a.board))
+	fmt.Fprintf(&b, "name = %s\n", tomlout.String(a.board))
 	for _, s := range a.stops {
 		b.WriteString("\n[[boards.stops]]\n")
-		fmt.Fprintf(&b, "provider = %s\n", tomlString(a.system.name))
-		fmt.Fprintf(&b, "stop = %s", tomlString(s.ID))
+		fmt.Fprintf(&b, "provider = %s\n", tomlout.String(a.system.name))
+		fmt.Fprintf(&b, "stop = %s", tomlout.String(s.ID))
 		if name := termout.Clean(s.Name); name != "" {
 			fmt.Fprintf(&b, "  # %s", name)
 		}
@@ -506,7 +507,7 @@ func renderConfig(a initAnswers) (string, error) {
 		if len(a.lines) > 0 {
 			quoted := make([]string, len(a.lines))
 			for i, l := range a.lines {
-				quoted[i] = tomlString(l)
+				quoted[i] = tomlout.String(l)
 			}
 			fmt.Fprintf(&b, "lines = [%s]\n", strings.Join(quoted, ", "))
 		}
@@ -528,29 +529,10 @@ func renderConfig(a initAnswers) (string, error) {
 // requires from the environment.
 func providerBlock(sys catalog.System) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "[providers.%s]\nsystem = %s\n", sys.ID, tomlString(sys.ID))
+	fmt.Fprintf(&b, "[providers.%s]\nsystem = %s\n", sys.ID, tomlout.String(sys.ID))
 	for _, k := range sys.RequiredOptions {
-		fmt.Fprintf(&b, "%s = %s\n", k, tomlString("${"+sys.EnvName(k)+"}"))
+		fmt.Fprintf(&b, "%s = %s\n", k, tomlout.String("${"+sys.EnvName(k)+"}"))
 	}
-	return b.String()
-}
-
-// tomlString quotes s as a TOML basic string.
-func tomlString(s string) string {
-	var b strings.Builder
-	b.WriteByte('"')
-	for _, r := range s {
-		switch {
-		case r == '"' || r == '\\':
-			b.WriteByte('\\')
-			b.WriteRune(r)
-		case unicode.IsControl(r):
-			fmt.Fprintf(&b, "\\u%04X", r)
-		default:
-			b.WriteRune(r)
-		}
-	}
-	b.WriteByte('"')
 	return b.String()
 }
 

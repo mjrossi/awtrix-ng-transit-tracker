@@ -17,8 +17,10 @@ version may break configuration.
   its `[providers]` block, with `${NAME}` for any key the feeds need and
   where to get one, and warns about schedules too large for a small
   machine. Where Transitland lists the feed URLs and they need no key, the
-  block uses `gtfsrt`, which spends no Transitland quota. `cache clear`
-  also removes the saved feed list.
+  block uses `gtfsrt`, which spends no Transitland quota on departures;
+  working that out takes two or more Transitland requests, kept a week in
+  the cache directory. `cache clear` also removes the saved feed list and
+  these lookups.
 - `gtfsrt` shows timetabled trips from the schedule, with the realtime
   prediction where a feed has one, so a stop no longer reads "No
   departures" while a scheduled bus is 20 minutes away, and a realtime
@@ -31,6 +33,8 @@ version may break configuration.
   stop. Where realtime trips do not match the schedule's, lines with
   realtime trips show only those and a warning is logged;
   `timetable = false` turns timetabled trips off, as `mta-subway` does.
+  Without `realtime_urls`, a schedule that gives no timetable is an error
+  rather than an empty board.
   The first query for a stop reads the schedule's `stop_times.txt` (about
   5 seconds for HSL), and the result is saved in the cache directory.
 - `cache clear` deletes the cached GTFS schedules, which otherwise stay in
@@ -81,10 +85,12 @@ version may break configuration.
   `nyc-subway`), `mbta` (`boston-mbta`), `hsl` (`helsinki-hsl`), `bart`
   (`sf-bart`), `metro-lisboa` (`lisbon-metro`) and `carris-metropolitana`
   (`lisbon-carris-metropolitana`). Configurations that name a system with
-  `system =` need the new ID. The environment variables for Metro de
-  Lisboa's keys are now `METRO_LISBOA_CLIENT_ID` and
-  `METRO_LISBOA_CLIENT_SECRET`. `systems` shows each system's agency.
-
+  `system =` need the new ID; an old ID's error names the new one. The
+  environment variables for Metro de Lisboa's keys are now
+  `METRO_LISBOA_CLIENT_ID` and `METRO_LISBOA_CLIENT_SECRET`. `systems`
+  shows each system's agency.
+- A board's stops are fetched at the same time on each poll, rather than
+  one after another.
 - Several errors at once, such as from `config validate` or from several
   failing stops, are printed one per line instead of run together.
 - A bad flag or argument prints a short error and points to `--help`,
@@ -127,14 +133,6 @@ version may break configuration.
 
 ### Changed
 
-- Catalog systems are renamed after their agency: `mta-subway` (was
-  `nyc-subway`), `mbta` (`boston-mbta`), `hsl` (`helsinki-hsl`), `bart`
-  (`sf-bart`), `metro-lisboa` (`lisbon-metro`) and `carris-metropolitana`
-  (`lisbon-carris-metropolitana`). Configurations that name a system with
-  `system =` need the new ID. The environment variables for Metro de
-  Lisboa's keys are now `METRO_LISBOA_CLIENT_ID` and
-  `METRO_LISBOA_CLIENT_SECRET`. `systems` shows each system's agency.
-
 - `run` and `preview` are now `clock run` and `clock preview`, beside the
   terminal commands. The Docker image runs `clock run` by default; a
   deployment that passes `run` itself must pass `clock run` instead.
@@ -154,7 +152,7 @@ version may break configuration.
   or an invalid setting elsewhere in the file no longer stops it. A
   misspelled key anywhere is still an error. A catalog system
   that needs keys reads them from `<SYSTEM>_<OPTION>` environment variables,
-  such as `METRO_LISBOA_CLIENT_ID`, when the file has no block for it.
+  such as `LISBON_METRO_CLIENT_ID`, when the file has no block for it.
 - `config validate` reports providers as well as boards.
 - For programs that import `pkg/`: `catalog.Resolve` and `catalog.Options`
   replace the internal provider resolution, and `providers.Open` builds a
@@ -182,14 +180,6 @@ version may break configuration.
 
 ### Changed
 
-- Catalog systems are renamed after their agency: `mta-subway` (was
-  `nyc-subway`), `mbta` (`boston-mbta`), `hsl` (`helsinki-hsl`), `bart`
-  (`sf-bart`), `metro-lisboa` (`lisbon-metro`) and `carris-metropolitana`
-  (`lisbon-carris-metropolitana`). Configurations that name a system with
-  `system =` need the new ID. The environment variables for Metro de
-  Lisboa's keys are now `METRO_LISBOA_CLIENT_ID` and
-  `METRO_LISBOA_CLIENT_SECRET`. `systems` shows each system's agency.
-
 - For programs that import `pkg/transit`: `transit.Metered`,
   `transit.Quota`, `transit.ModeForRouteType` and `Query.Contains` are new.
   `Query.Limit` and `Stop.Modes`, which the service never used, are removed,
@@ -210,20 +200,12 @@ version may break configuration.
   print it, since it can hold credentials.
 - `stops search` lists `metrolisboa` stations of the same name in a stable
   order.
-- The notes for `bart` name the labels table correctly,
+- The notes for `sf-bart` name the labels table correctly,
   `[boards.clock.labels]`.
 
 ## [0.4.0] - 2026-11-25
 
 ### Changed
-
-- Catalog systems are renamed after their agency: `mta-subway` (was
-  `nyc-subway`), `mbta` (`boston-mbta`), `hsl` (`helsinki-hsl`), `bart`
-  (`sf-bart`), `metro-lisboa` (`lisbon-metro`) and `carris-metropolitana`
-  (`lisbon-carris-metropolitana`). Configurations that name a system with
-  `system =` need the new ID. The environment variables for Metro de
-  Lisboa's keys are now `METRO_LISBOA_CLIENT_ID` and
-  `METRO_LISBOA_CLIENT_SECRET`. `systems` shows each system's agency.
 
 - Errors in a config value name its key, and errors in `active_hours` also
   name the board.
@@ -269,14 +251,6 @@ version may break configuration.
 
 ### Changed
 
-- Catalog systems are renamed after their agency: `mta-subway` (was
-  `nyc-subway`), `mbta` (`boston-mbta`), `hsl` (`helsinki-hsl`), `bart`
-  (`sf-bart`), `metro-lisboa` (`lisbon-metro`) and `carris-metropolitana`
-  (`lisbon-carris-metropolitana`). Configurations that name a system with
-  `system =` need the new ID. The environment variables for Metro de
-  Lisboa's keys are now `METRO_LISBOA_CLIENT_ID` and
-  `METRO_LISBOA_CLIENT_SECRET`. `systems` shows each system's agency.
-
 - **Breaking:** a board's clock settings (`layout`, `max_rows`,
   `overflow`, `lifetime`, `duration`, `font`, `empty_text`) move to a
   `[boards.clock]` table, and `[boards.labels]` becomes
@@ -316,14 +290,6 @@ version may break configuration.
 ## [0.2.0] - 2026-11-23
 
 ### Changed
-
-- Catalog systems are renamed after their agency: `mta-subway` (was
-  `nyc-subway`), `mbta` (`boston-mbta`), `hsl` (`helsinki-hsl`), `bart`
-  (`sf-bart`), `metro-lisboa` (`lisbon-metro`) and `carris-metropolitana`
-  (`lisbon-carris-metropolitana`). Configurations that name a system with
-  `system =` need the new ID. The environment variables for Metro de
-  Lisboa's keys are now `METRO_LISBOA_CLIENT_ID` and
-  `METRO_LISBOA_CLIENT_SECRET`. `systems` shows each system's agency.
 
 - **Breaking:** renamed from `awtrix-ng-transit-tracker` to Urbanist
   Timetable. The image is now `ghcr.io/mjrossi/urbanist-timetable`, the

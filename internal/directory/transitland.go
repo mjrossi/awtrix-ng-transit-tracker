@@ -2,11 +2,16 @@ package directory
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
+	"time"
 )
 
 // DefaultTransitlandURL is Transitland's REST API.
@@ -65,9 +70,10 @@ const (
 	specGTFSRT = "GTFS_RT"
 )
 
-// searchTransitland asks Transitland for operators matching words, which
-// it matches against names and places. Each of an operator's schedules is
-// a system.
+// searchTransitland asks Transitland for operators matching words. Its
+// search is looser than the others', so operators are kept only when every
+// word starts a word of their names, their agencies' names or their place.
+// Each of an operator's schedules is a system.
 func (d *Directory) searchTransitland(ctx context.Context, words string) ([]System, error) {
 	var ops tlOperators
 	q := url.Values{"search": {words}, "limit": {"20"}}
@@ -76,6 +82,16 @@ func (d *Directory) searchTransitland(ctx context.Context, words string) ([]Syst
 	}
 	var out []System
 	for _, op := range ops.Operators {
+		hay := []string{op.Name, deref(op.ShortName), op.place()}
+		for _, a := range op.Agencies {
+			hay = append(hay, a.AgencyName)
+		}
+		for _, f := range op.Feeds {
+			hay = append(hay, f.OnestopID, deref(f.Name))
+		}
+		if !matches(strings.Join(hay, " "), words) {
+			continue
+		}
 		data := DataSchedule
 		for _, f := range op.Feeds {
 			if strings.EqualFold(f.Spec, specGTFSRT) {
@@ -129,11 +145,23 @@ func deref(s *string) string {
 }
 
 // resolveTransitland builds the block for a Transitland schedule feed. A
-// gtfsrt block, which spends no Transitland quota, is written when the
-// schedule needs no key and its realtime feeds are unambiguous and need
-// none: the feed's operator has this one schedule. Otherwise the block
-// reads departures through Transitland.
+// gtfsrt block, which spends no Transitland quota on departures, is written
+// when the schedule needs no key and its realtime feeds are unambiguous and
+// need none: the feed's operator has this one schedule. Otherwise the block
+// reads departures through Transitland. Working this out costs two or more
+// requests, so with a cache directory the answer is kept for a week.
 func (d *Directory) resolveTransitland(ctx context.Context, id string) (System, Block, error) {
+	if s, b, ok := d.loadResolved(id); ok {
+		return s, b, nil
+	}
+	s, b, err := d.lookupTransitland(ctx, id)
+	if err == nil {
+		d.saveResolved(id, s, b)
+	}
+	return s, b, err
+}
+
+func (d *Directory) lookupTransitland(ctx context.Context, id string) (System, Block, error) {
 	feed, err := d.transitlandFeed(ctx, id)
 	if err != nil {
 		return System{}, Block{}, err
@@ -164,7 +192,8 @@ func (d *Directory) resolveTransitland(ctx context.Context, id string) (System, 
 		sys.Data = DataRealtime
 	}
 
-	direct := feed.Authorization.Type == "" && feed.URLs.StaticCurrent != "" && len(ops.Operators) == 1 && (len(rtRefs) == 0 || schedules == 1)
+	direct := feed.Authorization.Type == "" && feed.URLs.StaticCurrent != "" && !hasEnvRef(feed.URLs.StaticCurrent) &&
+		len(ops.Operators) == 1 && (len(rtRefs) == 0 || schedules == 1)
 	var realtime []any
 	for _, ref := range rtRefs {
 		if !direct {
@@ -175,7 +204,7 @@ func (d *Directory) resolveTransitland(ctx context.Context, id string) (System, 
 			return System{}, Block{}, err
 		}
 		switch {
-		case rt.Authorization.Type != "":
+		case rt.Authorization.Type != "" || hasEnvRef(rt.URLs.RealtimeTripUpdates):
 			direct = false
 		case rt.URLs.RealtimeTripUpdates != "":
 			realtime = append(realtime, rt.URLs.RealtimeTripUpdates)
@@ -183,8 +212,10 @@ func (d *Directory) resolveTransitland(ctx context.Context, id string) (System, 
 	}
 	if direct {
 		opts := map[string]any{"static_url": feed.URLs.StaticCurrent}
+		sys.Data = DataSchedule
 		if len(realtime) > 0 {
 			opts["realtime_urls"] = realtime
+			sys.Data = DataRealtime
 		}
 		return sys, Block{Type: "gtfsrt", Options: opts, Comment: fmt.Sprintf("Feed URLs from Transitland (%s).", id)}, nil
 	}
@@ -234,4 +265,54 @@ func (d *Directory) transitland(ctx context.Context, path string, v any) error {
 		return fmt.Errorf("GET %s: %w", shown, err)
 	}
 	return nil
+}
+
+const (
+	resolvedTTL    = 7 * 24 * time.Hour
+	resolvedPrefix = "transitland-"
+)
+
+type resolved struct {
+	System    System `json:"system"`
+	StaticURL string `json:"static_url,omitempty"`
+	Block     Block  `json:"block"`
+}
+
+func (d *Directory) resolvedPath(id string) string {
+	sum := sha256.Sum256([]byte(id))
+	return filepath.Join(d.CacheDir, resolvedPrefix+hex.EncodeToString(sum[:8])+".json")
+}
+
+// loadResolved reads a block worked out within the last week. Any problem
+// reads as not saved.
+func (d *Directory) loadResolved(id string) (System, Block, bool) {
+	if d.CacheDir == "" {
+		return System{}, Block{}, false
+	}
+	path := d.resolvedPath(id)
+	fi, err := os.Stat(path)
+	if err != nil || !within(d.now(), fi.ModTime(), resolvedTTL) {
+		return System{}, Block{}, false
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return System{}, Block{}, false
+	}
+	var r resolved
+	if json.Unmarshal(b, &r) != nil || r.System.ID != id {
+		return System{}, Block{}, false
+	}
+	r.System.StaticURL = r.StaticURL
+	return r.System, r.Block, true
+}
+
+func (d *Directory) saveResolved(id string, s System, b Block) {
+	if d.CacheDir == "" {
+		return
+	}
+	data, err := json.Marshal(resolved{System: s, StaticURL: s.StaticURL, Block: b})
+	if err != nil {
+		return
+	}
+	saveFile(d.CacheDir, d.resolvedPath(id), data, d.now())
 }

@@ -13,7 +13,7 @@ notes = """
 A station ID such as "127" covers both directions; "127N" or "127S" is one
 direction. Some complexes have a station per group of lines."""
 mobility_db = ["mdb-516"]
-transitland_feed = "f-dr5r-nyctsubway"
+transitland_feeds = ["f-dr5r-nyctsubway"]
 
 [options]
 static_url = "http://web.mta.info/developers/data/nyct/subway/google_transit.zip"
