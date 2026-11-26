@@ -27,13 +27,13 @@ and *Urbanist Atlas*.
 
 ## Direction
 
-The terminal tool, the clock and the library are in place. v0.7 brings
-timetabled departures in `gtfsrt`, and finding a system by agency or city
-from the command line (`agencies search`, and `config init`). After it, the next work comes from "Later", and a version
-is cut when there is a reason to; each release ships the image and
-binaries for Linux, macOS and Windows. A Homebrew tap and a mise or aqua
-registry entry wait until someone asks: `mise use github:...` already
-works without one.
+The terminal tool, the clock and the library are in place, and since
+v0.7 `gtfsrt` shows timetabled departures and a system can be found by
+agency or city (`agencies search`, `config init`). The next work comes
+from "Later", and a version is cut when there is a reason to; each
+release ships the image and binaries for Linux, macOS and Windows. A
+Homebrew tap and a mise or aqua registry entry wait until someone asks:
+`mise use github:...` already works without one.
 
 ## Data sources: agencies are data, adapters are code
 
@@ -65,6 +65,9 @@ lacks). New adapters are frozen unless the maintainer needs one.
 ## Where the rest lives
 
 - How the code is built: [ARCHITECTURE.md](./ARCHITECTURE.md).
+- For users: setting up the clock and its layouts,
+  [clock.md](./clock.md); provider settings, [providers.md](./providers.md);
+  Transitland plans and quota, [transitland.md](./transitland.md).
 - TC002 layouts and design rules: [rendering.md](./rendering.md).
 - Security model: [SECURITY.md](../SECURITY.md).
 - Conventions and approved modules: [CLAUDE.md](../CLAUDE.md).
@@ -76,6 +79,15 @@ lacks). New adapters are frozen unless the maintainer needs one.
 Not needed for the maintainer's setup (TC002, Docker on a NAS, Lisbon
 providers). Each widens who the project works for.
 
+- **`config add`: another board from the command line.** `config init`
+  only writes a new file (or replaces one with `--force`), so a second
+  board means editing by hand. `config add` would ask as init does
+  (agency or city, stop, lines, board name) and append the board, with a
+  `[providers]` block only if the file has none for that system. It
+  appends text rather than decoding and encoding the file, since go-toml
+  drops comments, and it validates a copy before replacing the file.
+  Editing or removing existing boards stays with an editor; adding a stop
+  to an existing board waits until someone asks.
 - **Replace schedules by what they cover, not by age.** A cached schedule
   is checked with the server after 24 hours and kept until `cache clear`,
   even when no configuration names it any more. The schedule itself says

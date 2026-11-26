@@ -40,9 +40,10 @@ data. `Snapshot.Rows(now)` filters and groups them, and drops the
 predictions of a failing source, which are as old as its last good fetch.
 
 The program makes outgoing requests only: to transit APIs and to the clock.
-It listens on no ports. Besides the state file, it writes only GTFS
-schedules, the stop times read from them for configured stops, and the
-Mobility Database's feed list to the cache directory (`--cache-dir`).
+It listens on no ports. Besides the state file and the file `config init`
+writes, it writes only to the cache directory (`--cache-dir`): GTFS
+schedules, the stop times read from them for configured stops, the
+Mobility Database's feed list, and Transitland lookups of directory IDs.
 
 ## Packages and what they may import
 
