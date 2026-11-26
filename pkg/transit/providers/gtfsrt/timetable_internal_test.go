@@ -713,3 +713,26 @@ func TestStopLinesWithTimetableOff(t *testing.T) {
 		}
 	})
 }
+
+// A refresh that replaces the schedule during a read is answered from the
+// new schedule, for StopLines as for Departures.
+func TestStopTimesAfterRefresh(t *testing.T) {
+	p := newTown(t, town).provider(t, false)
+	old, err := p.staticFor(t.Context(), monday8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fresh, err := p.downloadStatic(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.adopt(fresh)
+
+	st, sts, err := p.stopTimes(t.Context(), old, "S1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st != fresh || len(sts) == 0 {
+		t.Errorf("stopTimes = %p with %d stop times, want the new schedule %p with S1's", st, len(sts), fresh)
+	}
+}

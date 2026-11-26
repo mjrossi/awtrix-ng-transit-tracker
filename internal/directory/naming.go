@@ -65,11 +65,10 @@ var companyForm = map[string]bool{
 // shortName. Names this tool or its catalog already use get the system's
 // ID instead, so a directory entry cannot be handed another service's key.
 func keyVar(s System) string {
-	id := s.ID
 	name := strings.ToUpper(fold.Slug(s.shortName(), '_', 0))
 	v := name + "_API_KEY"
 	if name == "" || reservedVar(v) {
-		v = strings.ToUpper(strings.ReplaceAll(id, "-", "_")) + "_API_KEY"
+		v = strings.ToUpper(strings.ReplaceAll(s.ID, "-", "_")) + "_API_KEY"
 	}
 	return v
 }

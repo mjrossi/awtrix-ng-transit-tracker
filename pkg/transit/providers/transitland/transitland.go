@@ -60,9 +60,9 @@ const (
 	failureShared = 10 * time.Second
 
 	searchLimit = 50
-	// MaxStopLines is how many stops one StopLines call asks about, each
+	// maxStopLines is how many stops one StopLines call asks about, each
 	// costing a request.
-	MaxStopLines = 10
+	maxStopLines = 10
 	maxBody      = 16 << 20
 )
 
@@ -335,7 +335,7 @@ func (p *Provider) StopName(_ context.Context, id string, _ time.Time) (string, 
 
 // StopLines implements transit.StopLiner with one request for each stop
 // not asked about before, each counting against the quota, for the first
-// MaxStopLines stops. Transitland lists no lines for a station, only for
+// maxStopLines stops. Transitland lists no lines for a station, only for
 // its platforms.
 func (p *Provider) StopLines(ctx context.Context, ids []string, _ time.Time) (map[string][]transit.Line, error) {
 	var (
@@ -344,7 +344,7 @@ func (p *Provider) StopLines(ctx context.Context, ids []string, _ time.Time) (ma
 		errs []error
 		wg   sync.WaitGroup
 	)
-	for _, id := range ids[:min(len(ids), MaxStopLines)] {
+	for _, id := range ids[:min(len(ids), maxStopLines)] {
 		key := p.stopKey(id)
 		p.mu.Lock()
 		lines, ok := p.lines[key]

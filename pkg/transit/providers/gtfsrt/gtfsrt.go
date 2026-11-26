@@ -249,19 +249,26 @@ func (p *Provider) timetabled(ctx context.Context, st *static, q transit.Query) 
 	// Trips are looked for from a while before q.Now, since a late one can
 	// still be ahead, and a little after the window for early ones.
 	from, to := q.Now.Add(-maxDelay), q.Now.Add(q.Window+maxEarly)
-	sts, err := st.tt.stopTimes(ctx, q.StopID)
-	if errors.Is(err, errTimetableClosed) {
-		// A refresh replaced the schedule during the query.
-		if cur := p.currentStatic(); cur != st && cur.tt != nil {
-			st = cur
-			sts, err = st.tt.stopTimes(ctx, q.StopID)
-		}
-	}
+	st, sts, err := p.stopTimes(ctx, st, q.StopID)
 	if err != nil {
 		return st, nil, false, fmt.Errorf("timetable: %w", err)
 	}
 	plans = st.planned(sts, from, to)
 	return st, plans, len(sts) > 0, nil
+}
+
+// stopTimes reads id's stop times from st's timetable, or from the current
+// schedule's when a refresh replaced st during the read, and returns the
+// schedule they came from.
+func (p *Provider) stopTimes(ctx context.Context, st *static, id string) (*static, []stopTime, error) {
+	sts, err := st.tt.stopTimes(ctx, id)
+	if errors.Is(err, errTimetableClosed) {
+		if cur := p.currentStatic(); cur != st && cur.tt != nil {
+			st = cur
+			sts, err = st.tt.stopTimes(ctx, id)
+		}
+	}
+	return st, sts, err
 }
 
 const (
@@ -906,14 +913,14 @@ func (p *Provider) StopLines(ctx context.Context, ids []string, now time.Time) (
 	// of stop_times.txt, so these usually share it.
 	for _, id := range ids {
 		wg.Go(func() {
-			sts, err := st.tt.stopTimes(ctx, id)
+			from, sts, err := p.stopTimes(ctx, st, id)
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
 				errs = append(errs, err)
 				return
 			}
-			if lines := st.stopLines(sts); len(lines) > 0 {
+			if lines := from.stopLines(sts); len(lines) > 0 {
 				out[id] = lines
 			}
 		})

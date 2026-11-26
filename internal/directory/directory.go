@@ -311,10 +311,11 @@ func rank(s System, words string) int {
 }
 
 // named reports whether words is the system's agency or name exactly, with
-// or without a part in parentheses, or that part or one of its words: an
-// acronym such as "MTA" in "Metropolitan Transit Authority (MTA)", or
-// "Muni" in "(SFMTA - Muni)". "mta" then ranks New York's MTA above
-// Nashville MTA WeGo, which only contains it.
+// or without a part in parentheses, or that part or one of the names it
+// separates: an acronym such as "MTA" in "Metropolitan Transit Authority
+// (MTA)", or "Muni" in "(SFMTA - Muni)", but not "rapid" in "(Rapid
+// Transit)". "mta" then ranks New York's MTA above Nashville MTA WeGo,
+// which only contains it.
 func named(s System, words string) bool {
 	want := fold.Slug(words, ' ', 0)
 	if want == "" {
@@ -324,7 +325,7 @@ func named(s System, words string) bool {
 		names := []string{text, parens.ReplaceAllString(text, "")}
 		for _, m := range parens.FindAllStringSubmatch(text, -1) {
 			names = append(names, m[1])
-			names = append(names, strings.FieldsFunc(m[1], func(r rune) bool { return !isWordChar(r) })...)
+			names = append(names, nameSeparator.Split(m[1], -1)...)
 		}
 		for _, n := range names {
 			if fold.Slug(n, ' ', 0) == want {
@@ -336,6 +337,10 @@ func named(s System, words string) bool {
 }
 
 var parens = regexp.MustCompile(`\(([^()]*)\)`)
+
+// nameSeparator splits the names in parentheses, as in "SFMTA - Muni" or
+// "SFMTA/Muni"; a dash without spaces, as in "Metro-North", joins a name.
+var nameSeparator = regexp.MustCompile(`\s*[/,;|]\s*|\s+[-–—]\s+`)
 
 func sourceOrder(s Source) int {
 	return slices.Index([]Source{SourceCatalog, SourceMobilityDB, SourceTransitland}, s)

@@ -90,6 +90,10 @@ func TestNamed(t *testing.T) {
 		{"Metropolitan Transit Authority (MTA)", "Long Island Rail Road", "long island rail road", true},
 		{"Nashville MTA WeGo Public Transit", "", "mta", false},
 		{"San Francisco Municipal Transportation Agency (SFMTA - Muni)", "", "muni", true},
+		{"San Francisco Municipal Transportation Agency (SFMTA/Muni)", "", "sfmta", true},
+		{"Example Transit District (Rapid Transit)", "", "rapid", false},
+		{"Example Transit District (Rapid Transit)", "", "rapid transit", true},
+		{"Example Railroad (Metro-North)", "", "north", false},
 		{"RATP (RER)", "", "ratp", true},
 		{"RATP Cap Arc Sud et Ouest", "", "ratp", false},
 		{"Carris", "", "CARRIS", true},
@@ -123,5 +127,22 @@ func TestLiveSchedules(t *testing.T) {
 				t.Errorf("(-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+// A shared feed's realtime feed may be listed under any of its operators.
+func TestHasLive(t *testing.T) {
+	ops := []tlOperator{
+		{Feeds: []tlFeedRef{{OnestopID: "f-region", Spec: "GTFS"}, {OnestopID: "f-a", Spec: "GTFS"}}},
+		{Feeds: []tlFeedRef{{OnestopID: "f-region", Spec: "GTFS"}, {OnestopID: "f-region~rt", Spec: "GTFS_RT"}}},
+	}
+	if !hasLive(ops, "f-region") {
+		t.Error("hasLive missed the realtime feed listed under the second operator")
+	}
+	if hasLive(ops, "f-a") {
+		t.Error("hasLive gave f-a another schedule's realtime feed")
+	}
+	if hasLive(nil, "f-region") {
+		t.Error("hasLive found a realtime feed without operators")
 	}
 }

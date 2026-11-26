@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 )
@@ -146,6 +147,13 @@ func (op tlOperator) liveSchedules() map[string]bool {
 	return live
 }
 
+// hasLive reports whether any of ops has a realtime feed for schedule id.
+// Every operator of a shared feed lists it, but Transitland may list its
+// realtime feed under only some of them.
+func hasLive(ops []tlOperator, id string) bool {
+	return slices.ContainsFunc(ops, func(op tlOperator) bool { return op.liveSchedules()[id] })
+}
+
 func (op tlOperator) title() string {
 	if op.ShortName != nil && *op.ShortName != "" && !strings.EqualFold(*op.ShortName, op.Name) {
 		return op.Name + " (" + *op.ShortName + ")"
@@ -231,7 +239,7 @@ func (d *Directory) lookupTransitland(ctx context.Context, id string) (System, B
 			}
 		}
 	}
-	if len(ops.Operators) > 0 && ops.Operators[0].liveSchedules()[id] {
+	if hasLive(ops.Operators, id) {
 		sys.Data = DataRealtime
 	}
 
