@@ -61,11 +61,11 @@ type System struct {
 	Notes       string `toml:"notes"`
 	// RequiredOptions are settings users must add, such as API keys.
 	RequiredOptions []string `toml:"required_options"`
-	// MobilityDB and TransitlandFeed name the same system in those
+	// MobilityDB and TransitlandFeeds name the same system in those
 	// directories, so a search can show this entry instead.
-	MobilityDB      []string       `toml:"mobility_db"`
-	TransitlandFeed string         `toml:"transitland_feed"`
-	Options         map[string]any `toml:"options"`
+	MobilityDB       []string       `toml:"mobility_db"`
+	TransitlandFeeds []string       `toml:"transitland_feeds"`
+	Options          map[string]any `toml:"options"`
 }
 
 // Title is the agency and the system's name: "MTA Subway", or "HSL" for an
@@ -79,9 +79,11 @@ func (s System) Title() string {
 
 var (
 	idPattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
-	// directoryID is the shape of Mobility Database IDs (mdb-53, tld-716),
-	// which work as system IDs too, so catalog IDs must not look like them.
-	directoryID = regexp.MustCompile(`^[a-z]+-[0-9]+$`)
+	// directoryID is the shape of directory IDs: the Mobility Database's
+	// (mdb-53, tld-716) and Transitland's onestop IDs, which start with a
+	// one-letter kind (f-9q9-bart). Catalog IDs are kept clear of them so
+	// both can name a system.
+	directoryID = regexp.MustCompile(`^([a-z]+-[0-9]+|[a-z]-.*)$`)
 )
 
 var (
@@ -117,6 +119,10 @@ func parse(file string) (System, error) {
 	if err != nil {
 		return System{}, err
 	}
+	return parseSystem(file, b)
+}
+
+func parseSystem(file string, b []byte) (System, error) {
 	var s System
 	dec := toml.NewDecoder(bytes.NewReader(b))
 	dec.DisallowUnknownFields()
@@ -128,7 +134,7 @@ func parse(file string) (System, error) {
 	case !idPattern.MatchString(s.ID):
 		return System{}, fmt.Errorf("catalog %s: ID must be lowercase words joined by -", file)
 	case directoryID.MatchString(s.ID):
-		return System{}, fmt.Errorf("catalog %s: ID must not look like a Mobility Database ID", file)
+		return System{}, fmt.Errorf("catalog %s: ID must not look like a Mobility Database or Transitland ID", file)
 	case s.Agency == "" || s.Provider == "" || s.SampleStop == "":
 		return System{}, fmt.Errorf("catalog %s: agency, provider and sample_stop are required", file)
 	case s.Status != StatusMaintained && s.Status != StatusCommunity:

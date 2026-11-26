@@ -22,10 +22,12 @@ request. Add the system to the README's table.
 
 Name the file `<agency>.toml` when the entry covers all of the agency
 (`hsl`, `bart`), or `<agency>-<system>.toml` when the agency runs more than
-one system (`mta-subway`). Set `agency` to the name riders know, and `name`
-to the system's name within the agency, or leave `name` out. List the
-entry's IDs in the Mobility Database (`mobility_db`) and Transitland
-(`transitland_feed`) where it has them, so searches show the catalog entry
+one system (`mta-subway`). An ID must not look like a directory ID: not a
+word followed by a number (`mdb-53`), and not a single letter followed by
+`-` (`f-9q9-bart`). Set `agency` to the name riders know, and `name` to the
+system's name within the agency, or leave `name` out. List the entry's IDs
+in the Mobility Database (`mobility_db`) and Transitland
+(`transitland_feeds`) where it has them, so searches show the catalog entry
 instead.
 
 ## Adding a provider

@@ -61,13 +61,14 @@ type timetable struct {
 	fileMu sync.RWMutex
 	closer io.Closer
 
-	mu       sync.Mutex
-	closed   bool
-	stops    map[string][]stopTime
-	next     *scan
-	running  bool
-	failed   error
-	failedAt time.Time
+	mu     sync.Mutex
+	closed bool
+	stops  map[string][]stopTime
+	// current is the scan running now, and next the one queued after it.
+	current, next *scan
+	running       bool
+	failed        error
+	failedAt      time.Time
 }
 
 type scan struct {
@@ -76,7 +77,12 @@ type scan struct {
 	err   error
 }
 
-var errTimetableClosed = errors.New("timetable replaced by a newer schedule")
+var (
+	errTimetableClosed = errors.New("timetable replaced by a newer schedule")
+	// errNoTimetable is a schedule without a calendar or stop times, or one
+	// kept in memory for want of a temporary file.
+	errNoTimetable = errors.New("no timetable in the schedule, and no realtime_urls")
+)
 
 // newTimetable reads stop times from st.zr, closing closer when the
 // timetable is closed. dir, if not empty, is where stop indexes are saved;
@@ -93,17 +99,23 @@ func newTimetable(st *static, closer io.Closer, dir, url string, clock func() ti
 	return tt
 }
 
-// version identifies the schedule's stop times and trips, so a saved index
-// is used only with the schedule it was made from.
+// version identifies the schedule files a saved index is made from: stop
+// times and trips, stops for platforms' stations and last stops, and
+// frequencies for how departures are counted. A saved index is used only
+// with the schedule it was made from.
 func (s *static) version() (string, bool) {
 	var parts []string
-	for _, name := range []string{"stop_times.txt", "trips.txt"} {
+	for _, name := range []string{"stop_times.txt", "trips.txt", "stops.txt", "frequencies.txt"} {
 		i := slices.IndexFunc(s.zr.File, func(f *zip.File) bool { return f.Name == name })
-		if i < 0 {
+		switch {
+		case i >= 0:
+			f := s.zr.File[i]
+			parts = append(parts, fmt.Sprintf("%08x%x", f.CRC32, f.UncompressedSize64))
+		case name == "frequencies.txt":
+			parts = append(parts, "0")
+		default:
 			return "", false
 		}
-		f := s.zr.File[i]
-		parts = append(parts, fmt.Sprintf("%08x%x", f.CRC32, f.UncompressedSize64))
 	}
 	return strings.Join(parts, "-"), true
 }
@@ -136,12 +148,22 @@ func (tt *timetable) close() {
 // stopTimes returns the timetabled departures from stop and its platforms.
 func (tt *timetable) stopTimes(ctx context.Context, stop string) ([]stopTime, error) {
 	tt.mu.Lock()
-	if sts, ok := tt.stops[stop]; ok {
+	sts, ok := tt.stops[stop]
+	tt.mu.Unlock()
+	if ok {
+		return sts, nil
+	}
+	// Reading a saved index is disk I/O, kept outside the lock so queries
+	// for stops already read are not held up.
+	if sts, ok := tt.loadIndex(stop); ok {
+		tt.mu.Lock()
+		tt.stops[stop] = sts
 		tt.mu.Unlock()
 		return sts, nil
 	}
-	if sts, ok := tt.loadIndex(stop); ok {
-		tt.stops[stop] = sts
+
+	tt.mu.Lock()
+	if sts, ok := tt.stops[stop]; ok {
 		tt.mu.Unlock()
 		return sts, nil
 	}
@@ -154,15 +176,18 @@ func (tt *timetable) stopTimes(ctx context.Context, stop string) ([]stopTime, er
 		tt.mu.Unlock()
 		return nil, err
 	}
-	if tt.next == nil {
-		tt.next = &scan{stops: map[string]bool{}, done: make(chan struct{})}
-		if !tt.running {
-			tt.running = true
-			go tt.run()
+	s := tt.current
+	if s == nil || !s.stops[stop] {
+		if tt.next == nil {
+			tt.next = &scan{stops: map[string]bool{}, done: make(chan struct{})}
+			if !tt.running {
+				tt.running = true
+				go tt.run()
+			}
 		}
+		s = tt.next
+		s.stops[stop] = true
 	}
-	s := tt.next
-	s.stops[stop] = true
 	tt.mu.Unlock()
 
 	select {
@@ -192,24 +217,50 @@ func (tt *timetable) run() {
 			tt.mu.Unlock()
 			return
 		}
+		want := map[string]bool{}
+		for stop := range s.stops {
+			// A saved index may have been read since the stop was queued.
+			if _, ok := tt.stops[stop]; !ok {
+				want[stop] = true
+			}
+		}
+		tt.current = s
 		tt.mu.Unlock()
 
-		found, err := tt.scan(s.stops)
+		var (
+			found map[string][]stopTime
+			err   error
+		)
+		if len(want) > 0 {
+			found, err = tt.scan(want)
+		}
 
 		tt.mu.Lock()
 		if err != nil {
 			tt.failed, tt.failedAt = err, tt.clock()
 		} else {
 			tt.failed = nil
-			for stop := range s.stops {
+			for stop := range want {
 				sts := found[stop]
 				if sts == nil {
 					sts = []stopTime{}
 				}
 				tt.stops[stop] = sts
-				tt.saveIndex(stop, sts)
+				found[stop] = sts
 			}
 		}
+		tt.mu.Unlock()
+
+		// Indexes are saved before the waiters return, since a one-off
+		// command exits as soon as it has its departures.
+		if err == nil {
+			for stop := range want {
+				tt.saveIndex(stop, found[stop])
+			}
+		}
+
+		tt.mu.Lock()
+		tt.current = nil
 		s.err = err
 		close(s.done)
 		tt.mu.Unlock()
@@ -220,7 +271,7 @@ func (tt *timetable) run() {
 func (tt *timetable) scan(want map[string]bool) (map[string][]stopTime, error) {
 	tt.fileMu.RLock()
 	defer tt.fileMu.RUnlock()
-	if tt.closer == nil && tt.closed {
+	if tt.closer == nil {
 		return nil, errTimetableClosed
 	}
 	start := tt.clock()
@@ -403,7 +454,9 @@ type planned struct {
 	dir   int8
 	// start is the trip's first departure, as seconds of the service day.
 	start int32
-	last  string
+	// freq marks a run of a frequency trip.
+	freq bool
+	last string
 }
 
 // planned expands stop times into departures between from and to on the
@@ -436,7 +489,7 @@ func (s *static) planned(sts []stopTime, from, to time.Time) []planned {
 				if !at.Before(from) && !at.After(to) {
 					out = append(out, planned{
 						trip: st.trip, day: d, at: at, seq: st.seq, route: info.routeID,
-						dir: info.direction, start: start, last: st.last,
+						dir: info.direction, start: start, freq: len(freqs) > 0, last: st.last,
 					})
 				}
 			}

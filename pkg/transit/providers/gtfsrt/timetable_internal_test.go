@@ -3,6 +3,7 @@ package gtfsrt
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -401,6 +402,10 @@ func TestNewNeedsAFeed(t *testing.T) {
 	if _, err := New(Config{}, nil); err == nil {
 		t.Error("New accepted a configuration without feeds")
 	}
+	off := false
+	if _, err := New(Config{StaticURL: "https://example.com/gtfs.zip", Timetable: &off}, nil); err == nil {
+		t.Error("New accepted timetable = false without realtime_urls")
+	}
 	if _, err := New(Config{StaticURL: "https://example.com/gtfs.zip"}, nil); err != nil {
 		t.Errorf("schedule alone: %v", err)
 	}
@@ -514,10 +519,11 @@ func TestConcurrentStopsShareAScan(t *testing.T) {
 }
 
 // HSL leaves trip IDs out and names each trip by route, direction, start
-// time and day.
+// time and day. The town's trips have no direction, so one the feed gives
+// still matches.
 func TestUpdatesWithoutTripIDs(t *testing.T) {
 	byStart := func(route, start string, stops ...[]byte) []byte {
-		desc := bytesField(1, bytesField(2, []byte(start)), bytesField(3, []byte("20260330")), bytesField(5, []byte(route)))
+		desc := bytesField(1, bytesField(2, []byte(start)), bytesField(3, []byte("20260330")), bytesField(5, []byte(route)), varint(6, 1))
 		return bytesField(2, bytesField(1, []byte(route+start)), bytesField(3, append([][]byte{desc}, stops...)...))
 	}
 	s := newTown(t, town)
@@ -545,5 +551,114 @@ func TestUpdatesWithoutTripIDs(t *testing.T) {
 	}
 	if diff := cmp.Diff(want, rows(deps)); diff != "" {
 		t.Errorf("mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// Every run of a frequency trip has its trip ID, so an update names its run
+// by start time, and one without a start time names none.
+func TestFrequencyRunByTripID(t *testing.T) {
+	run := func(start string, stops ...[]byte) []byte {
+		desc := [][]byte{bytesField(1, []byte("freq")), bytesField(3, []byte("20260330"))}
+		if start != "" {
+			desc = append(desc, bytesField(2, []byte(start)))
+		}
+		return bytesField(2, bytesField(1, []byte("freq"+start)), bytesField(3, append([][]byte{bytesField(1, desc...)}, stops...)...))
+	}
+	tests := map[string]struct {
+		update []byte
+		want   []plannedRow
+	}{
+		"with a start time": {
+			update: run("10:20:00", stopUpdate(1, "S1", 0, timeOf(at(2026, 3, 30, 10, 21)))),
+			want: []plannedRow{
+				{"Mon 10:00", "10:00", "2", "Market", false, "scheduled"},
+				{"Mon 10:21", "10:20", "2", "Market", true, "scheduled"},
+				{"Mon 10:40", "10:40", "2", "Market", false, "scheduled"},
+			},
+		},
+		"without one": {
+			update: run("", stopUpdate(1, "S1", 0, delayOf(60))),
+			want: []plannedRow{
+				{"Mon 10:00", "10:00", "2", "Market", false, "scheduled"},
+				{"Mon 10:20", "10:20", "2", "Market", false, "scheduled"},
+				{"Mon 10:40", "10:40", "2", "Market", false, "scheduled"},
+			},
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			s := newTown(t, town)
+			s.setFeed(tt.update)
+			deps, err := s.provider(t, true).Departures(t.Context(), transit.Query{StopID: "S1", Now: at(2026, 3, 30, 10, 0), Window: 50 * time.Minute})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(tt.want, rows(deps)); diff != "" {
+				t.Errorf("mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// One realtime trip the schedule lacks, beside matched ones, is a trip
+// added late, not a mismatch, so the line keeps its timetable.
+func TestOneUnmatchedTripKeepsTheTimetable(t *testing.T) {
+	s := newTown(t, town)
+	s.setFeed(
+		tripEntity("t1", "20260330", "", 0, stopUpdate(2, "S1", 0, delayOf(60))),
+		tripEntity("t2", "20260330", "", 0, stopUpdate(2, "S2", 0, delayOf(60))),
+		tripEntity("rt-x", "", "R1", 0, stopUpdate(0, "S1", 0, timeOf(at(2026, 3, 30, 8, 25))), stopUpdate(0, "U", 0, timeOf(at(2026, 3, 30, 9, 0)))),
+	)
+	var logged bytes.Buffer
+	p := s.provider(t, true, WithLogger(slog.New(slog.NewTextHandler(&logged, nil))))
+	deps, err := p.Departures(t.Context(), transit.Query{StopID: "S", Now: monday8, Window: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasLine(deps, "R2") || len(deps) != 4 {
+		t.Errorf("got %v; want both matched trips, the unmatched one and route 2's", rows(deps))
+	}
+	if strings.Contains(logged.String(), "do not match the schedule") {
+		t.Errorf("mismatch logged for one unmatched trip:\n%s", logged.String())
+	}
+}
+
+// Without realtime feeds, a schedule that cannot give a timetable is an
+// error, not an empty board.
+func TestScheduleOnlyWithoutATimetable(t *testing.T) {
+	noCalendar := map[string]string{}
+	for k, v := range town {
+		if k != "calendar.txt" && k != "calendar_dates.txt" {
+			noCalendar[k] = v
+		}
+	}
+	deps, err := newTown(t, noCalendar).provider(t, false).Departures(t.Context(), transit.Query{StopID: "S", Now: monday8, Window: time.Hour})
+	var partial *transit.PartialError
+	if err == nil || errors.As(err, &partial) || !errors.Is(err, errNoTimetable) {
+		t.Errorf("got %d departures, err %v; want errNoTimetable, not partial", len(deps), err)
+	}
+}
+
+// A query that gives up while waiting for a shared scan does not stop it
+// for the others.
+func TestCanceledWaiterLeavesTheScan(t *testing.T) {
+	s := newTown(t, town)
+	p := s.provider(t, false)
+	if _, err := p.Departures(t.Context(), transit.Query{StopID: "U", Now: monday8, Window: time.Hour}); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	canceled := make(chan error)
+	go func() {
+		_, err := p.Departures(ctx, transit.Query{StopID: "S1", Now: monday8, Window: time.Hour})
+		canceled <- err
+	}()
+	cancel()
+	if err := <-canceled; !errors.Is(err, context.Canceled) {
+		t.Errorf("canceled query: err = %v", err)
+	}
+	deps, err := p.Departures(t.Context(), transit.Query{StopID: "S1", Now: monday8, Window: time.Hour})
+	if err != nil || len(deps) != 1 {
+		t.Errorf("got %v, err %v; want S1's departure", rows(deps), err)
 	}
 }

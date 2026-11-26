@@ -68,7 +68,11 @@ func TestResolveErrorsAreTyped(t *testing.T) {
 	if _, _, err := catalog.Resolve("x", map[string]any{"system": "atlantis"}); !errors.Is(err, catalog.ErrUnknownSystem) {
 		t.Errorf("err = %v, want ErrUnknownSystem", err)
 	}
-	_, _, err := catalog.Resolve("x", map[string]any{"system": "metro-lisboa"})
+	_, _, err := catalog.Resolve("x", map[string]any{"system": "sf-bart"})
+	if !errors.Is(err, catalog.ErrUnknownSystem) || !strings.Contains(err.Error(), `renamed "bart"`) {
+		t.Errorf("err = %v, want the old ID's new name", err)
+	}
+	_, _, err = catalog.Resolve("x", map[string]any{"system": "metro-lisboa"})
 	var missing *catalog.MissingOptionsError
 	if !errors.As(err, &missing) || missing.System != "metro-lisboa" || !slices.Equal(missing.Options, []string{"client_id", "client_secret"}) {
 		t.Errorf("err = %v, want both missing options", err)

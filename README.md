@@ -367,7 +367,8 @@ only, with route IDs for lines.
 
 Where an agency's realtime trips do not match its schedule's, lines with
 realtime trips show only those, and a warning is logged; set
-`timetable = false` to show realtime trips only. Reading the timetable
+`timetable = false` to show realtime trips only (it needs
+`realtime_urls`). Reading the timetable
 for a stop the first time scans the schedule's `stop_times.txt` (about
 5 seconds for HSL); with a cache directory, the result is saved for
 later runs.
@@ -517,7 +518,9 @@ searches, previews and retries count too, but are not in the estimate.
 - GTFS timetables are downloaded once a day to a temporary file in `/tmp`
   and only the needed parts are kept in memory. With a read-only root
   filesystem, mount a tmpfs at `/tmp`; otherwise downloads fall back to
-  memory, which needs about as much RAM as the zip is large.
+  memory, which needs about as much RAM as the zip is large and shows no
+  timetabled trips: only realtime ones, or an error for a board without
+  `realtime_urls`.
 
 ## Use it from Go
 
