@@ -29,8 +29,10 @@ and *Urbanist Atlas*.
 
 The terminal tool, the clock and the library are in place, as the
 [design](./superpowers/specs/2026-11-25-clock-cli-library-design.md)
-planned. v0.7 brings timetabled departures in `gtfsrt` (done) and finding
-an agency from the command line, below in "Later".
+planned. v0.7 brings timetabled departures in `gtfsrt`, and finding an
+agency from the command line (`agencies search`, and `config init` by
+agency or city). After it, the next work comes from "Later", and a version
+is cut when there is a reason to.
 
 ## Data sources: agencies are data, adapters are code
 
@@ -112,10 +114,6 @@ providers). Each widens who the project works for.
   order through the firmware's rotation API at startup, moving only this
   service's apps relative to each other. Off by default: with one agency
   or two boards, a card is a few seconds per round with no departures.
-- **Find an agency from the command line.** `agencies search` and
-  directory IDs are done; next, `config init` searches by agency or city
-  and writes a result's block.
-
 ## Contributions welcome
 
 - **32 × 8 renderer.** All layouts use the TC002-only `layout` key, so

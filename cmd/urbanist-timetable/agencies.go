@@ -182,10 +182,10 @@ func showDirectorySystem(ctx context.Context, c *cli.Command, id string) error {
 	return nil
 }
 
-// directoryBlock renders b as a [providers] block named after id.
-func directoryBlock(id string, b directory.Block) (string, error) {
+// directoryBlock renders b as a [providers] block named name.
+func directoryBlock(name string, b directory.Block) (string, error) {
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "[providers.%s]\n", tomlKey(id))
+	fmt.Fprintf(&sb, "[providers.%s]\n", tomlKey(name))
 	settings := b.Settings()
 	keys := []string{"type", "static_url", "realtime_urls", "feed", "api_key", "headers"}
 	for _, k := range keys {

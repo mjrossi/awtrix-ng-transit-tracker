@@ -48,8 +48,12 @@ version may break configuration.
   finds its ID. A provider that needs settings gets a pointer to where they
   go.
 - `config init` writes a starting configuration. At a terminal it asks for
-  a system, searches for your stop, offers to keep some of its lines, and
-  saves a board; `--system` and `--stop` do the same without questions.
+  an agency or city and searches for systems as `agencies search` does,
+  then searches for your stop, offers to keep some of its lines, and saves
+  a board; `--system` and `--stop` do the same without questions. A
+  system found in the Mobility Database or Transitland is written out in
+  full, with its agency's name for the block and `${NAME}` for any key, so
+  the file does not depend on the search.
 - `departures` with no arguments shows every board in the configuration,
   and `departures NAME` one board, with the board's filters, `window` and
   `per_row`; flags given on the command line replace them. Boards no longer

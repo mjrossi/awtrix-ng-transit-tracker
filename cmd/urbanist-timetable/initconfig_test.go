@@ -15,6 +15,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/mjrossi/urbanist-timetable/internal/config"
+	"github.com/mjrossi/urbanist-timetable/internal/directory"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/catalog"
 )
@@ -22,7 +23,7 @@ import (
 func TestRenderConfig(t *testing.T) {
 	sys, _ := catalog.Get("metro-lisboa")
 	got, err := renderConfig(initAnswers{
-		system: sys,
+		system: catalogChoice(sys),
 		stops:  []transit.Stop{{ID: "MP", Name: "Marquês de Pombal"}},
 		lines:  []string{"Azul", `Q"uote`},
 		board:  "marques",
@@ -171,14 +172,14 @@ func TestPrompterAsksForEverything(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v; prompts:\n%s", err, out.String())
 	}
-	if opened != "mta-subway" || a.system.ID != "mta-subway" {
-		t.Errorf("opened %q, system %q", opened, a.system.ID)
+	if opened != "mta-subway" || a.system.source != "mta-subway" {
+		t.Errorf("opened %q, system %q", opened, a.system.source)
 	}
 	want := initAnswers{system: a.system, stops: []transit.Stop{{ID: "R16", Name: "Times Sq-42 St"}}, lines: []string{"1", "2"}, board: "times-sq-42-st"}
-	if diff := cmp.Diff(want, a, cmp.AllowUnexported(initAnswers{}), cmp.Comparer(func(a, b catalog.System) bool { return a.ID == b.ID })); diff != "" {
+	if diff := cmp.Diff(want, a, cmp.AllowUnexported(initAnswers{}), cmp.Comparer(func(a, b chosenSystem) bool { return a.source == b.source })); diff != "" {
 		t.Errorf("answers (-want +got):\n%s", diff)
 	}
-	for _, s := range []string{"Give a number from 1 to", "No stops found", "Lines here now: 1, 2.", "Use 1-32 letters"} {
+	for _, s := range []string{"No systems found", "No stops found", "Lines here now: 1, 2.", "Use 1-32 letters"} {
 		if !strings.Contains(out.String(), s) {
 			t.Errorf("prompts lack %q:\n%s", s, out.String())
 		}
@@ -260,4 +261,66 @@ type cancelingSource struct {
 func (s cancelingSource) SearchStops(ctx context.Context, _ string) ([]transit.Stop, error) {
 	s.cancel()
 	return nil, ctx.Err()
+}
+
+func TestPrompterPicksFromASearch(t *testing.T) {
+	// A search, an answer out of range (search again), then a pick.
+	input := "lisbon\n9\nlisbon\n1\ncais\n1\n\n\n"
+	var out bytes.Buffer
+	p := prompter{in: bufio.NewReader(strings.NewReader(input)), out: &out, open: func(string) (transit.Provider, error) {
+		return fakeSource{stops: []transit.Stop{{ID: "060001", Name: "Cais do Sodré"}}}, nil
+	}}
+	a, err := p.ask(t.Context())
+	if err != nil {
+		t.Fatalf("%v; prompts:\n%s", err, out.String())
+	}
+	if a.system.source != "carris-metropolitana" || !strings.Contains(out.String(), "  2  metro-lisboa") {
+		t.Errorf("chose %q; prompts:\n%s", a.system.source, out.String())
+	}
+}
+
+func TestConfigInitFromADirectorySystem(t *testing.T) {
+	fakeDirectories(t)
+	path := filepath.Join(t.TempDir(), "config.toml")
+	cmd := newRootCommand()
+	var out, errOut bytes.Buffer
+	cmd.Writer, cmd.ErrWriter = &out, &errOut
+	cmd.Reader = strings.NewReader("")
+	t.Setenv("CALTRAIN_API_KEY", "")
+	if err := cmd.Run(t.Context(), []string{"urbanist-timetable", "--config", path, "config", "init", "--system", "mdb-54", "--stop", "70011"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "Set CALTRAIN_API_KEY in the environment") {
+		t.Errorf("output %q does not name the key", out.String())
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(b)
+	for _, want := range []string{"# From the Mobility Database (mdb-54).", "[providers.caltrain]\ntype = \"gtfsrt\"", "api_key=${CALTRAIN_API_KEY}", "provider = \"caltrain\"", "name = \"caltrain-70011\""} {
+		if !strings.Contains(src, want) {
+			t.Errorf("config lacks %q:\n%s", want, src)
+		}
+	}
+	t.Setenv("CALTRAIN_API_KEY", "k")
+	if _, err := config.Load(path); err != nil {
+		t.Errorf("written config does not load: %v", err)
+	}
+}
+
+func TestBlockName(t *testing.T) {
+	for agency, want := range map[string]string{
+		"Bay Area Rapid Transit (BART)":       "bart",
+		"Caltrain":                            "caltrain",
+		"Metro-North Railroad":                "metro-north-railroad",
+		"Companhia Carris de Ferro de Lisboa": "companhia-carris",
+		"Helsingin seudun liikenne (HSL)":     "hsl",
+		"Transtejo Soflusa (TTSL)":            "ttsl",
+		"SĮ 'Susisiekimo paslaugos'":          "s-susisiekimo",
+	} {
+		if got := blockName(directory.System{Agency: agency}); got != want {
+			t.Errorf("blockName(%q) = %q, want %q", agency, got, want)
+		}
+	}
 }

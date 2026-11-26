@@ -65,11 +65,12 @@ urbanist-timetable departures --static https://example.org/gtfs.zip \
 ```
 
 To see the same stops without typing them each time, save them as boards.
-`urbanist-timetable config init` asks for a system, searches for your stop
+`urbanist-timetable config init` asks for an agency or city, lets you pick
+a system from the same search as `agencies search`, searches for your stop
 and writes `~/.config/urbanist-timetable/config.toml`; after that,
 `departures` with no arguments shows every board, and `departures NAME` one
 of them. `config init --system mta-subway --stop 127N` does the same
-without questions. A board in the file looks like this:
+without questions, and `--system` takes a search result's ID too. A board in the file looks like this:
 
 ```toml
 [providers.nyc]
