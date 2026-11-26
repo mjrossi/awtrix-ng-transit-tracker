@@ -61,6 +61,8 @@ Part of the Urbanist family with *The Urbanist Lexicon* (mjrossi.com) and
   JSON.
 - `internal/fold/` — lowercase, unaccented text, shared by stop search
   and board names.
+- `internal/directory/` — systems beyond the catalog, from the Mobility
+  Database and Transitland: `agencies search` and directory system IDs.
 - `internal/scheduler/` — polling, active and quiet hours, backoff,
   last-good cache.
 - `docs/` — `ARCHITECTURE.md`, `rendering.md`, `PLAN.md` (roadmap only:

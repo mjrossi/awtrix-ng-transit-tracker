@@ -1,0 +1,41 @@
+{
+ "operators": [
+  {
+   "agencies": [
+    {
+     "agency_id": "0",
+     "agency_name": "BARTA",
+     "places": [
+      {
+       "adm0_name": "United States of America",
+       "adm1_name": "Pennsylvania",
+       "city_name": null
+      }
+     ],
+     "route_types": [
+      3
+     ],
+     "route_types_basic": [
+      3
+     ]
+    }
+   ],
+   "feeds": [
+    {
+     "name": null,
+     "onestop_id": "f-barta~pa",
+     "spec": "GTFS"
+    },
+    {
+     "name": null,
+     "onestop_id": "f-barta~pa~rt",
+     "spec": "GTFS_RT"
+    }
+   ],
+   "name": "Berks Area Regional Transportation Authority",
+   "onestop_id": "o-barta~pa",
+   "short_name": "BARTA",
+   "website": "https://www.bartabus.com"
+  }
+ ]
+}

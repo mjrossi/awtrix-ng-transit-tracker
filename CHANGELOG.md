@@ -9,6 +9,17 @@ version may break configuration.
 
 ### Added
 
+- `agencies search <words>` finds systems by agency or place: the
+  ready-made ones, every feed in the Mobility Database's public list, and,
+  with `TRANSITLAND_API_KEY` set, Transitland's operators. A result's ID,
+  such as `mdb-2929` or `f-eyc-cp`, works in `departures`, `stops search`
+  and `systems show` without a configuration file. `systems show` prints
+  its `[providers]` block, with `${NAME}` for any key the feeds need and
+  where to get one, and warns about schedules too large for a small
+  machine. Where Transitland lists the feed URLs and they need no key, the
+  block uses `gtfsrt`, which spends no Transitland quota. `cache clear`
+  also removes the saved feed list.
+
 - `gtfsrt` shows timetabled trips from the schedule, with the realtime
   prediction where a feed has one, so a stop no longer reads "No
   departures" while a scheduled bus is 20 minutes away, and a realtime

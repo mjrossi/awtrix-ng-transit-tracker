@@ -112,15 +112,9 @@ providers). Each widens who the project works for.
   order through the firmware's rotation API at startup, moving only this
   service's apps relative to each other. Off by default: with one agency
   or two boards, a card is a few seconds per round with no departures.
-- **Find an agency from the command line.** `stops search` searches one
-  configured source, and `systems` lists only the catalog, so an agency
-  outside it means finding feed URLs by hand in the Mobility Database.
-  The CLI could search the [Mobility Database](https://mobilitydatabase.org/)
-  catalog, or Transitland's operators, by city or name, and have
-  `config init` write the `gtfsrt` or `transitland` block. To check first:
-  what account or token each API needs (the Mobility Database API may
-  need a registered account), and how to tell feeds that work without a
-  key, since many realtime feeds need one.
+- **Find an agency from the command line.** `agencies search` and
+  directory IDs are done; next, `config init` searches by agency or city
+  and writes a result's block.
 
 ## Contributions welcome
 

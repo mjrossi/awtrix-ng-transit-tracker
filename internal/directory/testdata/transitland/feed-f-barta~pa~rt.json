@@ -1,0 +1,38 @@
+{
+ "feeds": [
+  {
+   "authorization": {
+    "info_url": "",
+    "param_name": "",
+    "type": ""
+   },
+   "feed_state": {
+    "feed_version": null
+   },
+   "license": {
+    "attribution_instructions": "",
+    "attribution_text": "",
+    "commercial_use_allowed": "",
+    "create_derived_product": "",
+    "redistribution_allowed": "",
+    "share_alike_optional": "",
+    "spdx_identifier": "",
+    "url": "",
+    "use_without_attribution": ""
+   },
+   "name": null,
+   "onestop_id": "f-barta~pa~rt",
+   "spec": "GTFS_RT",
+   "urls": {
+    "gbfs_auto_discovery": "",
+    "mds_provider": "",
+    "realtime_alerts": "https://busfinder.bartabus.com/Infopoint/gtfs-realtime.ashx?type=alert",
+    "realtime_trip_updates": "https://busfinder.bartabus.com/Infopoint/gtfs-realtime.ashx?type=tripupdate",
+    "realtime_vehicle_positions": "https://busfinder.bartabus.com/Infopoint/gtfs-realtime.ashx?type=vehicleposition",
+    "static_current": "",
+    "static_historic": [],
+    "static_planned": []
+   }
+  }
+ ]
+}

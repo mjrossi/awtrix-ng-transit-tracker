@@ -235,6 +235,32 @@ func Stops(w io.Writer, stops []transit.Stop, numbered bool) {
 	}
 }
 
+// Table writes rows as columns two spaces apart, removing control
+// characters from every cell, since cells may hold text from outside
+// sources. The last column is not padded.
+func Table(w io.Writer, rows [][]string) {
+	var widths []int
+	for _, r := range rows {
+		for i, c := range r {
+			if i >= len(widths) {
+				widths = append(widths, 0)
+			}
+			widths[i] = max(widths[i], width(Clean(c)))
+		}
+	}
+	for _, r := range rows {
+		var b strings.Builder
+		for i, c := range r {
+			if i == len(r)-1 {
+				b.WriteString(Clean(c))
+				break
+			}
+			b.WriteString(pad(Clean(c), widths[i]) + "  ")
+		}
+		fmt.Fprintln(w, strings.TrimRight(b.String(), " "))
+	}
+}
+
 // StopsJSON writes stop search results as an indented JSON array.
 func StopsJSON(w io.Writer, stops []transit.Stop) error {
 	type jsonStop struct {

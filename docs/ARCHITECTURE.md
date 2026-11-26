@@ -19,7 +19,8 @@ clock output (internal/clockout):
   Snapshot.Rows (transit.Filter ──▶ transit.Group) ──▶ render.TC002 ──▶ awtrix PushApp ──▶ clock
 
 departures command (cmd, departures.go), once or every --interval:
-  a source and stops: openSource: one [providers.NAME] block (config.LoadProvider), else a catalog system, else a type
+  a source and stops: openSource: one [providers.NAME] block (config.LoadProvider), else a catalog system,
+                      else a directory ID (internal/directory.Resolve), else a type
   no source: the config's [[boards]] (config.Load), building only the providers they use
   for each board, each stop:  Provider.Departures ──▶ transit.Filter ──▶ termout (transit.Group) ──▶ stdout
 ```
@@ -40,8 +41,8 @@ predictions of a failing source, which are as old as its last good fetch.
 
 The program makes outgoing requests only: to transit APIs and to the clock.
 It listens on no ports. Besides the state file, it writes only GTFS
-schedules, and the stop times read from them for configured stops, to the
-cache directory (`--cache-dir`).
+schedules, the stop times read from them for configured stops, and the
+Mobility Database's feed list to the cache directory (`--cache-dir`).
 
 ## Packages and what they may import
 
@@ -58,8 +59,9 @@ cache directory (`--cache-dir`).
 | `internal/scheduler` | polling, backoff, last-good cache, active and quiet hours, `Snapshot`, the `Output` interface | `transit` |
 | `internal/termout` | departures and stop lists → aligned terminal text or JSON | `transit` |
 | `internal/fold` | lowercase, unaccented text for stop search and board names | none |
+| `internal/directory` | systems beyond the catalog: searching the Mobility Database's feed list (cached a week) and Transitland's operators, and turning a result's ID into a provider block | `fold`, `catalog` |
 | `internal/clockout` | the clock `Output`: snapshot → TC002 app → push or expire; cleanup of removed boards | `scheduler`, `render`, `awtrix` |
-| `internal/config` | TOML decoding, `${NAME}` expansion, validation, reading one provider block (`LoadProvider`), monthly request estimates | `transit`, `catalog`, `render`, `awtrix` |
+| `internal/config` | TOML decoding, `${NAME}` expansion, validation, reading one provider block (`LoadProvider`), expanding a block from elsewhere (`ExpandSettings`), monthly request estimates | `transit`, `catalog`, `render`, `awtrix` |
 | `cmd/urbanist-timetable` | CLI commands and wiring (`wire.go`) | everything |
 
 Rules, from [CLAUDE.md](../CLAUDE.md):

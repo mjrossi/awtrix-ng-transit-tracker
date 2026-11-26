@@ -211,6 +211,18 @@ func LoadProvider(path, name string) (settings map[string]any, found bool, err e
 	return settings, true, nil
 }
 
+// ExpandSettings expands ${NAME} references in a provider block's settings
+// from the environment, as LoadProvider does, for blocks that come from
+// elsewhere than the file. name labels errors.
+func ExpandSettings(name string, settings map[string]any) (map[string]any, error) {
+	missing := map[string]bool{}
+	expandAny(settings, expander(os.LookupEnv, missing))
+	if err := missingError(missing); err != nil {
+		return nil, fmt.Errorf("%s: %w", name, err)
+	}
+	return settings, nil
+}
+
 // Names lists the board names and provider block names in the file at
 // path, without expanding or validating it, for shell completion and
 // suggestions. It returns nothing when the file cannot be read or decoded.

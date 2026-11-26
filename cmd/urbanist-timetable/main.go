@@ -63,7 +63,7 @@ func newRootCommand() *cli.Command {
 			"   urbanist-timetable stops search mta-subway times sq  # find a stop ID\n" +
 			"   urbanist-timetable departures mta-subway 127N        # its next departures\n" +
 			"   urbanist-timetable config init                       # save stops to show by default\n\n" +
-			"Any agency with GTFS-Realtime works too; see `urbanist-timetable config example`.",
+			"Not listed? `urbanist-timetable agencies search <agency or city>` finds more.",
 		EnableShellCompletion:           true,
 		ConfigureShellCompletionCommand: showCompletionCommand,
 		Flags: []cli.Flag{
@@ -107,6 +107,7 @@ func newRootCommand() *cli.Command {
 			departuresCommand(),
 			stopsCommand(),
 			systemsCommand(),
+			agenciesCommand(),
 			configCommand(),
 			cacheCommand(),
 			clockCommand(),

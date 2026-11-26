@@ -1,0 +1,386 @@
+package directory
+
+import (
+	"bytes"
+	"context"
+	"encoding/csv"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
+	"regexp"
+	"slices"
+	"strings"
+	"time"
+)
+
+// DefaultMobilityDBURL is the Mobility Database's list of every feed,
+// public and CC0. It changes a few times a month.
+const DefaultMobilityDBURL = "https://files.mobilitydatabase.org/feeds_v2.csv"
+
+const (
+	mdbTTL   = 7 * 24 * time.Hour
+	mdbFile  = "mobilitydb-feeds.csv"
+	mdbLimit = 64 << 20
+)
+
+// Authentication types in the list's urls.authentication_type.
+const (
+	authNone   = 0
+	authParam  = 1
+	authHeader = 2
+)
+
+type mdbFeed struct {
+	url   string
+	auth  int
+	info  string
+	param string
+}
+
+type mdbSystem struct {
+	sys      System
+	static   mdbFeed
+	realtime []mdbFeed
+}
+
+type mdbFeeds struct {
+	systems   map[string]*mdbSystem
+	order     []string
+	redirects map[string]string
+	// haystacks holds each system's searchable text.
+	haystacks map[string]string
+}
+
+// mobilityDB returns the parsed list, from the cache directory while it is
+// less than a week old, and the old copy when a refresh fails.
+func (d *Directory) mobilityDB(ctx context.Context) (*mdbFeeds, error) {
+	u := d.MobilityDBURL
+	if u == "" {
+		u = DefaultMobilityDBURL
+	}
+	if d.CacheDir == "" {
+		b, _, err := d.fetchMDB(ctx, u, time.Time{})
+		if err != nil {
+			return &mdbFeeds{}, err
+		}
+		return parseMDB(b)
+	}
+	path := filepath.Join(d.CacheDir, mdbFile)
+	fi, statErr := os.Stat(path)
+	if statErr == nil && within(d.now(), fi.ModTime(), mdbTTL) {
+		if b, err := os.ReadFile(path); err == nil {
+			return parseMDB(b)
+		}
+	}
+	var since time.Time
+	if statErr == nil {
+		since = fi.ModTime()
+	}
+	b, notModified, err := d.fetchMDB(ctx, u, since)
+	switch {
+	case err != nil && statErr == nil:
+		d.log().WarnContext(ctx, "using the saved Mobility Database list", "err", err)
+		fallthrough
+	case notModified:
+		now := d.now()
+		_ = os.Chtimes(path, now, now)
+		old, rerr := os.ReadFile(path)
+		if rerr != nil {
+			return &mdbFeeds{}, errors.Join(err, rerr)
+		}
+		return parseMDB(old)
+	case err != nil:
+		return &mdbFeeds{}, err
+	}
+	saveFile(d.CacheDir, path, b, d.now())
+	return parseMDB(b)
+}
+
+// fetchMDB downloads the list, conditionally when since is set.
+func (d *Directory) fetchMDB(ctx context.Context, u string, since time.Time) (b []byte, notModified bool, err error) {
+	h := http.Header{}
+	if !since.IsZero() {
+		h.Set("If-Modified-Since", since.UTC().Format(http.TimeFormat))
+	}
+	d.log().InfoContext(ctx, "downloading the Mobility Database feed list")
+	status, body, err := d.get(ctx, u, h, mdbLimit)
+	if err != nil {
+		return nil, false, err
+	}
+	switch status {
+	case http.StatusOK:
+		return body, false, nil
+	case http.StatusNotModified:
+		return nil, true, nil
+	default:
+		return nil, false, fmt.Errorf("GET %s: %d %s", u, status, http.StatusText(status))
+	}
+}
+
+// saveFile writes b to path through a temporary file, setting its time to
+// now. Failing to save only costs a download next time.
+func saveFile(dir, path string, b []byte, now time.Time) {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return
+	}
+	tmp, err := os.CreateTemp(dir, ".download-*")
+	if err != nil {
+		return
+	}
+	defer func() { _ = os.Remove(tmp.Name()) }()
+	if _, err := tmp.Write(b); err != nil {
+		_ = tmp.Close()
+		return
+	}
+	if tmp.Close() != nil || os.Chtimes(tmp.Name(), now, now) != nil {
+		return
+	}
+	_ = os.Rename(tmp.Name(), path)
+}
+
+// ClearCache deletes the saved Mobility Database list from dir, returning
+// the bytes freed.
+func ClearCache(dir string) (int64, error) {
+	path := filepath.Join(dir, mdbFile)
+	fi, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	if err := os.Remove(path); err != nil {
+		return 0, err
+	}
+	return fi.Size(), nil
+}
+
+func within(now, since time.Time, d time.Duration) bool {
+	age := now.Sub(since)
+	return age > -d && age < d
+}
+
+func parseMDB(b []byte) (*mdbFeeds, error) {
+	cr := csv.NewReader(bytes.NewReader(b))
+	cr.FieldsPerRecord = -1
+	head, err := cr.Read()
+	if err != nil {
+		return &mdbFeeds{}, fmt.Errorf("feed list header: %w", err)
+	}
+	col := map[string]int{}
+	for i, h := range head {
+		col[strings.TrimPrefix(h, "\uFEFF")] = i
+	}
+	for _, c := range []string{"id", "data_type", "provider", "urls.direct_download", "status"} {
+		if _, ok := col[c]; !ok {
+			return &mdbFeeds{}, fmt.Errorf("feed list has no %s column", c)
+		}
+	}
+	f := &mdbFeeds{systems: map[string]*mdbSystem{}, redirects: map[string]string{}, haystacks: map[string]string{}}
+	type rt struct {
+		refs []string
+		feed mdbFeed
+	}
+	var realtime []rt
+	for {
+		rec, err := cr.Read()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return &mdbFeeds{}, fmt.Errorf("feed list: %w", err)
+		}
+		get := func(c string) string {
+			i, ok := col[c]
+			if !ok || i >= len(rec) {
+				return ""
+			}
+			return strings.TrimSpace(rec[i])
+		}
+		id, status := get("id"), get("status")
+		if to := get("redirect.id"); to != "" {
+			f.redirects[id] = strings.Split(to, "|")[0]
+		}
+		if status != "active" && status != "" {
+			continue
+		}
+		feed := mdbFeed{
+			url:   firstNonEmpty(get("urls.direct_download"), get("urls.latest")),
+			auth:  atoi(get("urls.authentication_type")),
+			info:  get("urls.authentication_info"),
+			param: get("urls.api_key_parameter_name"),
+		}
+		if feed.url == "" {
+			continue
+		}
+		switch get("data_type") {
+		case "gtfs":
+			place := joinNonEmpty(", ", get("location.municipality"), get("location.subdivision_name"), get("location.country_code"))
+			s := &mdbSystem{
+				sys: System{
+					ID: id, Agency: get("provider"), Name: get("name"), Place: place, Data: DataSchedule,
+					Source: SourceMobilityDB, License: get("urls.license"), StaticURL: feed.url,
+				},
+				static: feed,
+			}
+			f.systems[id] = s
+			f.order = append(f.order, id)
+			f.haystacks[id] = strings.Join([]string{id, s.sys.Agency, s.sys.Name, place}, " ")
+		case "gtfs_rt":
+			if slices.Contains(strings.Split(get("entity_type"), "|"), "tu") {
+				realtime = append(realtime, rt{refs: strings.Split(get("static_reference"), "|"), feed: feed})
+			}
+		}
+	}
+	for _, r := range realtime {
+		for _, ref := range r.refs {
+			if s, ok := f.systems[ref]; ok {
+				s.realtime = append(s.realtime, r.feed)
+				s.sys.Data = DataRealtime
+			}
+		}
+	}
+	for _, s := range f.systems {
+		s.finish()
+	}
+	return f, nil
+}
+
+// finish works out the environment variable and key details of a system.
+func (s *mdbSystem) finish() {
+	for _, feed := range append([]mdbFeed{s.static}, s.realtime...) {
+		if feed.auth == authNone {
+			continue
+		}
+		if len(s.sys.Needs) == 0 {
+			s.sys.Needs = []string{keyVar(s.sys.Agency)}
+		}
+		if s.sys.KeyInfo == "" {
+			s.sys.KeyInfo = feed.info
+		}
+	}
+}
+
+func (f *mdbFeeds) search(words string) []System {
+	if f == nil {
+		return nil
+	}
+	var out []System
+	for _, id := range f.order {
+		if matches(f.haystacks[id], words) {
+			out = append(out, f.systems[id].sys)
+		}
+	}
+	return out
+}
+
+// resolve finds a system by ID, following the list's redirects from
+// replaced feeds.
+func (f *mdbFeeds) resolve(id string) (System, Block, bool) {
+	if f == nil {
+		return System{}, Block{}, false
+	}
+	for range 5 {
+		if s, ok := f.systems[id]; ok {
+			return s.sys, s.block(), true
+		}
+		to, ok := f.redirects[id]
+		if !ok {
+			break
+		}
+		id = to
+	}
+	return System{}, Block{}, false
+}
+
+func (s *mdbSystem) block() Block {
+	opts := map[string]any{}
+	headers := map[string]any{}
+	key := ""
+	if len(s.sys.Needs) > 0 {
+		key = "${" + s.sys.Needs[0] + "}"
+	}
+	withKey := func(feed mdbFeed) string {
+		switch {
+		case feed.auth == authParam && feed.param != "":
+			sep := "?"
+			if strings.Contains(feed.url, "?") {
+				sep = "&"
+			}
+			return feed.url + sep + feed.param + "=" + key
+		case feed.auth == authHeader && feed.param != "":
+			headers[feed.param] = key
+		}
+		return feed.url
+	}
+	opts["static_url"] = withKey(s.static)
+	if len(s.realtime) > 0 {
+		urls := make([]any, len(s.realtime))
+		for i, feed := range s.realtime {
+			urls[i] = withKey(feed)
+		}
+		opts["realtime_urls"] = urls
+	}
+	if len(headers) > 0 {
+		opts["headers"] = headers
+	}
+	comment := fmt.Sprintf("From the Mobility Database (%s).", s.sys.ID)
+	if s.sys.License != "" {
+		comment += " Data license: " + s.sys.License
+	}
+	return Block{Type: "gtfsrt", Options: opts, Comment: comment}
+}
+
+var acronym = regexp.MustCompile(`\(([A-Za-z0-9 .\-]{2,12})\)`)
+
+// keyVar names the environment variable for an agency's key: its acronym
+// in parentheses, as the list often gives one, or its first two words.
+func keyVar(agency string) string {
+	name := agency
+	if m := acronym.FindStringSubmatch(agency); m != nil {
+		name = m[1]
+	} else if words := strings.Fields(agency); len(words) > 2 {
+		name = strings.Join(words[:2], " ")
+	}
+	var b strings.Builder
+	for _, r := range strings.ToUpper(name) {
+		switch {
+		case r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case b.Len() > 0 && !strings.HasSuffix(b.String(), "_"):
+			b.WriteByte('_')
+		}
+	}
+	v := strings.Trim(b.String(), "_")
+	if v == "" {
+		v = "AGENCY"
+	}
+	return v + "_API_KEY"
+}
+
+func firstNonEmpty(ss ...string) string {
+	for _, s := range ss {
+		if s != "" {
+			return s
+		}
+	}
+	return ""
+}
+
+func joinNonEmpty(sep string, ss ...string) string {
+	return strings.Join(slices.DeleteFunc(ss, func(s string) bool { return s == "" }), sep)
+}
+
+func atoi(s string) int {
+	n := 0
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return 0
+		}
+		n = n*10 + int(r-'0')
+	}
+	return n
+}

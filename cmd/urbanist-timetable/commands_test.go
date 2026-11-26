@@ -202,7 +202,7 @@ func TestConfigValidateBuildsClock(t *testing.T) {
 func TestOpenSource(t *testing.T) {
 	dir := t.TempDir()
 	missing := filepath.Join(dir, "missing.toml")
-	if _, err := openSource(missing, "hsl"); err != nil {
+	if _, err := openSource(t.Context(), missing, "hsl", nil); err != nil {
 		t.Errorf("without a config file: %v", err)
 	}
 
@@ -210,18 +210,18 @@ func TestOpenSource(t *testing.T) {
 	if err := os.WriteFile(unrelated, []byte("[clock]\nurl = \"${TT_TEST_UNSET_CLOCK}\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := openSource(unrelated, "hsl"); err != nil {
+	if _, err := openSource(t.Context(), unrelated, "hsl", nil); err != nil {
 		t.Errorf("an unset variable outside the block stopped the query: %v", err)
 	}
 
 	t.Setenv("METRO_LISBOA_CLIENT_ID", "id")
 	t.Setenv("METRO_LISBOA_CLIENT_SECRET", "secret")
-	if _, err := openSource(missing, "metro-lisboa"); err != nil {
+	if _, err := openSource(t.Context(), missing, "metro-lisboa", nil); err != nil {
 		t.Errorf("keys from the environment: %v", err)
 	}
 	t.Setenv("METRO_LISBOA_CLIENT_SECRET", "")
 	var me *catalog.MissingOptionsError
-	if _, err := openSource(missing, "metro-lisboa"); !errors.As(err, &me) || !slices.Equal(me.Options, []string{"client_secret"}) {
+	if _, err := openSource(t.Context(), missing, "metro-lisboa", nil); !errors.As(err, &me) || !slices.Equal(me.Options, []string{"client_secret"}) {
 		t.Errorf("err = %v, want client_secret missing", err)
 	}
 }

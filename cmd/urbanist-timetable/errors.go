@@ -123,7 +123,7 @@ func hint(err error) string {
 		if source.suggestion != "" {
 			return h + fmt.Sprintf("did you mean %q?", source.suggestion)
 		}
-		return h + "list systems with `urbanist-timetable systems`"
+		return h + "list systems with `urbanist-timetable systems`, or find one with `urbanist-timetable agencies search <agency or city>`"
 	case errors.As(err, &source):
 		return fmt.Sprintf("%s needs settings: add a [providers.%s] block to %s (see `urbanist-timetable config example`)", source.name, source.name, source.configPath)
 	case errors.As(err, &stops):
