@@ -595,10 +595,18 @@ func (s *static) headsign(tu tripUpdate) string {
 // plannedHeadsign is a timetabled trip's headsign, or the name of its last
 // stop, as for realtime trips.
 func (s *static) plannedHeadsign(pl planned) string {
-	if h := s.trips[pl.trip].headsign; h != "" {
+	return s.tripHeadsign(pl.trip, pl.last)
+}
+
+// tripHeadsign is a trip's headsign, or the name of last, its last stop.
+func (s *static) tripHeadsign(trip, last string) string {
+	if h := s.trips[trip].headsign; h != "" {
 		return h
 	}
-	return s.stopTitle(pl.last)
+	if last == "" {
+		return ""
+	}
+	return s.stopTitle(last)
 }
 
 // stopTitle names a stop after its parent station when it has one.
@@ -892,7 +900,7 @@ func (p *Provider) StopName(ctx context.Context, id string, now time.Time) (stri
 // without one: no static_url, a schedule without stop times, one that could
 // not be kept in a temporary file, or timetable = false without the
 // schedule cache.
-func (p *Provider) StopLines(ctx context.Context, ids []string, now time.Time) (map[string][]transit.Line, error) {
+func (p *Provider) StopLines(ctx context.Context, ids []string, now time.Time) (map[string][]transit.StopLine, error) {
 	st, err := p.staticFor(ctx, now)
 	if st == nil {
 		return nil, cmp.Or(err, ctx.Err(), errNoTimetable)
@@ -905,7 +913,7 @@ func (p *Provider) StopLines(ctx context.Context, ids []string, now time.Time) (
 	}
 	var (
 		mu   sync.Mutex
-		out  = make(map[string][]transit.Line, len(ids))
+		out  = make(map[string][]transit.StopLine, len(ids))
 		errs []error
 		wg   sync.WaitGroup
 	)
@@ -932,18 +940,14 @@ func (p *Provider) StopLines(ctx context.Context, ids []string, now time.Time) (
 	return out, nil
 }
 
-// stopLines lists the lines of sts's trips once each, by short name.
-func (s *static) stopLines(sts []stopTime) []transit.Line {
-	seen := map[string]bool{}
-	var lines []transit.Line
+// stopLines lists the lines of sts's trips once each, with where they go.
+func (s *static) stopLines(sts []stopTime) []transit.StopLine {
+	var lines []transit.StopLine
 	for _, t := range sts {
-		routeID := s.trips[t.trip].routeID
-		if routeID == "" || seen[routeID] {
-			continue
+		if routeID := s.trips[t.trip].routeID; routeID != "" {
+			lines = transit.AddStopLine(lines, s.routeLine(routeID), s.tripHeadsign(t.trip, t.last))
 		}
-		seen[routeID] = true
-		lines = append(lines, s.routeLine(routeID))
 	}
-	slices.SortFunc(lines, transit.CompareLines)
+	slices.SortFunc(lines, func(a, b transit.StopLine) int { return transit.CompareLines(a.Line, b.Line) })
 	return lines
 }

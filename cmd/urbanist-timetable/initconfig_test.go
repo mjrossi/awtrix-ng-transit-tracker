@@ -423,11 +423,11 @@ type linerSource struct {
 	asked *[]string
 }
 
-func (s linerSource) StopLines(_ context.Context, ids []string, _ time.Time) (map[string][]transit.Line, error) {
+func (s linerSource) StopLines(_ context.Context, ids []string, _ time.Time) (map[string][]transit.StopLine, error) {
 	*s.asked = append(*s.asked, ids...)
-	out := map[string][]transit.Line{}
+	out := map[string][]transit.StopLine{}
 	for _, id := range ids {
-		out[id] = []transit.Line{{ID: "L" + id, ShortName: "L" + id}}
+		out[id] = []transit.StopLine{{Line: transit.Line{ID: "L" + id, ShortName: "L" + id}}}
 	}
 	return out, nil
 }

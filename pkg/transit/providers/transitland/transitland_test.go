@@ -1,6 +1,7 @@
 package transitland_test
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -901,68 +902,135 @@ func TestOffsetFromServiceDay(t *testing.T) {
 	}
 }
 
-// The stop answers are in the shape of the live API's: routes without a
-// onestop_id, and a key matching the stop in two feeds, which list the
-// same lines under different route IDs.
+// stopLinesDep is one departure in the shape of the live API's answers.
+func stopLinesDep(routeID, short, tripHeadsign, stopHeadsign string, at time.Time) map[string]any {
+	var sh any
+	if stopHeadsign != "" {
+		sh = stopHeadsign
+	}
+	return map[string]any{
+		"service_date":          at.Format(time.DateOnly),
+		"stop_headsign":         sh,
+		"pickup_type":           0,
+		"schedule_relationship": "SCHEDULED",
+		"departure": map[string]any{
+			"scheduled":     at.Format(time.TimeOnly),
+			"scheduled_utc": at.Format(time.RFC3339),
+			"estimated_utc": nil,
+		},
+		"trip": map[string]any{
+			"trip_id":               fmt.Sprintf("%s-%d", routeID, at.Unix()),
+			"trip_headsign":         tripHeadsign,
+			"schedule_relationship": "SCHEDULED",
+			"route": map[string]any{
+				"onestop_id": "r-" + routeID, "route_id": routeID, "route_short_name": short,
+				"route_long_name": nil, "route_color": nil, "route_type": 3,
+			},
+		},
+	}
+}
+
+// StopLines asks for a day of departures: a stop in two feeds lists one
+// line under two route IDs, a station lists its departures under its
+// platforms, and a busy stop's answer is cut off at the request's limit.
 func TestStopLines(t *testing.T) {
+	soon := now.Add(10 * time.Minute)
+	var busy []map[string]any
+	for i := range 1000 {
+		busy = append(busy, stopLinesDep("r7", "7", "Mall", "", soon.Add(time.Duration(i)*time.Minute)))
+	}
+	answers := map[string]map[string]any{
+		"HC": {"stops": []map[string]any{
+			{"stop_name": "Harbor Central", "departures": []map[string]any{
+				stopLinesDep("r10", "10", "Harbor", "", soon),
+				stopLinesDep("r2", "2", "Airport", "", soon),
+				stopLinesDep("r2", "2", "X", "Downtown", soon.Add(time.Minute)),
+			}},
+			{"stop_name": "Harbor Central", "departures": []map[string]any{
+				stopLinesDep("9002", "2", "Airport", "", soon.Add(2*time.Minute)),
+			}},
+		}},
+		"STATION": {"stops": []map[string]any{
+			{"stop_name": "Station", "departures": []map[string]any{}, "children": []map[string]any{
+				{"departures": []map[string]any{stopLinesDep("r5", "5", "Zoo", "", soon)}},
+			}},
+		}},
+		"EMPTY": {"stops": []map[string]any{{"stop_name": "Empty", "departures": []map[string]any{}}}},
+		"BUSY":  {"stops": []map[string]any{{"stop_name": "Busy", "departures": busy}}},
+	}
 	var (
-		mu    sync.Mutex
-		paths []string
+		mu   sync.Mutex
+		reqs []*http.Request
 	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
-		paths = append(paths, r.URL.EscapedPath())
+		reqs = append(reqs, r)
 		mu.Unlock()
-		if strings.HasSuffix(r.URL.Path, ":HC") {
-			_, _ = w.Write([]byte(`{"stops":[
-				{"location_type":0,"route_stops":[
-					{"route":{"onestop_id":null,"route_id":"r10","route_short_name":"10","route_long_name":null}},
-					{"route":{"onestop_id":null,"route_id":"r2","route_short_name":"2","route_long_name":null}},
-					{"route":{"onestop_id":null,"route_id":"rA","route_short_name":"","route_long_name":"Airport"}}]},
-				{"location_type":0,"route_stops":[
-					{"route":{"onestop_id":null,"route_id":"9002","route_short_name":"2","route_long_name":null}}]}]}`))
-			return
+		key := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/stops/"), "/departures")
+		_, stop, _ := strings.Cut(key, ":")
+		answer, ok := answers[stop]
+		if !ok {
+			answer = map[string]any{"stops": []any{}}
 		}
-		_, _ = w.Write([]byte(`{"stops":[{"location_type":1,"route_stops":[]}]}`))
+		_ = json.NewEncoder(w).Encode(answer)
 	}))
 	t.Cleanup(srv.Close)
 	p, err := transitland.New(transitland.Config{Feed: feed, APIKey: "k", BaseURL: srv.URL}, srv.Client())
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := p.StopLines(t.Context(), []string{"HC", "STATION"}, now)
+	got, err := p.StopLines(t.Context(), []string{"HC", "STATION", "EMPTY", "BUSY"}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := map[string][]transit.Line{"HC": {
-		{ID: "r2", ShortName: "2"},
-		{ID: "r10", ShortName: "10"},
-		{ID: "rA", ShortName: "Airport"},
-	}}
-	if diff := cmp.Diff(want, got); diff != "" {
+	names := map[string][]string{}
+	for id, lines := range got {
+		for _, l := range lines {
+			names[id] = append(names[id], l.Line.ShortName+" to "+strings.Join(l.Headsigns, "|"))
+		}
+	}
+	want := map[string][]string{
+		"HC":      {"2 to Airport|Downtown", "10 to Harbor"},
+		"STATION": {"5 to Zoo"},
+		"BUSY":    {"7 to Mall"},
+	}
+	if diff := cmp.Diff(want, names); diff != "" {
 		t.Errorf("lines (-want +got):\n%s", diff)
 	}
-	if len(paths) != 2 {
-		t.Errorf("requests %v, want one per stop", paths)
+	if len(reqs) != 4 {
+		t.Errorf("%d requests, want one per stop", len(reqs))
+	}
+	for _, r := range reqs {
+		if !strings.HasSuffix(r.URL.Path, "/departures") {
+			t.Errorf("request to %s, want departures", r.URL.Path)
+		}
+		if next, _ := strconv.Atoi(r.URL.Query().Get("next")); next < 24*60*60 {
+			t.Errorf("next = %q, want at least a day", r.URL.Query().Get("next"))
+		}
 	}
 
-	if again, err := p.StopLines(t.Context(), []string{"HC", "STATION"}, now); err != nil || len(again["HC"]) != 3 {
-		t.Errorf("asking again: %v, %v", again, err)
+	// A board asks for its own window, not StopLines' day, which would
+	// otherwise be fetched again at every refresh.
+	if _, err := p.Departures(t.Context(), transit.Query{StopID: "HC", Now: now, Window: time.Hour}); err != nil {
+		t.Fatal(err)
 	}
-	if len(paths) != 2 {
-		t.Errorf("requests %v after asking again, want none more", paths)
+	if len(reqs) != 5 {
+		t.Fatalf("departures after StopLines made %d more requests, want 1", len(reqs)-4)
+	}
+	if next, _ := strconv.Atoi(reqs[4].URL.Query().Get("next")); next >= 24*60*60 {
+		t.Errorf("departures asked for next = %d, want its own window", next)
 	}
 
 	var many []string
 	for i := range transitland.MaxStopLines + 5 {
 		many = append(many, fmt.Sprintf("S%d", i))
 	}
-	paths = nil
-	if _, err := p.StopLines(t.Context(), many, now); err != nil {
-		t.Fatal(err)
+	reqs = nil
+	if _, err := p.StopLines(t.Context(), many, now); err == nil {
+		t.Error("StopLines found lines at stops the API does not know")
 	}
-	if len(paths) != transitland.MaxStopLines {
-		t.Errorf("%d requests for %d stops, want %d", len(paths), len(many), transitland.MaxStopLines)
+	if len(reqs) != transitland.MaxStopLines {
+		t.Errorf("%d requests for %d stops, want %d", len(reqs), len(many), transitland.MaxStopLines)
 	}
 }
 

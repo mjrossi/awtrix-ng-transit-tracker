@@ -63,7 +63,10 @@ const (
 	// maxStopLines is how many stops one StopLines call asks about, each
 	// costing a request.
 	maxStopLines = 10
-	maxBody      = 16 << 20
+	// stopLinesWindow is how far ahead StopLines looks, so a search late at
+	// night still finds the next day's trips.
+	stopLinesWindow = 24 * time.Hour
+	maxBody         = 16 << 20
 )
 
 // Config is the provider's configuration block.
@@ -104,8 +107,6 @@ type Provider struct {
 	offsets map[string]serviceOffset
 	// names holds each stop key's name, as departures answers give it.
 	names map[string]string
-	// lines holds each stop key's lines, as StopLines found them.
-	lines map[string][]transit.Line
 }
 
 // stopCache caches a stop's answers for window, the widest asked for, which
@@ -159,7 +160,6 @@ func New(cfg Config, client *http.Client) (*Provider, error) {
 		quota:   cfg.MonthlyQuota,
 		stops:   map[string]stopCache{},
 		names:   map[string]string{},
-		lines:   map[string][]transit.Line{},
 		offsets: map[string]serviceOffset{},
 	}, nil
 }
@@ -333,35 +333,29 @@ func (p *Provider) StopName(_ context.Context, id string, _ time.Time) (string, 
 	return name, ok
 }
 
-// StopLines implements transit.StopLiner with one request for each stop
-// not asked about before, each counting against the quota, for the first
-// maxStopLines stops. Transitland lists no lines for a station, only for
-// its platforms.
-func (p *Provider) StopLines(ctx context.Context, ids []string, _ time.Time) (map[string][]transit.Line, error) {
+// StopLines implements transit.StopLiner with a day of departures from
+// each stop, for the first maxStopLines stops: one request each, counting
+// against the quota. The answer stays out of the departures cache, whose
+// every refresh would then fetch a day.
+func (p *Provider) StopLines(ctx context.Context, ids []string, now time.Time) (map[string][]transit.StopLine, error) {
+	day := transit.Query{Now: now, Window: stopLinesWindow}
 	var (
 		mu   sync.Mutex
-		out  = make(map[string][]transit.Line, len(ids))
+		out  = make(map[string][]transit.StopLine, len(ids))
 		errs []error
 		wg   sync.WaitGroup
 	)
 	for _, id := range ids[:min(len(ids), maxStopLines)] {
-		key := p.stopKey(id)
-		p.mu.Lock()
-		lines, ok := p.lines[key]
-		p.mu.Unlock()
-		if ok {
-			if len(lines) > 0 {
-				out[id] = lines
-			}
-			continue
-		}
 		wg.Go(func() {
-			lines, err := p.stopLines(ctx, key)
-			if err == nil {
-				p.mu.Lock()
-				p.lines[key] = lines
-				p.mu.Unlock()
+			// A day cut off at departureLimit still tells where lines go.
+			tt, err := p.fetch(ctx, p.stopKey(id), now, stopLinesWindow)
+			var lines []transit.StopLine
+			for _, d := range tt.deps {
+				if day.Contains(d.Time()) {
+					lines = transit.AddStopLine(lines, d.Line, d.Headsign)
+				}
 			}
+			slices.SortFunc(lines, func(a, b transit.StopLine) int { return transit.CompareLines(a.Line, b.Line) })
 			mu.Lock()
 			defer mu.Unlock()
 			switch {
@@ -377,38 +371,6 @@ func (p *Provider) StopLines(ctx context.Context, ids []string, _ time.Time) (ma
 		return nil, errors.Join(errs...)
 	}
 	return out, nil
-}
-
-// stopLines asks for key's lines. Routes have no onestop_id in this answer,
-// and a key can match the stop in more than one feed, so lines are told
-// apart by name.
-func (p *Provider) stopLines(ctx context.Context, key string) ([]transit.Line, error) {
-	var resp struct {
-		Stops []struct {
-			RouteStops []struct {
-				Route struct {
-					RouteID   string `json:"route_id"`
-					ShortName string `json:"route_short_name"`
-					LongName  string `json:"route_long_name"`
-				} `json:"route"`
-			} `json:"route_stops"`
-		} `json:"stops"`
-	}
-	if err := p.get(ctx, "stops/"+url.PathEscape(key), nil, &resp); err != nil {
-		return nil, err
-	}
-	lines := []transit.Line{}
-	for _, st := range resp.Stops {
-		for _, rs := range st.RouteStops {
-			r := rs.Route
-			name := cmp.Or(r.ShortName, r.LongName)
-			if name != "" && !slices.ContainsFunc(lines, func(l transit.Line) bool { return l.ShortName == name }) {
-				lines = append(lines, transit.Line{ID: r.RouteID, ShortName: name})
-			}
-		}
-	}
-	slices.SortFunc(lines, transit.CompareLines)
-	return lines, nil
 }
 
 // get requests path, which must already be escaped, below the base URL.

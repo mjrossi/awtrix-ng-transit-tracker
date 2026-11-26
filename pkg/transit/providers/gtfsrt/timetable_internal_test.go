@@ -666,18 +666,27 @@ func TestCanceledWaiterLeavesTheScan(t *testing.T) {
 func TestStopLines(t *testing.T) {
 	p := newTown(t, town).provider(t, false)
 	var liner transit.StopLiner = p
-	got, err := liner.StopLines(t.Context(), []string{"S1", "T", "U"}, monday8)
+	got, err := liner.StopLines(t.Context(), []string{"S1", "S2", "T", "U"}, monday8)
 	if err != nil {
 		t.Fatal(err)
 	}
 	names := map[string][]string{}
 	for id, lines := range got {
 		for _, l := range lines {
-			names[id] = append(names[id], l.ShortName)
+			n := l.Line.ShortName
+			if len(l.Headsigns) > 0 {
+				n += " to " + strings.Join(l.Headsigns, "|")
+			}
+			names[id] = append(names[id], n)
 		}
 	}
-	// Harbor (U) only ends trips, so no line departs from it.
-	want := map[string][]string{"S1": {"1", "2"}, "T": {"1"}}
+	// Harbor (U) only ends trips, so no line departs from it. Trip nohead
+	// has no headsign and is named after its last stop.
+	want := map[string][]string{
+		"S1": {"1 to Harbor", "2 to Market"},
+		"S2": {"1 to Harbor", "2 to Harbor"},
+		"T":  {"1 to Central|Harbor"},
+	}
 	if diff := cmp.Diff(want, names); diff != "" {
 		t.Errorf("lines (-want +got):\n%s", diff)
 	}

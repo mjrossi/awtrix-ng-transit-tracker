@@ -10,6 +10,7 @@ package transit
 import (
 	"cmp"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -101,6 +102,32 @@ func compareLineNames(a, b string) int {
 		return 1
 	}
 	return strings.Compare(a, b)
+}
+
+// StopLine is a line at a stop and where its trips from there go.
+type StopLine struct {
+	Line Line
+	// Headsigns are distinct and sorted, and may be empty.
+	Headsigns []string
+}
+
+// AddStopLine records that l leaves a stop toward headsign. Lines riders
+// call by the same name are one, since a stop in two feeds lists the same
+// line under two route IDs. An empty headsign adds the line alone.
+func AddStopLine(lines []StopLine, l Line, headsign string) []StopLine {
+	name := cmp.Or(l.ShortName, l.ID)
+	i := slices.IndexFunc(lines, func(s StopLine) bool { return cmp.Or(s.Line.ShortName, s.Line.ID) == name })
+	if i < 0 {
+		lines = append(lines, StopLine{Line: l})
+		i = len(lines) - 1
+	}
+	if headsign == "" {
+		return lines
+	}
+	if j, found := slices.BinarySearch(lines[i].Headsigns, headsign); !found {
+		lines[i].Headsigns = slices.Insert(lines[i].Headsigns, j, headsign)
+	}
+	return lines
 }
 
 // NormalizeColor returns a color as "#RRGGBB", accepting it with or

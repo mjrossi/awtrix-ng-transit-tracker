@@ -402,10 +402,10 @@ func writeStops(ctx context.Context, c *cli.Command, source string, p transit.Pr
 const maxLinedStops = 10
 
 // sharedNameLines asks p which lines serve the stops whose names repeat,
-// such as one stop per side of a street, so they can be told apart. It
-// gives nothing when p cannot tell, or the names are all different; a
-// failure only loses the hint.
-func sharedNameLines(ctx context.Context, p transit.Provider, stops []transit.Stop) map[string][]transit.Line {
+// such as one stop per side of a street, and where they go from each, so
+// they can be told apart. It gives nothing when p cannot tell, or the
+// names are all different; a failure only loses the hint.
+func sharedNameLines(ctx context.Context, p transit.Provider, stops []transit.Stop) map[string][]transit.StopLine {
 	liner, ok := p.(transit.StopLiner)
 	if !ok {
 		return nil

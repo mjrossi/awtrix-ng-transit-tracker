@@ -222,12 +222,12 @@ func JSONList(w io.Writer, boards []Board) error {
 
 // Stops writes stop search results as aligned ID and name columns, with
 // numbered set to number them from 1 for a prompt, and after each name the
-// lines lines gives for its stop, if any.
-func Stops(w io.Writer, stops []transit.Stop, numbered bool, lines map[string][]transit.Line) {
+// lines lines gives for its stop and where they go, if any.
+func Stops(w io.Writer, stops []transit.Stop, numbered bool, lines map[string][]transit.StopLine) {
 	if len(lines) > 0 {
 		rows := make([][]string, len(stops))
 		for i, s := range stops {
-			rows[i] = []string{s.ID, s.Name, lineList(lines[s.ID])}
+			rows[i] = []string{s.ID, s.Name, stopLineList(lines[s.ID])}
 			if numbered {
 				rows[i] = append([]string{"  " + strconv.Itoa(i+1)}, rows[i]...)
 			}
@@ -251,18 +251,44 @@ func Stops(w io.Writer, stops []transit.Stop, numbered bool, lines map[string][]
 // run off the screen.
 const maxLines = 8
 
-// lineList names lines by short name, or ID, up to maxLines.
-func lineList(lines []transit.Line) string {
-	var names []string
-	for _, l := range lines {
-		if n := cmp.Or(l.ShortName, l.ID); n != "" && !slices.Contains(names, n) {
-			names = append(names, n)
+// stopLineList names lines by short name, or ID, each with where it goes,
+// up to maxLines. Lines are set apart with semicolons when any has a
+// headsign, since a line's headsigns are listed with commas.
+func stopLineList(lines []transit.StopLine) string {
+	sep := ", "
+	if slices.ContainsFunc(lines, func(l transit.StopLine) bool { return len(l.Headsigns) > 0 }) {
+		sep = "; "
+	}
+	var parts []string
+	for _, l := range lines[:min(len(lines), maxLines)] {
+		name := cmp.Or(l.Line.ShortName, l.Line.ID)
+		parts = append(parts, name+destinations(name, l.Headsigns))
+	}
+	out := strings.Join(parts, sep)
+	if len(lines) > maxLines {
+		out += fmt.Sprintf(" and %d more lines", len(lines)-maxLines)
+	}
+	return out
+}
+
+// destinations is " to A", " to A or B", or " to A, B or N more", without
+// line's name where a headsign starts with it, as some agencies' do.
+func destinations(line string, headsigns []string) string {
+	headsigns = slices.Clone(headsigns)
+	for i, h := range headsigns {
+		if rest, ok := strings.CutPrefix(h, line+" "); ok && rest != "" {
+			headsigns[i] = rest
 		}
 	}
-	if len(names) > maxLines {
-		return strings.Join(names[:maxLines], ", ") + fmt.Sprintf(" and %d more", len(names)-maxLines)
+	switch len(headsigns) {
+	case 0:
+		return ""
+	case 1:
+		return " to " + headsigns[0]
+	case 2:
+		return " to " + headsigns[0] + " or " + headsigns[1]
 	}
-	return strings.Join(names, ", ")
+	return fmt.Sprintf(" to %s, %s or %d more", headsigns[0], headsigns[1], len(headsigns)-2)
 }
 
 // Table writes rows as columns two spaces apart, removing control

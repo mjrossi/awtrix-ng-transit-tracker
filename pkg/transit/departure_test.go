@@ -45,3 +45,40 @@ func TestCompareLines(t *testing.T) {
 		t.Errorf("order (-want +got):\n%s", diff)
 	}
 }
+
+func TestAddStopLine(t *testing.T) {
+	type add struct {
+		line     transit.Line
+		headsign string
+	}
+	r27 := transit.Line{ID: "r27", ShortName: "27"}
+	tests := map[string]struct {
+		adds []add
+		want []transit.StopLine
+	}{
+		"headsigns sorted once each": {
+			[]add{{r27, "UCSB"}, {r27, "Goleta"}, {r27, "UCSB"}},
+			[]transit.StopLine{{Line: r27, Headsigns: []string{"Goleta", "UCSB"}}},
+		},
+		// Two feeds can list one line under different route IDs.
+		"one name, two IDs": {
+			[]add{{transit.Line{ID: "9002", ShortName: "2"}, "Downtown"}, {transit.Line{ID: "r2", ShortName: "2"}, "Airport"}},
+			[]transit.StopLine{{Line: transit.Line{ID: "9002", ShortName: "2"}, Headsigns: []string{"Airport", "Downtown"}}},
+		},
+		"no headsign": {
+			[]add{{transit.Line{ID: "r1", ShortName: "1"}, ""}},
+			[]transit.StopLine{{Line: transit.Line{ID: "r1", ShortName: "1"}}},
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			var got []transit.StopLine
+			for _, a := range tt.adds {
+				got = transit.AddStopLine(got, a.line, a.headsign)
+			}
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("(-want +got):\n%s", diff)
+			}
+		})
+	}
+}
