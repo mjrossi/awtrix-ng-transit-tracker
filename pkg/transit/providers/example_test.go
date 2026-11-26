@@ -16,7 +16,7 @@ import (
 // is compiled but not run.
 func ExampleOpen() {
 	cache := filepath.Join(os.TempDir(), "departures-example")
-	p, err := providers.Open("bart", map[string]any{"system": "sf-bart"}, providers.WithScheduleCache(cache))
+	p, err := providers.Open("bart", map[string]any{"system": "bart"}, providers.WithScheduleCache(cache))
 	if err != nil {
 		fmt.Println(err)
 		return

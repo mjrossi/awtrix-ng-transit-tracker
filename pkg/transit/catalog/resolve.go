@@ -25,7 +25,7 @@ func (e *MissingOptionsError) Error() string {
 }
 
 // EnvName is the environment variable that conventionally holds option for
-// this system, such as LISBON_METRO_CLIENT_ID.
+// this system, such as METRO_LISBOA_CLIENT_ID.
 func (s System) EnvName(option string) string {
 	return strings.ToUpper(strings.ReplaceAll(s.ID+"_"+option, "-", "_"))
 }
@@ -52,7 +52,7 @@ func Resolve(name string, settings map[string]any) (typ string, opts Options, er
 		id, _ := sysID.(string)
 		sys, ok := Get(id)
 		if !ok {
-			return "", nil, fmt.Errorf("%w %q", ErrUnknownSystem, id)
+			return "", nil, unknownSystem(id)
 		}
 		merged := sys.Merge(user)
 		if missing := sys.Missing(merged); len(missing) > 0 {
@@ -96,4 +96,28 @@ func (o Options) Decode(v any) error {
 		return err
 	}
 	return nil
+}
+
+// renamed maps the IDs systems had before v0.7 to their IDs now. Old IDs
+// do not work, but their errors name the new one.
+var renamed = map[string]string{
+	"nyc-subway":                  "mta-subway",
+	"boston-mbta":                 "mbta",
+	"helsinki-hsl":                "hsl",
+	"sf-bart":                     "bart",
+	"lisbon-metro":                "metro-lisboa",
+	"lisbon-carris-metropolitana": "carris-metropolitana",
+}
+
+// Renamed returns the ID now used by a system that id named before v0.7.
+func Renamed(id string) (string, bool) {
+	to, ok := renamed[id]
+	return to, ok
+}
+
+func unknownSystem(id string) error {
+	if to, ok := renamed[id]; ok {
+		return fmt.Errorf("%w %q: it was renamed %q", ErrUnknownSystem, id, to)
+	}
+	return fmt.Errorf("%w %q", ErrUnknownSystem, id)
 }

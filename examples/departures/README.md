@@ -5,10 +5,10 @@ A small program that uses Urbanist Timetable as a library. It imports only
 nothing it needs is in `internal/`.
 
 ```bash
-go run . nyc-subway 127N
+go run . mta-subway 127N
 ```
 
 It opens a ready-made system with `providers.Open` and prints the next
 hour's departures at one stop. `gtfsrt` systems show only departures with
-live predictions. Systems that need keys, such as `lisbon-metro`, need them
+live predictions. Systems that need keys, such as `metro-lisboa`, need them
 passed in the settings map.

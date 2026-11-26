@@ -19,7 +19,7 @@ version may break configuration.
   schedule works. Trips without a headsign are named after their last
   stop. Where realtime trips do not match the schedule's, lines with
   realtime trips show only those and a warning is logged;
-  `timetable = false` turns timetabled trips off, as `nyc-subway` does.
+  `timetable = false` turns timetabled trips off, as `mta-subway` does.
   Without `realtime_urls`, a schedule that gives no timetable is an error
   rather than an empty board.
   The first query for a stop reads the schedule's `stop_times.txt` (about
@@ -65,6 +65,14 @@ version may break configuration.
 
 ### Changed
 
+- Catalog systems are renamed after their agency: `mta-subway` (was
+  `nyc-subway`), `mbta` (`boston-mbta`), `hsl` (`helsinki-hsl`), `bart`
+  (`sf-bart`), `metro-lisboa` (`lisbon-metro`) and `carris-metropolitana`
+  (`lisbon-carris-metropolitana`). Configurations that name a system with
+  `system =` need the new ID; an old ID's error names the new one. The
+  environment variables for Metro de Lisboa's keys are now
+  `METRO_LISBOA_CLIENT_ID` and `METRO_LISBOA_CLIENT_SECRET`. `systems`
+  shows each system's agency.
 - A board's stops are fetched at the same time on each poll, rather than
   one after another.
 - Several errors at once, such as from `config validate` or from several

@@ -332,8 +332,8 @@ func TestProviderSystem(t *testing.T) {
 	base := strings.Replace(minimal, "%s", "clock.local", 1)
 	tests := map[string]struct{ block, want string }{
 		"unknown system":  {"[providers.x]\nsystem = \"atlantis-metro\"\n", "unknown system"},
-		"missing keys":    {"[providers.metro]\nsystem = \"lisbon-metro\"\n", "client_id and client_secret"},
-		"system and type": {"[providers.x]\nsystem = \"sf-bart\"\ntype = \"gtfsrt\"\n", "not both"},
+		"missing keys":    {"[providers.metro]\nsystem = \"metro-lisboa\"\n", "client_id and client_secret"},
+		"system and type": {"[providers.x]\nsystem = \"bart\"\ntype = \"gtfsrt\"\n", "not both"},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {

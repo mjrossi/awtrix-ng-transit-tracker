@@ -37,8 +37,8 @@ func initCommand() *cli.Command {
 			"or when input is not a terminal, --system and --stop are required. Writes\n" +
 			"to --config, and does not replace a file that exists unless --force.\n\n" +
 			"   urbanist-timetable config init\n" +
-			"   urbanist-timetable config init --system nyc-subway --stop 127N --lines 1,2,3\n" +
-			"   urbanist-timetable config init --system sf-bart --stop EMBR --stdout",
+			"   urbanist-timetable config init --system mta-subway --stop 127N --lines 1,2,3\n" +
+			"   urbanist-timetable config init --system bart --stop EMBR --stdout",
 		Flags: []cli.Flag{
 			&cli.StringFlag{Name: "system", Usage: "a system ID from `systems`"},
 			&cli.StringSliceFlag{Name: "stop", Usage: "a stop ID for the board"},
@@ -116,7 +116,7 @@ func initConfig(ctx context.Context, c *cli.Command) error {
 func initFromFlags(c *cli.Command) (initAnswers, error) {
 	id, stops := c.String("system"), c.StringSlice("stop")
 	if id == "" || len(stops) == 0 {
-		return initAnswers{}, newUsageError(c, "give --system and --stop, such as `config init --system nyc-subway --stop 127N`; find stop IDs with `stops search`")
+		return initAnswers{}, newUsageError(c, "give --system and --stop, such as `config init --system mta-subway --stop 127N`; find stop IDs with `stops search`")
 	}
 	sys, ok := catalog.Get(id)
 	if !ok {
@@ -192,7 +192,7 @@ func (p prompter) askSystem(ctx context.Context) (catalog.System, error) {
 	}
 	fmt.Fprintln(p.out, "Systems:")
 	for i, s := range all {
-		fmt.Fprintf(p.out, "  %d  %-28s %s, %s\n", i+1, s.ID, s.Name, s.City)
+		fmt.Fprintf(p.out, "  %d  %-28s %s, %s\n", i+1, s.ID, s.Title(), s.City)
 	}
 	fmt.Fprintln(p.out, "Not listed? `urbanist-timetable config example` shows how to add any agency with GTFS-Realtime, or Transitland.")
 	for {
@@ -343,7 +343,7 @@ func renderConfig(a initAnswers) (string, error) {
 	var b strings.Builder
 	b.WriteString("# Written by `urbanist-timetable config init`.\n")
 	b.WriteString("# `urbanist-timetable config example` explains every setting.\n\n")
-	fmt.Fprintf(&b, "# %s, %s. More: %s\n", a.system.Name, a.system.City, a.system.InfoURL)
+	fmt.Fprintf(&b, "# %s, %s. More: %s\n", a.system.Title(), a.system.City, a.system.InfoURL)
 	b.WriteString(providerBlock(a.system))
 	fmt.Fprintf(&b, "\n# `urbanist-timetable departures` shows every board; `departures %s`, this one.\n", a.board)
 	b.WriteString("[[boards]]\n")

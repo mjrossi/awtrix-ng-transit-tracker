@@ -10,7 +10,7 @@ import (
 )
 
 func TestOpen(t *testing.T) {
-	if _, err := providers.Open("bart", map[string]any{"system": "sf-bart"}); err != nil {
+	if _, err := providers.Open("bart", map[string]any{"system": "bart"}); err != nil {
 		t.Errorf("system: %v", err)
 	}
 	if _, err := providers.Open("agency", map[string]any{"type": "gtfsrt", "realtime_urls": []any{"https://x"}}, providers.WithScheduleCache(t.TempDir())); err != nil {

@@ -30,7 +30,7 @@ url = "http://awtrixng-a1b2c3.local"
 # Ready-made systems: list them with `urbanist-timetable systems`, and
 # `urbanist-timetable systems show <id>` prints the block to paste here.
 # [providers.nyc]
-# system = "nyc-subway"
+# system = "mta-subway"
 #
 # Any other agency with a GTFS schedule, GTFS-Realtime TripUpdates, or both
 # works through the generic provider. Find feed URLs at
@@ -66,8 +66,8 @@ url = "http://awtrixng-a1b2c3.local"
 # tokens). Keep the keys in the environment, for example in
 # mise.local.toml. Station IDs are two letters, such as "BC".
 # [providers.metrolisboa]
-# client_id = "${LISBON_METRO_CLIENT_ID}"
-# client_secret = "${LISBON_METRO_CLIENT_SECRET}"
+# client_id = "${METRO_LISBOA_CLIENT_ID}"
+# client_secret = "${METRO_LISBOA_CLIENT_SECRET}"
 
 # The demo provider generates departures from fixed headways. Use it to see
 # the display working before configuring a real transit API.

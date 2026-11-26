@@ -122,7 +122,7 @@ func TestDeparturesWithoutStops(t *testing.T) {
 	}{
 		"no boards":       {"[providers.demo]\n", []string{"departures"}, "no saved boards in "},
 		"a source":        {boardsConfig, []string{"departures", "demo"}, "give one or more stop IDs after demo; find them with `urbanist-timetable stops search demo <words>`"},
-		"a system":        {boardsConfig, []string{"departures", "sf-bart"}, "after sf-bart"},
+		"a system":        {boardsConfig, []string{"departures", "bart"}, "after bart"},
 		"a board typo":    {boardsConfig, []string{"departures", "gren"}, `no board named "gren" in `},
 		"typo suggestion": {boardsConfig, []string{"departures", "gren"}, `did you mean "green"?`},
 	}

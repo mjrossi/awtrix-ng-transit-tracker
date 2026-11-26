@@ -1,9 +1,9 @@
 // Command urbanist-timetable shows upcoming public transit departures in a
 // terminal or on an AWTRIX NG clock.
 //
-//	urbanist-timetable departures nyc-subway 127N
+//	urbanist-timetable departures mta-subway 127N
 //	urbanist-timetable stops search carrismetropolitana cais sodre
-//	urbanist-timetable systems show nyc-subway
+//	urbanist-timetable systems show mta-subway
 //	urbanist-timetable config validate
 //	urbanist-timetable clock run
 //	urbanist-timetable clock preview --board metro
@@ -60,8 +60,8 @@ func newRootCommand() *cli.Command {
 		Version: version,
 		Description: "Getting started:\n\n" +
 			"   urbanist-timetable systems                           # ready-made systems\n" +
-			"   urbanist-timetable stops search nyc-subway times sq  # find a stop ID\n" +
-			"   urbanist-timetable departures nyc-subway 127N        # its next departures\n" +
+			"   urbanist-timetable stops search mta-subway times sq  # find a stop ID\n" +
+			"   urbanist-timetable departures mta-subway 127N        # its next departures\n" +
 			"   urbanist-timetable config init                       # save stops to show by default\n\n" +
 			"Any agency with GTFS-Realtime works too; see `urbanist-timetable config example`.",
 		EnableShellCompletion:           true,

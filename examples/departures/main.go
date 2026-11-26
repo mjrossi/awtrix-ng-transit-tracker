@@ -1,7 +1,7 @@
 // Command departures prints a stop's next departures using only the
 // importable packages of Urbanist Timetable:
 //
-//	go run . nyc-subway 127N
+//	go run . mta-subway 127N
 package main
 
 import (

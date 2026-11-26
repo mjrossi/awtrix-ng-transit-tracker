@@ -1,16 +1,18 @@
-name = "New York City Subway"
+agency = "MTA"
+name = "Subway"
 city = "New York"
 country = "US"
 modes = ["metro"]
 provider = "gtfsrt"
 status = "community"
-verified = "2026-11-25"
+verified = "2026-11-26"
 sample_stop = "127"
 info_url = "https://www.mta.info/developers"
 data_license = "MTA data feed terms"
 notes = """
 A station ID such as "127" covers both directions; "127N" or "127S" is one
 direction. Some complexes have a station per group of lines."""
+mobility_db = ["mdb-516"]
 
 [options]
 static_url = "http://web.mta.info/developers/data/nyct/subway/google_transit.zip"

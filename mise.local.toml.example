@@ -4,15 +4,15 @@
 #
 # config.toml reads secrets as ${NAME}, for example:
 #   [providers.metrolisboa]
-#   client_id = "${LISBON_METRO_CLIENT_ID}"
+#   client_id = "${METRO_LISBOA_CLIENT_ID}"
 
 [env]
 # Metro de Lisboa API: consumer key and secret of an application subscribed
 # to EstadoServicoML at https://api.metrolisboa.pt/store/. These names are
-# the ones `urbanist-timetable systems show lisbon-metro` prints and
+# the ones `urbanist-timetable systems show metro-lisboa` prints and
 # `just catalog-check` reads.
-# LISBON_METRO_CLIENT_ID = ""
-# LISBON_METRO_CLIENT_SECRET = ""
+# METRO_LISBOA_CLIENT_ID = ""
+# METRO_LISBOA_CLIENT_SECRET = ""
 
 # Transitland API key from https://www.transit.land/, as named in
 # config.example.toml.
