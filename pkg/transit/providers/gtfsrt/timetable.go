@@ -26,7 +26,7 @@ import (
 const scanGather = 100 * time.Millisecond
 
 // indexVersion names the format of persisted stop indexes.
-const indexVersion = "v1"
+const indexVersion = "v2"
 
 // stopTime is one boardable timetabled departure from a stop: not the trip's
 // last stop, and not one with pickup_type 1.
@@ -238,9 +238,9 @@ func (tt *timetable) scan(want map[string]bool) (map[string][]stopTime, error) {
 		maxSeq   = make([]int64, len(st.trips))
 		minSeq   = make([]int64, len(st.trips))
 		firstDep = make([]int32, len(st.trips))
-		// lastStop is the stop at maxSeq, kept only for trips that stop at
-		// a wanted stop.
-		lastStop = map[int32]string{}
+		// lastStop is the stop at maxSeq, by stopInfo.idx, or -1. Stop
+		// times need not be in trip order, so it is kept for every trip.
+		lastStop = make([]int32, len(st.trips))
 		// Stop times are usually grouped by trip, so the trip lookup is
 		// skipped while the trip ID repeats.
 		prevTrip string
@@ -248,7 +248,7 @@ func (tt *timetable) scan(want map[string]bool) (map[string][]stopTime, error) {
 		prevOK   bool
 	)
 	for i := range maxSeq {
-		maxSeq[i], minSeq[i] = -1, -1
+		maxSeq[i], minSeq[i], lastStop[i] = -1, -1, -1
 	}
 	err := readTable(st.zr, "stop_times.txt", func(r row) {
 		tripID := r.get("trip_id")
@@ -265,10 +265,12 @@ func (tt *timetable) scan(want map[string]bool) (map[string][]stopTime, error) {
 			return
 		}
 		stopID := r.get("stop_id")
+		stop, known := st.stops[stopID]
 		if int64(seq) > maxSeq[info.idx] {
 			maxSeq[info.idx] = int64(seq)
-			if _, ok := lastStop[info.idx]; ok {
-				lastStop[info.idx] = strings.Clone(stopID)
+			lastStop[info.idx] = -1
+			if known {
+				lastStop[info.idx] = stop.idx
 			}
 		}
 		dep, ok := parseClock(r.get("departure_time"))
@@ -278,8 +280,7 @@ func (tt *timetable) scan(want map[string]bool) (map[string][]stopTime, error) {
 		if ok && (minSeq[info.idx] < 0 || int64(seq) < minSeq[info.idx]) {
 			minSeq[info.idx], firstDep[info.idx] = int64(seq), dep
 		}
-		parent := st.stops[stopID].parent
-		for _, target := range [2]string{stopID, parent} {
+		for _, target := range [2]string{stopID, stop.parent} {
 			if target == "" || !want[target] {
 				continue
 			}
@@ -287,12 +288,6 @@ func (tt *timetable) scan(want map[string]bool) (map[string][]stopTime, error) {
 				// A stop without times (not a timepoint) is left out
 				// rather than guessed between its neighbors.
 				continue
-			}
-			if _, ok := lastStop[info.idx]; !ok {
-				lastStop[info.idx] = ""
-				if int64(seq) == maxSeq[info.idx] {
-					lastStop[info.idx] = strings.Clone(stopID)
-				}
 			}
 			found = append(found, candidate{
 				stop:     target,
@@ -316,7 +311,9 @@ func (tt *timetable) scan(want map[string]bool) (map[string][]stopTime, error) {
 		} else {
 			c.start = firstDep[info.idx]
 		}
-		c.last = lastStop[info.idx]
+		if i := lastStop[info.idx]; i >= 0 {
+			c.last = st.stopIDs[i]
+		}
 		out[c.stop] = append(out[c.stop], c.stopTime)
 	}
 	tt.log.Info("indexed GTFS stop times",
