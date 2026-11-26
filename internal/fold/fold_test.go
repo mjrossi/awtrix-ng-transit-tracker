@@ -13,6 +13,10 @@ func TestString(t *testing.T) {
 		"Ångström":          "angstrom",
 		"Çais do Sodré":     "cais do sodre",
 		"Plain":             "plain",
+		"Łódź":              "lodz",
+		"Brno–Černovice":    "brno–cernovice",
+		"Győr":              "gyor",
+		"Straße":            "strasse",
 	} {
 		if got := fold.String(in); got != want {
 			t.Errorf("String(%q) = %q, want %q", in, got, want)

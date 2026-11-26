@@ -20,8 +20,11 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/mjrossi/urbanist-timetable/internal/fold"
+	"github.com/mjrossi/urbanist-timetable/internal/tomlout"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/catalog"
 )
 
@@ -83,6 +86,25 @@ type Block struct {
 	Comment string
 }
 
+// TOML renders the block as a [providers] table named name.
+func (b Block) TOML(name string) (string, error) {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "[providers.%s]\n", tomlout.Key(name))
+	settings := b.Settings()
+	for _, k := range []string{"system", "type", "static_url", "realtime_urls", "feed", "api_key", "headers"} {
+		v, ok := settings[k]
+		if !ok {
+			continue
+		}
+		s, err := tomlout.Value(v)
+		if err != nil {
+			return "", err
+		}
+		fmt.Fprintf(&sb, "%s = %s\n", k, s)
+	}
+	return sb.String(), nil
+}
+
 // Settings is the block as configuration settings.
 func (b Block) Settings() map[string]any {
 	if b.System != "" {
@@ -125,7 +147,9 @@ func IsID(id string) bool {
 	return mdbID.MatchString(id) || strings.HasPrefix(id, "f-") && len(id) > 2
 }
 
-var mdbID = regexp.MustCompile(`^[a-z]+-[0-9]+$`)
+// mdbID names only the Mobility Database's GTFS prefixes, so a mistyped
+// catalog ID such as "bart-2" does not download its list.
+var mdbID = regexp.MustCompile(`^(mdb|tld)-[0-9]+$`)
 
 // Results is what Search found.
 type Results struct {
@@ -235,16 +259,14 @@ func startsWord(text, w string) bool {
 			return false
 		}
 		at := i + j
-		if at == 0 || !isWordChar(rune(text[at-1])) {
+		if prev, _ := utf8.DecodeLastRuneInString(text[:at]); at == 0 || !isWordChar(prev) {
 			return true
 		}
 		i = at + 1
 	}
 }
 
-func isWordChar(r rune) bool {
-	return r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r >= 0x80
-}
+func isWordChar(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }
 
 func rank(s System) int {
 	switch {
@@ -327,11 +349,32 @@ const LargeSchedule = 150 << 20
 
 const userAgent = "urbanist-timetable"
 
+// requestTimeout bounds each request; the Mobility Database's list is
+// about 3 MB, which a slow link needs some time for.
+const requestTimeout = 2 * time.Minute
+
+// client is d.HTTP, or a default, made to drop the Transitland key when a
+// redirect leaves the host first asked or downgrades to plain HTTP.
 func (d *Directory) client() *http.Client {
+	c := &http.Client{}
 	if d.HTTP != nil {
-		return d.HTTP
+		*c = *d.HTTP
 	}
-	return http.DefaultClient
+	next := c.CheckRedirect
+	c.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		first := via[0].URL
+		if req.URL.Host != first.Host || first.Scheme == "https" && req.URL.Scheme != "https" {
+			req.Header.Del("Apikey")
+		}
+		if next != nil {
+			return next(req, via)
+		}
+		if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
+		}
+		return nil
+	}
+	return c
 }
 
 func (d *Directory) now() time.Time {
@@ -351,6 +394,8 @@ func (d *Directory) log() *slog.Logger {
 // get fetches u with the extra headers, reading at most limit bytes, and
 // returns the status and body.
 func (d *Directory) get(ctx context.Context, u string, header http.Header, limit int64) (int, []byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return 0, nil, err

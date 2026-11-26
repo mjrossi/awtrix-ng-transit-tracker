@@ -157,8 +157,10 @@ operators, which also name the agencies inside national feeds. Every
 result's ID works in `departures`, `stops search` and `systems show`, as
 a ready-made system's does. The agency shown is whoever published the
 data, so if a name finds nothing, try the city. Results are served by the
-`gtfsrt` provider where the feeds need no Transitland key, so they spend no
-quota; `systems show` says when a feed needs a key of its own.
+`gtfsrt` provider where the feeds need no Transitland key, so departures
+spend no quota; looking up a Transitland ID takes two or more requests,
+saved for a week in the cache directory. `systems show` says when a feed
+needs a key of its own.
 
 ### 3. Find your stop
 

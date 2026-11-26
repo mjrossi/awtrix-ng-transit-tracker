@@ -5,9 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"maps"
 	"os"
-	"slices"
 	"strings"
 
 	"github.com/urfave/cli/v3"
@@ -138,7 +136,7 @@ func openDirectorySystem(ctx context.Context, dir *directory.Directory, id strin
 	if err != nil {
 		return nil, err
 	}
-	settings, err := config.ExpandSettings(id, b.Settings())
+	settings, err := config.ExpandSettings(id, b.Settings(), sys.Needs)
 	if err != nil {
 		if sys.KeyInfo != "" {
 			return nil, fmt.Errorf("%w (get a key: %s)", err, sys.KeyInfo)
@@ -173,69 +171,11 @@ func showDirectorySystem(ctx context.Context, c *cli.Command, id string) error {
 			fmt.Fprintf(w, "# The schedule is %d MB, which a small machine such as a NAS may struggle to load.\n", n>>20)
 		}
 	}
-	block, err := directoryBlock(id, b)
+	block, err := b.TOML(id)
 	if err != nil {
 		return err
 	}
 	fmt.Fprintf(w, "\n%s", block)
 	fmt.Fprintf(w, "\n# Find stop IDs: urbanist-timetable stops search %s <words...>\n", id)
 	return nil
-}
-
-// directoryBlock renders b as a [providers] block named after id.
-func directoryBlock(id string, b directory.Block) (string, error) {
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "[providers.%s]\n", tomlKey(id))
-	settings := b.Settings()
-	keys := []string{"type", "static_url", "realtime_urls", "feed", "api_key", "headers"}
-	for _, k := range keys {
-		v, ok := settings[k]
-		if !ok {
-			continue
-		}
-		s, err := tomlValue(v)
-		if err != nil {
-			return "", err
-		}
-		fmt.Fprintf(&sb, "%s = %s\n", k, s)
-	}
-	return sb.String(), nil
-}
-
-// tomlKey quotes a key that is not a bare TOML key, such as one with "~".
-func tomlKey(k string) string {
-	for _, r := range k {
-		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '-' && r != '_' {
-			return tomlString(k)
-		}
-	}
-	return k
-}
-
-func tomlValue(v any) (string, error) {
-	switch x := v.(type) {
-	case string:
-		return tomlString(x), nil
-	case []any:
-		parts := make([]string, len(x))
-		for i, e := range x {
-			s, err := tomlValue(e)
-			if err != nil {
-				return "", err
-			}
-			parts[i] = s
-		}
-		return "[" + strings.Join(parts, ", ") + "]", nil
-	case map[string]any:
-		var parts []string
-		for _, k := range slices.Sorted(maps.Keys(x)) {
-			s, err := tomlValue(x[k])
-			if err != nil {
-				return "", err
-			}
-			parts = append(parts, tomlString(k)+" = "+s)
-		}
-		return "{ " + strings.Join(parts, ", ") + " }", nil
-	}
-	return "", fmt.Errorf("cannot write %T as TOML", v)
 }

@@ -17,8 +17,10 @@ version may break configuration.
   its `[providers]` block, with `${NAME}` for any key the feeds need and
   where to get one, and warns about schedules too large for a small
   machine. Where Transitland lists the feed URLs and they need no key, the
-  block uses `gtfsrt`, which spends no Transitland quota. `cache clear`
-  also removes the saved feed list.
+  block uses `gtfsrt`, which spends no Transitland quota on departures;
+  working that out takes two or more Transitland requests, kept a week in
+  the cache directory. `cache clear` also removes the saved feed list and
+  these lookups.
 
 - `gtfsrt` shows timetabled trips from the schedule, with the realtime
   prediction where a feed has one, so a stop no longer reads "No

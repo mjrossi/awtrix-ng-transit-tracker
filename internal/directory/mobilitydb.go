@@ -8,12 +8,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/mjrossi/urbanist-timetable/pkg/transit/catalog"
 )
 
 // DefaultMobilityDBURL is the Mobility Database's list of every feed,
@@ -44,6 +47,8 @@ type mdbSystem struct {
 	sys      System
 	static   mdbFeed
 	realtime []mdbFeed
+	// keys maps each feed's key information to the variable for its key.
+	keys map[string]string
 }
 
 type mdbFeeds struct {
@@ -68,35 +73,47 @@ func (d *Directory) mobilityDB(ctx context.Context) (*mdbFeeds, error) {
 		}
 		return parseMDB(b)
 	}
+	// The file's time is when the server last confirmed this copy, so it is
+	// also the right If-Modified-Since. It changes only on a 200 or a 304:
+	// touching it after a failed refresh would claim a check that never
+	// happened, and later updates would be answered 304.
 	path := filepath.Join(d.CacheDir, mdbFile)
 	fi, statErr := os.Stat(path)
-	if statErr == nil && within(d.now(), fi.ModTime(), mdbTTL) {
+	var saved *mdbFeeds
+	if statErr == nil {
 		if b, err := os.ReadFile(path); err == nil {
-			return parseMDB(b)
+			if f, err := parseMDB(b); err == nil {
+				saved = f
+			}
 		}
 	}
+	if saved != nil && within(d.now(), fi.ModTime(), mdbTTL) {
+		return saved, nil
+	}
 	var since time.Time
-	if statErr == nil {
+	if saved != nil {
 		since = fi.ModTime()
 	}
 	b, notModified, err := d.fetchMDB(ctx, u, since)
 	switch {
-	case err != nil && statErr == nil:
-		d.log().WarnContext(ctx, "using the saved Mobility Database list", "err", err)
-		fallthrough
-	case notModified:
+	case notModified && saved != nil:
 		now := d.now()
 		_ = os.Chtimes(path, now, now)
-		old, rerr := os.ReadFile(path)
-		if rerr != nil {
-			return &mdbFeeds{}, errors.Join(err, rerr)
-		}
-		return parseMDB(old)
+		return saved, nil
+	case err != nil && saved != nil:
+		d.log().WarnContext(ctx, "using the saved Mobility Database list", "err", err)
+		return saved, nil
 	case err != nil:
 		return &mdbFeeds{}, err
+	case notModified:
+		return &mdbFeeds{}, errors.New("feed list: 304 without a saved copy")
+	}
+	f, err := parseMDB(b)
+	if err != nil {
+		return f, err
 	}
 	saveFile(d.CacheDir, path, b, d.now())
-	return parseMDB(b)
+	return f, nil
 }
 
 // fetchMDB downloads the list, conditionally when since is set.
@@ -141,21 +158,29 @@ func saveFile(dir, path string, b []byte, now time.Time) {
 	_ = os.Rename(tmp.Name(), path)
 }
 
-// ClearCache deletes the saved Mobility Database list from dir, returning
-// the bytes freed.
+// ClearCache deletes the saved Mobility Database list and Transitland
+// lookups from dir, returning the bytes freed.
 func ClearCache(dir string) (int64, error) {
-	path := filepath.Join(dir, mdbFile)
-	fi, err := os.Lstat(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return 0, nil
+	paths, _ := filepath.Glob(filepath.Join(dir, resolvedPrefix+"*.json"))
+	var (
+		freed int64
+		errs  []error
+	)
+	for _, path := range append([]string{filepath.Join(dir, mdbFile)}, paths...) {
+		fi, err := os.Lstat(path)
+		if errors.Is(err, os.ErrNotExist) || err == nil && !fi.Mode().IsRegular() {
+			continue
+		}
+		if err == nil {
+			err = os.Remove(path)
+		}
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		freed += fi.Size()
 	}
-	if err != nil {
-		return 0, err
-	}
-	if err := os.Remove(path); err != nil {
-		return 0, err
-	}
-	return fi.Size(), nil
+	return freed, errors.Join(errs...)
 }
 
 func within(now, since time.Time, d time.Duration) bool {
@@ -213,7 +238,7 @@ func parseMDB(b []byte) (*mdbFeeds, error) {
 			info:  get("urls.authentication_info"),
 			param: get("urls.api_key_parameter_name"),
 		}
-		if feed.url == "" {
+		if feed.url == "" || hasEnvRef(feed.url, feed.param) {
 			continue
 		}
 		switch get("data_type") {
@@ -249,19 +274,65 @@ func parseMDB(b []byte) (*mdbFeeds, error) {
 	return f, nil
 }
 
-// finish works out the environment variable and key details of a system.
+// finish keeps only the feeds a block can use safely and works out the
+// environment variables for their keys.
 func (s *mdbSystem) finish() {
+	s.keys = map[string]string{}
+	var infos []string
 	for _, feed := range append([]mdbFeed{s.static}, s.realtime...) {
 		if feed.auth == authNone {
 			continue
 		}
-		if len(s.sys.Needs) == 0 {
-			s.sys.Needs = []string{keyVar(s.sys.Agency)}
+		// Feeds with different sign-up pages take keys from different
+		// issuers, so each gets its own variable.
+		if _, ok := s.keys[feed.info]; ok {
+			continue
 		}
-		if s.sys.KeyInfo == "" {
-			s.sys.KeyInfo = feed.info
+		v := keyVar(s.sys.Agency, s.sys.ID)
+		if n := len(s.keys); n > 0 {
+			v = strings.TrimSuffix(v, "_API_KEY") + fmt.Sprintf("_%d_API_KEY", n+1)
+		}
+		s.keys[feed.info] = v
+		s.sys.Needs = append(s.sys.Needs, v)
+		if feed.info != "" {
+			infos = append(infos, feed.info)
 		}
 	}
+	s.sys.KeyInfo = strings.Join(infos, " and ")
+}
+
+// headerHosts lists the hosts of a system's feeds when a key goes in a
+// header and they are not all one host: gtfsrt sends its headers to every
+// feed, so the key reaches each of them.
+func (s *mdbSystem) headerHosts() []string {
+	feeds := append([]mdbFeed{s.static}, s.realtime...)
+	if !slices.ContainsFunc(feeds, func(f mdbFeed) bool { return f.auth == authHeader }) {
+		return nil
+	}
+	var hosts []string
+	for _, f := range feeds {
+		if h := hostOf(f.url); !slices.Contains(hosts, h) {
+			hosts = append(hosts, h)
+		}
+	}
+	if len(hosts) < 2 {
+		return nil
+	}
+	return hosts
+}
+
+func hostOf(u string) string {
+	p, err := url.Parse(u)
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(p.Host)
+}
+
+// hasEnvRef reports whether directory data holds a ${NAME} reference,
+// which would read the environment once the block is expanded.
+func hasEnvRef(ss ...string) bool {
+	return slices.ContainsFunc(ss, func(s string) bool { return strings.Contains(s, "${") })
 }
 
 func (f *mdbFeeds) search(words string) []System {
@@ -299,18 +370,15 @@ func (f *mdbFeeds) resolve(id string) (System, Block, bool) {
 func (s *mdbSystem) block() Block {
 	opts := map[string]any{}
 	headers := map[string]any{}
-	key := ""
-	if len(s.sys.Needs) > 0 {
-		key = "${" + s.sys.Needs[0] + "}"
-	}
 	withKey := func(feed mdbFeed) string {
+		key := "${" + s.keys[feed.info] + "}"
 		switch {
 		case feed.auth == authParam && feed.param != "":
 			sep := "?"
 			if strings.Contains(feed.url, "?") {
 				sep = "&"
 			}
-			return feed.url + sep + feed.param + "=" + key
+			return feed.url + sep + url.QueryEscape(feed.param) + "=" + key
 		case feed.auth == authHeader && feed.param != "":
 			headers[feed.param] = key
 		}
@@ -328,6 +396,9 @@ func (s *mdbSystem) block() Block {
 		opts["headers"] = headers
 	}
 	comment := fmt.Sprintf("From the Mobility Database (%s).", s.sys.ID)
+	if hosts := s.headerHosts(); hosts != nil {
+		comment += " The key header is sent to every feed: " + strings.Join(hosts, ", ") + "."
+	}
 	if s.sys.License != "" {
 		comment += " Data license: " + s.sys.License
 	}
@@ -338,7 +409,9 @@ var acronym = regexp.MustCompile(`\(([A-Za-z0-9 .\-]{2,12})\)`)
 
 // keyVar names the environment variable for an agency's key: its acronym
 // in parentheses, as the list often gives one, or its first two words.
-func keyVar(agency string) string {
+// Names this tool or its catalog already use get the system's ID instead,
+// so a directory entry cannot be handed another service's key.
+func keyVar(agency, id string) string {
 	name := agency
 	if m := acronym.FindStringSubmatch(agency); m != nil {
 		name = m[1]
@@ -354,11 +427,28 @@ func keyVar(agency string) string {
 			b.WriteByte('_')
 		}
 	}
-	v := strings.Trim(b.String(), "_")
-	if v == "" {
-		v = "AGENCY"
+	v := strings.Trim(b.String(), "_") + "_API_KEY"
+	if v == "_API_KEY" || reservedVar(v) {
+		v = strings.ToUpper(strings.ReplaceAll(id, "-", "_")) + "_API_KEY"
 	}
-	return v + "_API_KEY"
+	return v
+}
+
+// reservedVar reports whether v is a variable this tool reads for itself
+// or for a catalog system.
+func reservedVar(v string) bool {
+	if v == TransitlandKeyVar || strings.HasPrefix(v, "TIMETABLE_") || strings.HasPrefix(v, "AWTRIX_") {
+		return true
+	}
+	all, _ := catalog.All()
+	for _, s := range all {
+		for _, o := range s.RequiredOptions {
+			if s.EnvName(o) == v {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func firstNonEmpty(ss ...string) string {

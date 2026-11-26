@@ -61,6 +61,8 @@ Part of the Urbanist family with *The Urbanist Lexicon* (mjrossi.com) and
   JSON.
 - `internal/fold/` — lowercase, unaccented text, shared by stop search
   and board names.
+- `internal/tomlout/` — TOML values for generated files, such as
+  `config init` output and directory blocks.
 - `internal/directory/` — systems beyond the catalog, from the Mobility
   Database and Transitland: `agencies search` and directory system IDs.
 - `internal/scheduler/` — polling, active and quiet hours, backoff,
