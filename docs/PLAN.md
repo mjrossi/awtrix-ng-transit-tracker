@@ -76,6 +76,15 @@ lacks). New adapters are frozen unless the maintainer needs one.
 Not needed for the maintainer's setup (TC002, Docker on a NAS, Lisbon
 providers). Each widens who the project works for.
 
+- **`config add`: another board from the command line.** `config init`
+  only writes a new file (or replaces one with `--force`), so a second
+  board means editing by hand. `config add` would ask as init does
+  (agency or city, stop, lines, board name) and append the board, with a
+  `[providers]` block only if the file has none for that system. It
+  appends text rather than decoding and encoding the file, since go-toml
+  drops comments, and it validates a copy before replacing the file.
+  Editing or removing existing boards stays with an editor; adding a stop
+  to an existing board waits until someone asks.
 - **Replace schedules by what they cover, not by age.** A cached schedule
   is checked with the server after 24 hours and kept until `cache clear`,
   even when no configuration names it any more. The schedule itself says
