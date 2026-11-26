@@ -96,14 +96,46 @@ func (cf *cacheFile) parse() (*static, error) {
 func (cf *cacheFile) Close() error { return cf.f.Close() }
 
 // removeAbandonedDownloads deletes partial downloads that no process can
-// still be writing, such as ones cut off when a container stopped.
-func removeAbandonedDownloads(dir string, now time.Time) {
+// still be writing, such as ones cut off when a container stopped, and
+// returns how many bytes it freed.
+func removeAbandonedDownloads(dir string, now time.Time) int64 {
+	var freed int64
 	paths, _ := filepath.Glob(filepath.Join(dir, ".download-*"))
 	for _, p := range paths {
 		if fi, err := os.Stat(p); err == nil && now.Sub(fi.ModTime()) > staticTimeout {
-			_ = os.Remove(p)
+			if os.Remove(p) == nil {
+				freed += fi.Size()
+			}
 		}
 	}
+	return freed
+}
+
+// ClearCache deletes the schedules cached in dir by WithCacheDir, and
+// partial downloads no process is still writing. It returns how many
+// schedules it deleted and how many bytes it freed. A process using a
+// deleted schedule keeps its copy in memory and downloads a new one at its
+// next refresh. Other files in dir are left alone.
+func ClearCache(dir string, now time.Time) (schedules int, freed int64, err error) {
+	freed = removeAbandonedDownloads(dir, now)
+	paths, err := filepath.Glob(filepath.Join(dir, "*.gtfs"))
+	if err != nil {
+		return 0, freed, err
+	}
+	var errs []error
+	for _, p := range paths {
+		fi, err := os.Lstat(p)
+		if err != nil || !fi.Mode().IsRegular() {
+			continue
+		}
+		if err := os.Remove(p); err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		schedules++
+		freed += fi.Size()
+	}
+	return schedules, freed, errors.Join(errs...)
 }
 
 // loadCachedStatic serves the schedule from the cache directory, falling

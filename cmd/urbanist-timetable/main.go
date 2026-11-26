@@ -108,6 +108,7 @@ func newRootCommand() *cli.Command {
 			stopsCommand(),
 			systemsCommand(),
 			configCommand(),
+			cacheCommand(),
 			clockCommand(),
 		},
 	})

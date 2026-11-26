@@ -43,8 +43,8 @@ Part of the Urbanist family with *The Urbanist Lexicon* (mjrossi.com) and
 ## Layout
 
 - `cmd/urbanist-timetable/` — thin urfave/cli wrapper: `departures`,
-  `stops search`, `systems`, `config init|example|validate`, `clock run`,
-  `clock preview`, `completion`. No business logic.
+  `stops search`, `systems`, `config init|example|validate`, `cache clear`,
+  `clock run`, `clock preview`, `completion`. No business logic.
 - `pkg/transit/` — the importable core: model, `Provider`, `Filter`,
   `Group`.
 - `pkg/transit/registry/` — building providers by name from configuration.

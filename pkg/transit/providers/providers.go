@@ -4,6 +4,7 @@ package providers
 
 import (
 	"log/slog"
+	"time"
 
 	"github.com/mjrossi/urbanist-timetable/pkg/transit"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/catalog"
@@ -27,6 +28,12 @@ type Option func(*options)
 // gtfsrt.WithCacheDir. Empty turns it off.
 func WithScheduleCache(dir string) Option {
 	return func(o *options) { o.scheduleCache = dir }
+}
+
+// ClearScheduleCache deletes the GTFS schedules kept in dir by
+// WithScheduleCache; see gtfsrt.ClearCache.
+func ClearScheduleCache(dir string, now time.Time) (schedules int, freed int64, err error) {
+	return gtfsrt.ClearCache(dir, now)
 }
 
 // WithLogger reports slow work, such as GTFS schedule downloads, to log.

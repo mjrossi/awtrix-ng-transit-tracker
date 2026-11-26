@@ -238,6 +238,25 @@ func TestDeparturesLogs(t *testing.T) {
 	}
 }
 
+func TestCacheClear(t *testing.T) {
+	at(t, mtaRecorded)
+	srv := gtfsServer(t, false)
+	dir := filepath.Join(t.TempDir(), "c")
+	args := []string{"--cache-dir", dir, "departures", "--static", srv.URL + "/gtfs.zip", "--realtime", srv.URL + "/realtime.pb", "235"}
+	if _, _, err := runCLIOut(t, "", args...); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"removed 1 schedule (", "no cached schedules in "} {
+		out, _, err := runCLIOut(t, "", "--cache-dir", dir, "cache", "clear")
+		if err != nil || !strings.HasPrefix(out, want) || !strings.HasSuffix(out, dir+"\n") {
+			t.Errorf("out %q, err %v; want %q and the directory", out, err, want)
+		}
+	}
+	if _, _, err := runCLIOut(t, "", "cache", "clear"); err == nil || !strings.Contains(err.Error(), "off") {
+		t.Errorf("with the cache off: err = %v, want one saying it is off", err)
+	}
+}
+
 func TestDeparturesUsageErrors(t *testing.T) {
 	tests := map[string]struct {
 		args []string

@@ -9,6 +9,9 @@ version may break configuration.
 
 ### Added
 
+- `cache clear` deletes the cached GTFS schedules, which otherwise stay in
+  the cache directory even after no board uses them. Library users can call
+  `providers.ClearScheduleCache` or `gtfsrt.ClearCache`.
 - GTFS schedule downloads are logged to stderr, with their size and time, so
   a first run that downloads several schedules no longer sits silent.
   `--log-level debug` also logs each stop `departures` fetches and how long it

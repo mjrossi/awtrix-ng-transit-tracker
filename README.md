@@ -87,7 +87,8 @@ lines = ["1", "2", "3"]
 The clock shows the same boards, but a terminal needs no `[clock]`.
 
 Schedules are downloaded once a day into your cache directory (`--cache-dir`;
-`off` turns it off), so later commands are quick. `--json` prints JSON for
+`off` turns it off), so later commands are quick. They stay there until
+`urbanist-timetable cache clear` deletes them. `--json` prints JSON for
 scripts; its shape may change before 1.0. Times marked `*` are from the
 schedule, without a live prediction.
 
@@ -242,6 +243,7 @@ urbanist-timetable departures SOURCE STOP...    # next departures; see --help fo
 urbanist-timetable stops search SOURCE WORDS    # find stop IDs
 urbanist-timetable systems [show ID]            # ready-made systems
 urbanist-timetable config validate              # check the configuration
+urbanist-timetable cache clear                  # delete cached GTFS schedules
 urbanist-timetable clock run                    # poll and push until stopped (the image's default)
 urbanist-timetable clock preview [--board NAME] # fetch once, print rows and payload
 urbanist-timetable clock preview --push         # ...and push it to the clock once

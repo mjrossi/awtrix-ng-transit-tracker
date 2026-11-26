@@ -508,3 +508,31 @@ func unknownSystemsArgument(c *cli.Command) error {
 	}
 	return unknownCommandError(c, arg)
 }
+
+func cacheCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "cache",
+		Usage: "manage the GTFS schedules kept between runs",
+		Commands: []*cli.Command{{
+			Name:  "clear",
+			Usage: "delete the cached GTFS schedules; the next run downloads them again",
+			Action: func(_ context.Context, c *cli.Command) error {
+				dir := c.String("cache-dir")
+				if dir == "off" {
+					return newUsageError(c, "the schedule cache is off (--cache-dir off); there is nothing to clear")
+				}
+				n, freed, err := providers.ClearScheduleCache(dir, clock())
+				w := c.Root().Writer
+				switch {
+				case n == 1:
+					fmt.Fprintf(w, "removed 1 schedule (%.1f MB) from %s\n", float64(freed)/(1<<20), dir)
+				case n > 1:
+					fmt.Fprintf(w, "removed %d schedules (%.1f MB) from %s\n", n, float64(freed)/(1<<20), dir)
+				case err == nil:
+					fmt.Fprintf(w, "no cached schedules in %s\n", dir)
+				}
+				return err
+			},
+		}},
+	}
+}

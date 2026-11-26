@@ -286,3 +286,49 @@ func TestScheduleDownloadsAreLogged(t *testing.T) {
 		})
 	}
 }
+
+func TestClearCache(t *testing.T) {
+	a, dir := newAgency(t, "mta"), t.TempDir()
+	if _, err := departAt(t, a.cachedProvider(t, dir), mtaRecorded); err != nil {
+		t.Fatal(err)
+	}
+	cached := cacheFiles(t, dir)[0]
+	info, err := cached.Info()
+	if err != nil {
+		t.Fatal(err)
+	}
+	write := func(name string, age time.Duration) {
+		t.Helper()
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte("12345"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		at := mtaRecorded.Add(-age)
+		if err := os.Chtimes(p, at, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(".download-abandoned", time.Hour)
+	write(".download-in-progress", time.Minute)
+	write("notes.txt", time.Hour)
+
+	n, freed, err := gtfsrt.ClearCache(dir, mtaRecorded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 || freed != info.Size()+5 {
+		t.Errorf("removed %d schedules and %d bytes, want 1 and %d", n, freed, info.Size()+5)
+	}
+	var left []string
+	for _, e := range cacheFiles(t, dir) {
+		left = append(left, e.Name())
+	}
+	if diff := cmp.Diff([]string{".download-in-progress", "notes.txt"}, left); diff != "" {
+		t.Errorf("files left (-want +got):\n%s", diff)
+	}
+
+	n, freed, err = gtfsrt.ClearCache(filepath.Join(dir, "missing"), mtaRecorded)
+	if n != 0 || freed != 0 || err != nil {
+		t.Errorf("missing dir: %d, %d, %v; want nothing removed and no error", n, freed, err)
+	}
+}
