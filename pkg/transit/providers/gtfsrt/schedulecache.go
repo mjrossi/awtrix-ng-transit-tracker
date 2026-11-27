@@ -221,7 +221,6 @@ func (p *Provider) loadCachedStatic(ctx context.Context, now time.Time) (*static
 	}
 	removeAbandonedDownloads(p.cacheDir, now)
 	path := filepath.Join(p.cacheDir, cacheName(p.cfg.StaticURL))
-	pruneEndedSchedules(p.cacheDir, path, now)
 	old, err := openCacheFile(path)
 	if err != nil {
 		old = nil
@@ -243,6 +242,9 @@ func (p *Provider) loadCachedStatic(ctx context.Context, now time.Time) (*static
 			parsed = st
 		}
 	}
+	// Pruning reads the calendar of each other old schedule, so it runs with
+	// the check with the server, about daily, not on every load.
+	pruneEndedSchedules(p.cacheDir, path, now)
 	st, err := p.refreshCache(ctx, now, path, old, parsed)
 	switch {
 	case err == nil:

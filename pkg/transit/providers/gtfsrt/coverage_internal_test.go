@@ -394,3 +394,60 @@ func TestDailyCheckCountsFromTheFile(t *testing.T) {
 		t.Errorf("%d requests a day after the file's check, want 1", n)
 	}
 }
+
+// A failed check of a schedule that has ended keeps it, read once, as a
+// stale result: from the file for a new process, or the copy in memory,
+// with its timetable still open, for a running one.
+func TestFailedCheckKeepsEndedSchedule(t *testing.T) {
+	for _, running := range []bool{false, true} {
+		t.Run(map[bool]string{false: "new process", true: "running"}[running], func(t *testing.T) {
+			s := newTown(t, endingOn("20260329"))
+			dir := t.TempDir()
+			first, _ := countedProvider(t, s, dir)
+			departAt(t, first, at(2026, 3, 29, 20, 0))
+			p := first
+			if !running {
+				p, _ = countedProvider(t, s, dir)
+			}
+			before := p.currentStatic()
+
+			s.scheduleDown.Store(true)
+			departAt(t, p, monday8)
+			after := p.currentStatic()
+			if after == nil || after.tt == nil {
+				t.Fatalf("schedule = %v, want the cached one with its timetable", after)
+			}
+			if running && after.tt != before.tt {
+				t.Errorf("timetable = %p, want the running one, %p", after.tt, before.tt)
+			}
+			after.tt.mu.Lock()
+			closed := after.tt.closed
+			after.tt.mu.Unlock()
+			if closed {
+				t.Error("the kept schedule's timetable is closed")
+			}
+			_, err := p.Departures(t.Context(), transit.Query{StopID: "S", Now: monday8, Window: time.Hour})
+			if !errors.Is(err, errScheduleEnded) {
+				t.Errorf("err = %v, want it to wrap %v", err, errScheduleEnded)
+			}
+		})
+	}
+}
+
+// A schedule still fresh in the cache is served without pruning, which
+// reads other schedules' calendars; a check with the server prunes.
+func TestPruneRunsWithTheCheck(t *testing.T) {
+	s := newTown(t, town)
+	dir := t.TempDir()
+	departAt(t, s.provider(t, false, WithCacheDir(dir)), monday8)
+	other, _ := writeCached(t, dir, "https://example.com/other", endingOn("20260101"), monday8.Add(-30*24*time.Hour))
+
+	departAt(t, s.provider(t, false, WithCacheDir(dir)), monday8.Add(time.Hour))
+	if _, err := os.Stat(other); err != nil {
+		t.Fatalf("after a load from the cache: %v, want the ended schedule kept", err)
+	}
+	departAt(t, s.provider(t, false, WithCacheDir(dir)), monday8.Add(25*time.Hour))
+	if _, err := os.Stat(other); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("after a check with the server: %v, want the ended schedule removed", err)
+	}
+}
