@@ -258,6 +258,7 @@ func TestDirection(t *testing.T) {
 	}{
 		{"Westbound - Platform 2", "inbound", "Westbound"},
 		{"Northbound - Platform 4", "outbound", "Northbound"},
+		{"Westbound Platform 26", "", "Westbound"},
 		// A bus stop's letter, or a platform number, says nothing of the
 		// direction.
 		{"E", "inbound", "inbound"},
