@@ -116,6 +116,20 @@ providers). Each widens who the project works for.
   stop). `transitland` could look up a trip's last stop once per route
   pattern. Each is a request against the quota, and may
   have to be repeated for each new feed version, which Carris has daily.
+- **London rail departures from `ArrivalDepartures`.** `/Arrivals` lists
+  only trains arriving, so at a terminus the trains that start there are
+  missing: at Highbury & Islington, no southbound Windrush train
+  appears. `/StopPoint/{id}/ArrivalDepartures?lineIds=…` lists them, with
+  scheduled and estimated departure times, a `Delayed` status, a platform
+  and a `cause`, but only for Elizabeth line and Overground lines (others
+  are "invalid"), and `lineIds` is required. Its entries name no line, so
+  it takes one request per line. The daily stop lookup already lists a
+  stop's lines by mode, so `tfl` could ask for each rail line there and
+  keep `/Arrivals` for the rest. Costs a request per rail line per poll
+  (three at Highbury & Islington, more at Stratford), which matters at
+  the anonymous rate limit. To decide: trains whose scheduled time has
+  passed linger with no estimate; dropping them hides a late train until
+  TfL estimates it.
 - **First departure in the empty state.** Instead of "No departures",
   show when service starts ("First 5:42"). Needs a departure beyond the
   board's window, so the scheduler would have to look further ahead.
