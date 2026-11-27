@@ -215,7 +215,7 @@ func ClearCache(dir string, now time.Time) (schedules int, freed int64, err erro
 
 // loadCachedStatic serves the schedule from the cache directory, falling
 // back to downloadStatic when the directory cannot be used.
-func (p *Provider) loadCachedStatic(ctx context.Context, now time.Time) (*static, error) {
+func (p *Provider) loadCachedStatic(ctx context.Context, now time.Time) (st *static, err error) {
 	if err := os.MkdirAll(p.cacheDir, 0o700); err != nil {
 		return p.downloadStatic(ctx)
 	}
@@ -229,44 +229,41 @@ func (p *Provider) loadCachedStatic(ctx context.Context, now time.Time) (*static
 	}
 	// parsed is old's schedule, read to judge whether it is still fresh; a
 	// refresh that finds it unchanged returns it rather than reading it again.
+	// Unless returned, it is released.
 	var parsed *static
+	defer func() {
+		if parsed != nil && parsed != st {
+			parsed.release()
+		}
+	}()
 	if old != nil && within(now, old.fetched, staticTTL) {
-		st, err := p.readCached(old)
+		cached, err := p.readCached(old)
 		switch {
 		case err != nil:
 			_ = os.Remove(path)
 			old = nil
-		case scheduleFresh(st, old.fetched, now):
-			return st, nil
+		case scheduleFresh(cached, old.fetched, now):
+			return cached, nil
 		default:
-			parsed = st
+			parsed = cached
 		}
 	}
 	// Pruning reads the calendar of each other old schedule, so it runs with
 	// the check with the server, about daily, not on every load.
 	pruneEndedSchedules(p.cacheDir, path, now)
-	st, err := p.refreshCache(ctx, now, path, old, parsed)
+	st, err = p.refreshCache(ctx, now, path, old, parsed)
 	switch {
 	case err == nil:
-		if parsed != nil && st != parsed {
-			parsed.release()
-		}
 		return st, nil
 	case errors.Is(err, errCacheUnusable):
-		if parsed != nil {
-			parsed.release()
-		}
 		return p.downloadStatic(ctx)
 	case old != nil && ctx.Err() == nil:
 		if parsed != nil {
 			return parsed, &upstream.StaleError{Err: err}
 		}
-		if st, perr := p.readCached(old); perr == nil {
-			return st, &upstream.StaleError{Err: err}
+		if cached, perr := p.readCached(old); perr == nil {
+			return cached, &upstream.StaleError{Err: err}
 		}
-	}
-	if parsed != nil {
-		parsed.release()
 	}
 	return nil, err
 }
