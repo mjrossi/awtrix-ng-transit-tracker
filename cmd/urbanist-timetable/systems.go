@@ -56,21 +56,27 @@ func listSystems(_ context.Context, c *cli.Command) error {
 	}
 	fmt.Fprintln(w, "Verified systems (for any other agency: urbanist-timetable agencies search <agency or city>)")
 	for _, s := range all {
-		needs := ""
-		if len(s.RequiredOptions) > 0 {
-			vars := make([]string, len(s.RequiredOptions))
-			for i, k := range s.RequiredOptions {
-				vars[i] = s.EnvName(k)
-				if os.Getenv(vars[i]) != "" {
-					vars[i] += " (set)"
-				}
-			}
-			needs = "  needs " + strings.Join(vars, ", ")
-		}
+		needs := envList("needs", s, s.RequiredOptions) + envList("optional", s, s.OptionalOptions)
 		fmt.Fprintf(w, "%-28s %-22s %-24s %s%s\n", s.ID, s.Title(), s.City, strings.Join(s.Modes, ", "), needs)
 	}
 	fmt.Fprintln(w, "\nShow how to configure one: urbanist-timetable systems show <id>")
 	return nil
+}
+
+// envList is "  label VAR, VAR (set)" for options read from the
+// environment, or "" for none.
+func envList(label string, s catalog.System, options []string) string {
+	if len(options) == 0 {
+		return ""
+	}
+	vars := make([]string, len(options))
+	for i, k := range options {
+		vars[i] = s.EnvName(k)
+		if os.Getenv(vars[i]) != "" {
+			vars[i] += " (set)"
+		}
+	}
+	return "  " + label + " " + strings.Join(vars, ", ")
 }
 
 func showSystem(ctx context.Context, c *cli.Command) error {

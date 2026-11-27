@@ -6,6 +6,7 @@ import (
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/providers/carrismetropolitana"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/providers/gtfsrt"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/providers/metrolisboa"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit/providers/tfl"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/providers/transitland"
 )
 
@@ -21,6 +22,7 @@ func TestNilClient(t *testing.T) {
 			_, err := metrolisboa.New(metrolisboa.Config{ClientID: "id", ClientSecret: "secret"}, nil)
 			return err
 		},
+		"tfl":         func() error { _, err := tfl.New(tfl.Config{}, nil); return err },
 		"transitland": func() error { _, err := transitland.New(transitland.Config{APIKey: "k"}, nil); return err },
 	}
 	for name, build := range tests {

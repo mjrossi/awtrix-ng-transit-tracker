@@ -71,6 +71,13 @@ url = "http://awtrixng-a1b2c3.local"
 # client_id = "${METRO_LISBOA_CLIENT_ID}"
 # client_secret = "${METRO_LISBOA_CLIENT_SECRET}"
 
+# Transport for London: works without a key at a lower rate limit; an app
+# key from https://api-portal.tfl.gov.uk/ raises it. Stations have IDs such
+# as "940GZZLUOXC", bus stops such as "490013766E".
+# [providers.london]
+# system = "tfl"
+# app_key = "${TFL_APP_KEY}"
+
 # The demo provider generates departures from fixed headways. Use it to see
 # the display working before configuring a real transit API.
 [providers.demo]

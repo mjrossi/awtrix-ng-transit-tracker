@@ -354,11 +354,11 @@ func openSource(ctx context.Context, path, name string, dir *directory.Directory
 	return nil, serr
 }
 
-// envSettings is the settings block for sys, with each required option
-// that is set in the environment.
+// envSettings is the settings block for sys, with each required or
+// optional option that is set in the environment.
 func envSettings(sys catalog.System) map[string]any {
 	settings := map[string]any{"system": sys.ID}
-	for _, k := range sys.RequiredOptions {
+	for _, k := range sys.EnvOptions() {
 		if v := os.Getenv(sys.EnvName(k)); v != "" {
 			settings[k] = v
 		}

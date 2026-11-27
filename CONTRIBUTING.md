@@ -29,7 +29,10 @@ word followed by a number (`mdb-53`), and not a single letter followed by
 system's name within the agency, or leave `name` out. List the entry's IDs
 in the Mobility Database (`mobility_db`) and Transitland
 (`transitland_feeds`) where it has them, so searches show the catalog entry
-instead.
+instead. Settings users must add, such as API keys, go in
+`required_options`; ones it works without, such as a key that raises a
+rate limit, in `optional_options`. Both are read from the environment as
+`<ID>_<OPTION>`.
 
 ## Adding a provider
 

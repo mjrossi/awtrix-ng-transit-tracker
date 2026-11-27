@@ -1,0 +1,1 @@
+{"$type":"Tfl.Api.Presentation.Entities.ApiError, Tfl.Api.Presentation.Entities","timestampUtc":"2026-11-27T08:48:19.7903931Z","exceptionType":"EntityNotFoundException","httpStatusCode":404,"httpStatus":"NotFound","relativeUri":"/StopPoint/ZZZNOPE/Arrivals","message":"The following stop point is not recognised: ZZZNOPE"}

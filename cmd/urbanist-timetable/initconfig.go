@@ -576,12 +576,16 @@ func renderConfig(a initAnswers) (string, error) {
 }
 
 // providerBlock is a [providers] block for sys, reading the settings it
-// requires from the environment.
+// requires from the environment. Optional settings are commented out,
+// because a ${NAME} that is not set fails the block.
 func providerBlock(sys catalog.System) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "[providers.%s]\nsystem = %s\n", sys.ID, tomlout.String(sys.ID))
 	for _, k := range sys.RequiredOptions {
 		fmt.Fprintf(&b, "%s = %s\n", k, tomlout.String("${"+sys.EnvName(k)+"}"))
+	}
+	for _, k := range sys.OptionalOptions {
+		fmt.Fprintf(&b, "# Optional, once %s is set:\n# %s = %s\n", sys.EnvName(k), k, tomlout.String("${"+sys.EnvName(k)+"}"))
 	}
 	return b.String()
 }

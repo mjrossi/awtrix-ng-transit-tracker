@@ -103,6 +103,8 @@ Rules, from [CLAUDE.md](../CLAUDE.md):
   | `metrolisboa` | destinations | 24 h | keep last, retry in 15 min |
   | `metrolisboa` | each line's wait times | 15 s | not cached |
   | `metrolisboa` | OAuth token | until 1 min before expiry | refetched on 401 once |
+  | `tfl` | each stop's arrivals | 30 s, the API's `max-age` | not cached |
+  | `tfl` | each stop's name | 24 h | retry in 15 min |
   | `carrismetropolitana` | lines | 24 h | keep last, retry in 15 min |
   | `carrismetropolitana` | stop list (search only) | process lifetime | not cached |
   | `transitland` | each stop's departures, for the widest window asked for | `refresh_interval` (5 min) | failure cached for 10 s, so boards share it; the scheduler backs off |
@@ -206,6 +208,8 @@ A `[providers.NAME]` block becomes a provider in `catalog.Resolve`, and
 
 1. `system = "ID"`: the catalog entry's provider and options, overlaid with
    the block's other keys. The entry's `required_options` must be present.
+   For a bare system ID on the command line, the entry's required and
+   optional options are read from the environment as `<ID>_<OPTION>`.
 2. Otherwise `type = "..."` names the provider.
 3. Otherwise NAME is the provider type.
 

@@ -77,6 +77,8 @@ interpreted.
     such as `AWTRIX_PASSWORD`, sent to a host of its choosing. Key
     variables named after an agency never take a name this tool or its
     catalog reads;
+  - the `tfl` app key travels in the URL's query, as the API requires;
+    request errors name only the path, never the query;
   - the `transitland` key, `gtfsrt` `headers` and `metrolisboa` credentials
     go only to the host first asked: on a redirect to another host, or from
     https to http, they and `Referer` are dropped

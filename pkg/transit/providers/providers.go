@@ -12,6 +12,7 @@ import (
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/providers/demo"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/providers/gtfsrt"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/providers/metrolisboa"
+	"github.com/mjrossi/urbanist-timetable/pkg/transit/providers/tfl"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/providers/transitland"
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/registry"
 )
@@ -56,6 +57,7 @@ func Registry(opts ...Option) *registry.Registry {
 	}
 	gtfsrt.Register(r, gtfsOpts...)
 	metrolisboa.Register(r)
+	tfl.Register(r)
 	transitland.Register(r)
 	return r
 }
