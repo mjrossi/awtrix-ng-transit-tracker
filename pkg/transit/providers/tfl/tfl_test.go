@@ -68,6 +68,13 @@ func newFakeAPI(t *testing.T) *fakeAPI {
 	return f
 }
 
+// respond makes every request answer with status and body.
+func (f *fakeAPI) respond(status int, body string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.status, f.body = status, body
+}
+
 func (f *fakeAPI) count(path string) int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -89,6 +96,7 @@ func TestContract(t *testing.T) {
 		{Name: "tube station", Query: transit.Query{StopID: oxfordCircus, Now: recorded, Window: 30 * time.Minute}},
 		{Name: "DLR terminal", Query: transit.Query{StopID: bankDLR, Now: recorded, Window: 30 * time.Minute}},
 		{Name: "bus stop", Query: transit.Query{StopID: busStopE, Now: recorded, Window: 30 * time.Minute}},
+		{Name: "rail station", Query: transit.Query{StopID: "910GHGHI", Now: time.Date(2026, 11, 27, 9, 20, 50, 0, time.UTC), Window: 30 * time.Minute}},
 		{Name: "nothing in a zero window", Query: transit.Query{StopID: oxfordCircus, Now: recorded}, WantEmpty: true},
 	})
 }
@@ -143,6 +151,13 @@ func TestDepartures(t *testing.T) {
 				{"08:54:38", "23", "", "Aldwych"},
 			},
 		},
+		{
+			name: "lowercase stop ID", stop: strings.ToLower(busStopE), window: 8 * time.Minute, mode: transit.ModeBus,
+			want: []row{
+				{"08:53:23", "9", "", "Aldwych"},
+				{"08:54:38", "23", "", "Aldwych"},
+			},
+		},
 	}
 	p := newProvider(t, newFakeAPI(t), "")
 	for _, tt := range tests {
@@ -171,9 +186,92 @@ func TestUnknownStops(t *testing.T) {
 			t.Errorf("Departures(%s) = %v, want ErrUnknownStop", id, err)
 		}
 	}
-	_, err := p.Departures(t.Context(), transit.Query{StopID: "490G000803", Now: recorded, Window: time.Hour})
-	if err == nil || !strings.Contains(err.Error(), "group of bus stops") {
-		t.Errorf("a bus stop group's error should say what it is, got %v", err)
+	for _, id := range []string{"490G000803", "490g000803"} {
+		_, err := p.Departures(t.Context(), transit.Query{StopID: id, Now: recorded, Window: time.Hour})
+		if err == nil || !strings.Contains(err.Error(), "group of bus stops") {
+			t.Errorf("Departures(%s): a bus stop group's error should say what it is, got %v", id, err)
+		}
+	}
+}
+
+func TestRail(t *testing.T) {
+	// Recorded at 09:20:46 UTC; see testdata/README.md. Windrush trains end
+	// their trip at Highbury & Islington and are left out.
+	now := time.Date(2026, 11, 27, 9, 20, 50, 0, time.UTC)
+	deps, err := newProvider(t, newFakeAPI(t), "").Departures(t.Context(), transit.Query{StopID: "910GHGHI", Now: now, Window: 10 * time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []row{
+		{"09:23:00", "Mildmay", "#0077AD", "Stratford (London)"},
+		{"09:23:00", "Mildmay", "#0077AD", "Richmond (London)"},
+		{"09:28:02", "Mildmay", "#0077AD", "Clapham Junction"},
+	}
+	if diff := cmp.Diff(want, summarize(deps)); diff != "" {
+		t.Errorf("departures mismatch (-want +got):\n%s", diff)
+	}
+	for _, d := range deps {
+		if d.Line.Mode != transit.ModeRail {
+			t.Errorf("%s is %s, want rail", d.Line.ShortName, d.Line.Mode)
+		}
+	}
+}
+
+func TestHeadsignsAndModes(t *testing.T) {
+	f := newFakeAPI(t)
+	f.respond(http.StatusOK, `[
+		{"naptanId": "X", "lineId": "northern", "lineName": "Northern", "modeName": "tube",
+		 "destinationName": "", "towards": "Morden via  Bank", "expectedArrival": "2026-11-27T08:50:00Z"},
+		{"naptanId": "X", "lineId": "central", "lineName": "Central", "modeName": "tube",
+		 "destinationName": "Check Front of Train", "expectedArrival": "2026-11-27T08:51:00Z"},
+		{"naptanId": "X", "lineId": "london-cable-car", "lineName": "IFS Cloud Cable Car", "modeName": "cable-car",
+		 "destinationName": "Royal Docks", "expectedArrival": "2026-11-27T08:52:00Z"}
+	]`)
+	deps, err := newProvider(t, f, "").Departures(t.Context(), transit.Query{StopID: "X", Now: recorded, Window: 10 * time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	type got struct {
+		Headsign string
+		Mode     transit.Mode
+	}
+	var gots []got
+	for _, d := range deps {
+		gots = append(gots, got{d.Headsign, d.Line.Mode})
+	}
+	want := []got{
+		// With no destination, towards stands in for it.
+		{"Morden via Bank", transit.ModeMetro},
+		// A placeholder for an unknown destination leaves the headsign empty.
+		{"", transit.ModeMetro},
+		{"Royal Docks", transit.ModeOther},
+	}
+	if diff := cmp.Diff(want, gots); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestErrors(t *testing.T) {
+	tests := []struct {
+		name, key string
+		status    int
+		body      string
+		want      string
+		wantNot   string
+	}{
+		{name: "malformed JSON", status: http.StatusOK, body: `[{`, want: "decode StopPoint/X/Arrivals"},
+		{name: "refused without a key", status: http.StatusForbidden, want: "403", wantNot: "app_key"},
+		{name: "refused with a key", key: "k", status: http.StatusForbidden, want: "check app_key"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newFakeAPI(t)
+			f.respond(tt.status, tt.body)
+			_, err := newProvider(t, f, tt.key).Departures(t.Context(), transit.Query{StopID: "X", Now: recorded, Window: time.Hour})
+			if err == nil || !strings.Contains(err.Error(), tt.want) || (tt.wantNot != "" && strings.Contains(err.Error(), tt.wantNot)) {
+				t.Errorf("error %v: want it to contain %q and not %q", err, tt.want, tt.wantNot)
+			}
+		})
 	}
 }
 
@@ -225,6 +323,8 @@ func TestSearchByID(t *testing.T) {
 			{ID: "490003044B", Name: "Homerton High Street (Stop B, towards Mile End)"},
 			{ID: "490003044H", Name: "Homerton High Street (Stop H, towards Homerton Hospital)"},
 		}},
+		// A bus stop's SMS code is no stop ID, so the text search finds it.
+		{"50435", []transit.Stop{{ID: busStopE, Name: "Charing Cross Stn / Trafalgar Square (Stop E, towards Aldwych)"}}},
 		{"940GZZZZZZZ", nil},
 		{"", nil},
 	}
@@ -272,7 +372,7 @@ func TestAppKey(t *testing.T) {
 		t.Error("app_key was not sent")
 	}
 
-	f.status = http.StatusInternalServerError
+	f.respond(http.StatusInternalServerError, "")
 	_, err := p.SearchStops(t.Context(), "bank")
 	if err == nil || strings.Contains(err.Error(), "s3cret") {
 		t.Errorf("error %v: want a failure that does not reveal the key", err)
@@ -294,7 +394,7 @@ func TestAppKey(t *testing.T) {
 func TestInvalidKey(t *testing.T) {
 	f := newFakeAPI(t)
 	// As the API answers a wrong key.
-	f.status, f.body = http.StatusTooManyRequests, "Invalid app_key is provided."
+	f.respond(http.StatusTooManyRequests, "Invalid app_key is provided.")
 	_, err := newProvider(t, f, "wrong").Departures(t.Context(), transit.Query{StopID: oxfordCircus, Now: recorded, Window: time.Hour})
 	if err == nil || !strings.Contains(err.Error(), "app_key is not valid") {
 		t.Errorf("error %v: want app_key reported as not valid", err)
@@ -303,7 +403,7 @@ func TestInvalidKey(t *testing.T) {
 
 func TestRateLimitSuggestsKey(t *testing.T) {
 	f := newFakeAPI(t)
-	f.status = http.StatusTooManyRequests
+	f.respond(http.StatusTooManyRequests, "")
 	_, err := newProvider(t, f, "").Departures(t.Context(), transit.Query{StopID: oxfordCircus, Now: recorded, Window: time.Hour})
 	if err == nil || !strings.Contains(err.Error(), "app_key") {
 		t.Errorf("error %v: want a suggestion to set app_key", err)

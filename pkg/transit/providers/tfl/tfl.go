@@ -112,7 +112,6 @@ type Provider struct {
 	base   *url.URL
 	appKey string
 	http   *http.Client
-	clock  func() time.Time
 
 	mu       sync.Mutex
 	arrivals map[string]*upstream.Cache[[]prediction]
@@ -135,7 +134,6 @@ func New(cfg Config, client *http.Client) (*Provider, error) {
 		base:     base,
 		appKey:   cfg.AppKey,
 		http:     upstream.ClientOrDefault(client),
-		clock:    time.Now,
 		arrivals: map[string]*upstream.Cache[[]prediction]{},
 		names:    map[string]*upstream.Cache[string]{},
 	}, nil
@@ -161,10 +159,11 @@ func (p *Provider) Departures(ctx context.Context, q transit.Query) ([]transit.D
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if strings.HasPrefix(q.StopID, busGroupPrefix) {
+	id := strings.ToUpper(q.StopID)
+	if strings.HasPrefix(id, busGroupPrefix) {
 		return nil, fmt.Errorf("%w %q: a group of bus stops has no arrivals of its own; use one of its stops, which a stop search for the group lists", transit.ErrUnknownStop, q.StopID)
 	}
-	preds, err := p.arrivalsFor(q.StopID).Get(ctx, q.Now)
+	preds, err := p.arrivalsFor(id).Get(ctx, q.Now)
 	if err != nil {
 		if errors.Is(err, errNotFound) {
 			return nil, fmt.Errorf("%w %q", transit.ErrUnknownStop, q.StopID)
@@ -353,18 +352,12 @@ func (p *Provider) SearchStops(ctx context.Context, search string) ([]transit.St
 		return nil, nil
 	}
 	if id := strings.ToUpper(search); naptanID.MatchString(id) {
-		trees, err := p.lookup(ctx, []string{id})
-		if errors.Is(err, errNotFound) {
-			return nil, nil
+		stops, err := p.searchID(ctx, id)
+		// A number that is no stop ID may be a bus stop's SMS code, which
+		// only the text search knows.
+		if err != nil || len(stops) > 0 {
+			return stops, err
 		}
-		if err != nil {
-			return nil, err
-		}
-		n, ok := findIn(trees, id)
-		if !ok {
-			return nil, nil
-		}
-		return n.stops(), nil
 	}
 
 	var resp struct {
@@ -405,9 +398,26 @@ func (p *Provider) SearchStops(ctx context.Context, search string) ([]transit.St
 	return slices.CompactFunc(out, func(a, b transit.Stop) bool { return a.ID == b.ID }), nil
 }
 
+// searchID lists the stops that a NaPTAN ID stands for, or none if no stop
+// has it.
+func (p *Provider) searchID(ctx context.Context, id string) ([]transit.Stop, error) {
+	trees, err := p.lookup(ctx, []string{id})
+	if errors.Is(err, errNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	n, ok := findIn(trees, id)
+	if !ok {
+		return nil, nil
+	}
+	return n.stops(), nil
+}
+
 // StopName implements transit.StopNamer, looking the stop up once a day.
 func (p *Provider) StopName(ctx context.Context, id string, now time.Time) (string, bool) {
-	name, err := p.nameFor(id).Get(ctx, now)
+	name, err := p.nameFor(strings.ToUpper(id)).Get(ctx, now)
 	return name, err == nil && name != ""
 }
 
@@ -473,6 +483,9 @@ func (p *Provider) get(ctx context.Context, path string, params url.Values, v an
 	case http.StatusNotFound:
 		return fmt.Errorf("%s: GET %s: %w", Name, path, errNotFound)
 	case http.StatusUnauthorized, http.StatusForbidden:
+		if p.appKey == "" {
+			return fmt.Errorf("%s: GET %s: %s", Name, path, resp.Status)
+		}
 		return fmt.Errorf("%s: GET %s: %s: check app_key", Name, path, resp.Status)
 	case http.StatusTooManyRequests:
 		if p.appKey == "" {

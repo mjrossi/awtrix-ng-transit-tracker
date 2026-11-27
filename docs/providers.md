@@ -181,9 +181,11 @@ Stations have IDs such as `940GZZLUOXC` (Oxford Circus Underground) or
 `910GBONDST` (Bond Street, Elizabeth line). Each bus stop serves one
 direction and has an ID such as `490013766E`; `stops search tfl
 trafalgar square` lists them with their letter and direction, as in
-"Charing Cross Stn / Trafalgar Square (Stop E, towards Aldwych)". IDs
-starting `490G` name a group of bus stops, which has no arrivals of its
-own; `stops search tfl <group ID>` lists its stops. Every time is a live prediction: the API has no timetable. Trains
+"Charing Cross Stn / Trafalgar Square (Stop E, towards Aldwych)". The
+five-digit code on a bus stop's sign, for texting, finds it too: `stops
+search tfl 50435`. IDs starting `490G` name a group of bus stops, which
+has no arrivals of its own; `stops search tfl <group ID>` lists its
+stops. Every time is a live prediction: the API has no timetable. Trains
 ending their trip at the stop are left out.
 
 Powered by TfL Open Data, under TfL's version of the

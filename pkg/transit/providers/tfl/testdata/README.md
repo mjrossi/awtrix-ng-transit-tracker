@@ -14,6 +14,13 @@ Responses recorded from `https://api.tfl.gov.uk`, without an app key, on
 - `StopPoint_490G00003044.json`: `GET /StopPoint/490G00003044`, a pair of
   bus stops at Homerton High Street, recorded at 09:09:38 UTC
 - `not_found.json`: `GET /StopPoint/ZZZNOPE/Arrivals` (HTTP 404)
+- `StopPoint_910GHGHI_Arrivals.json`: `GET /StopPoint/910GHGHI/Arrivals`,
+  London Overground at Highbury & Islington, recorded at 09:20:46 UTC.
+  Windrush trains end their trip there.
+- `StopPoint_Search_50435.json`, `StopPoint_Search_940GZZZZZZZ.json`:
+  `GET /StopPoint/Search/<text>` for a bus stop's SMS code and for an ID
+  no stop has, with the query above plus `river-bus`, recorded at
+  09:21:09 and 09:21:23 UTC
 
 The provider also asks for `river-bus`; the fake server ignores the
 query. At Bank DLR, every prediction carries the same `id`, and two are
