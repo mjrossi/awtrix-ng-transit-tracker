@@ -5,6 +5,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -46,6 +47,19 @@ var (
 	// regional's four-character name is too wide to fill in a grid cell.
 	regional = transit.Line{ID: "3703", ShortName: "3703", Color: "#C61D23", Mode: transit.ModeBus}
 )
+
+var piccadilly = transit.Line{ID: "piccadilly", ShortName: "Piccadilly", Color: "#0019A8", Mode: transit.ModeMetro}
+
+// directed sets the direction of r and its departures, as transit.Group
+// would.
+func directed(r transit.Row, dir string) transit.Row {
+	r.Direction = dir
+	r.Departures = slices.Clone(r.Departures)
+	for i := range r.Departures {
+		r.Departures[i].Direction = dir
+	}
+	return r
+}
 
 func canceled(r transit.Row, i int) transit.Row {
 	r.Departures[i].Status = transit.StatusCanceled
@@ -107,6 +121,25 @@ func TestTC002Golden(t *testing.T) {
 		"grid_four_char_badge": {
 			rows: []transit.Row{row(regional, "Almada", 14)},
 			opts: render.Options{Layout: render.LayoutGrid},
+		},
+		"rows_direction": {
+			// Two destinations each way merge into one row per direction,
+			// named after the next train.
+			rows: []transit.Row{
+				directed(row(piccadilly, "Heathrow T4", 2, 16), "Westbound"),
+				directed(row(piccadilly, "Uxbridge", 3, 12), "Westbound"),
+				directed(row(piccadilly, "Arnos Grove", 3), "Eastbound"),
+				directed(row(piccadilly, "Cockfosters", 5, 6), "Eastbound"),
+			},
+			opts: render.Options{Layout: render.LayoutRows, Group: render.GroupDirection},
+		},
+		"rows_train": {
+			rows: []transit.Row{
+				directed(row(piccadilly, "Heathrow T4", 2, 16), "Westbound"),
+				directed(row(piccadilly, "Uxbridge", 3, 12), "Westbound"),
+				directed(row(piccadilly, "Rayners Lane", 6), "Westbound"),
+			},
+			opts: render.Options{Layout: render.LayoutRows, Group: render.GroupTrain},
 		},
 		"empty": {},
 	}
@@ -658,5 +691,97 @@ func TestEmptyTextUsesNameFont(t *testing.T) {
 	l := render.TC002(nil, now, render.Options{EmptyText: "Não há"})
 	if f := l.Regions[0].Font; f != render.AccentFont {
 		t.Errorf("font %q, want %q", f, render.AccentFont)
+	}
+}
+
+func TestGroups(t *testing.T) {
+	westT4 := directed(row(piccadilly, "Heathrow T4", 2, 16), "Westbound")
+	westUx := directed(row(piccadilly, "Uxbridge", 3, 12), "Westbound")
+	eastAG := directed(row(piccadilly, "Arnos Grove", 4), "Eastbound")
+	eastCf := directed(row(piccadilly, "Cockfosters", 5, 6), "Eastbound")
+	type shown struct {
+		Name string
+		Mins []int
+	}
+	tests := map[string]struct {
+		rows []transit.Row
+		opts render.Options
+		want []shown
+	}{
+		"destination keeps the soonest destinations": {
+			rows: []transit.Row{westT4, westUx, eastAG, eastCf},
+			opts: render.Options{Layout: render.LayoutRows},
+			want: []shown{{"Heathrow T4", []int{2, 16}}, {"Uxbridge", []int{3, 12}}},
+		},
+		"destination orders by name, not direction": {
+			rows: []transit.Row{directed(row(azul, "Zeta", 1), "0"), directed(row(azul, "Alpha", 2), "1")},
+			want: []shown{{"Alpha", []int{2}}},
+		},
+		"direction shows each way, in a fixed order": {
+			rows: []transit.Row{westT4, westUx, eastAG, eastCf},
+			opts: render.Options{Layout: render.LayoutRows, Group: render.GroupDirection},
+			want: []shown{{"Arnos Grove", []int{4, 5, 6}}, {"Heathrow T4", []int{2, 3, 12, 16}}},
+		},
+		"direction names the next trip a rider can catch": {
+			rows: []transit.Row{canceled(directed(row(piccadilly, "Heathrow T4", 1), "Westbound"), 0), westUx},
+			opts: render.Options{Layout: render.LayoutRows, Group: render.GroupDirection},
+			want: []shown{{"Uxbridge", []int{1, 3, 12}}},
+		},
+		"direction on the departure layout": {
+			rows: []transit.Row{westT4, westUx},
+			opts: render.Options{Group: render.GroupDirection},
+			want: []shown{{"Heathrow T4", []int{2, 3, 12, 16}}},
+		},
+		"rows without a direction stay by destination": {
+			rows: []transit.Row{row(bus, "Cacilhas", 1), row(bus, "Sé", 2)},
+			opts: render.Options{Layout: render.LayoutRows, Group: render.GroupDirection},
+			want: []shown{{"Cacilhas", []int{1}}, {"Sé", []int{2}}},
+		},
+		"train shows the next trips in time order": {
+			rows: []transit.Row{westT4, westUx, eastAG},
+			opts: render.Options{Layout: render.LayoutRows, Group: render.GroupTrain},
+			want: []shown{{"Heathrow T4", []int{2}}, {"Uxbridge", []int{3}}},
+		},
+		"train leaves out canceled trips": {
+			rows: []transit.Row{canceled(directed(row(piccadilly, "Heathrow T4", 1, 9), "Westbound"), 0), westUx},
+			opts: render.Options{Layout: render.LayoutRows, Group: render.GroupTrain},
+			want: []shown{{"Uxbridge", []int{3}}, {"Heathrow T4", []int{9}}},
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			var got []shown
+			for _, r := range render.Visible(tt.rows, tt.opts) {
+				s := shown{Name: r.Headsign}
+				for _, d := range r.Departures {
+					s.Mins = append(s.Mins, d.MinutesUntil(now))
+				}
+				got = append(got, s)
+			}
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("visible rows (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestValidateGroup(t *testing.T) {
+	tests := []struct {
+		opts render.Options
+		ok   bool
+	}{
+		{render.Options{Group: render.GroupDestination, Layout: render.LayoutGrid}, true},
+		{render.Options{Group: render.GroupDirection}, true},
+		{render.Options{Group: render.GroupDirection, Layout: render.LayoutRows}, true},
+		{render.Options{Group: render.GroupTrain, Layout: render.LayoutRows}, true},
+		{render.Options{Group: render.GroupTrain}, false},
+		{render.Options{Group: render.GroupDirection, Layout: render.LayoutGrid}, false},
+		{render.Options{Group: render.GroupTrain, Layout: render.LayoutGrid}, false},
+		{render.Options{Group: "line"}, false},
+	}
+	for _, tt := range tests {
+		if err := tt.opts.Validate(); (err == nil) != tt.ok {
+			t.Errorf("Validate(%+v) = %v, want ok %v", tt.opts, err, tt.ok)
+		}
 	}
 }

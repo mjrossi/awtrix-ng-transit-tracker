@@ -28,6 +28,11 @@ func dep(line, headsign string, inMin int, predicted bool) transit.Departure {
 	return d
 }
 
+func withDirection(d transit.Departure, dir string) transit.Departure {
+	d.Direction = dir
+	return d
+}
+
 func TestMinutesUntil(t *testing.T) {
 	tests := []struct {
 		in   time.Duration
@@ -63,8 +68,8 @@ func TestFilter(t *testing.T) {
 	canceled.Status = transit.StatusCanceled
 	deps := []transit.Departure{
 		dep("azul", "Santa Apolónia", -1, false),
-		dep("azul", "Santa Apolónia", 2, false),
-		dep("azul", "Reboleira", 7, false),
+		withDirection(dep("azul", "Santa Apolónia", 2, false), "inbound"),
+		withDirection(dep("azul", "Reboleira", 7, false), "outbound"),
 		dep("verde", "Cais do Sodré", 8, false),
 		canceled,
 	}
@@ -86,6 +91,8 @@ func TestFilter(t *testing.T) {
 		}},
 		{"lines case-insensitive", transit.Filter{Lines: []string{"VERDE"}}, []string{"verde/Cais do Sodré/08:08"}},
 		{"headsign substring", transit.Filter{Headsigns: []string{"apol"}}, []string{"azul/Santa Apolónia/08:02"}},
+		{"direction case-insensitive", transit.Filter{Directions: []string{"Inbound"}}, []string{"azul/Santa Apolónia/08:02"}},
+		{"direction whole value", transit.Filter{Directions: []string{"in"}}, nil},
 		{"min lead", transit.Filter{MinLead: 5 * time.Minute}, []string{"azul/Reboleira/08:07", "verde/Cais do Sodré/08:08"}},
 		{"keep canceled", transit.Filter{KeepCanceled: true, Lines: []string{"azul"}, Headsigns: []string{"santa"}}, []string{
 			"azul/Santa Apolónia/08:02", "azul/Santa Apolónia/08:06",
@@ -164,6 +171,14 @@ func TestGroup(t *testing.T) {
 
 	if n := len(transit.Group(deps, 0, 0)); n != 3 {
 		t.Errorf("Group(0, 0) returned %d rows, want 3", n)
+	}
+	// A loop line shows the same headsign both ways; they are two rows.
+	loop := transit.Group([]transit.Departure{
+		withDirection(dep("circle", "Edgware Road", 2, false), "0"),
+		withDirection(dep("circle", "Edgware Road", 5, false), "1"),
+	}, 0, 0)
+	if len(loop) != 2 || loop[0].Direction != "0" || loop[1].Direction != "1" {
+		t.Errorf("Group split by direction = %+v, want rows for directions 0 and 1", loop)
 	}
 	if transit.Group(nil, 2, 2) != nil {
 		t.Error("Group(nil) should be nil")

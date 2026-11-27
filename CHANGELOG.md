@@ -16,6 +16,16 @@ version may break configuration.
   `stops search tfl <words>` lists each bus stop with its letter and
   direction, since only single stops have arrivals, and finds a bus stop
   by the code on its sign.
+- Busy stops: a board's `[boards.clock] group` setting can give each
+  line and direction one row (`"direction"`), named after the next trip,
+  or each trip its own row, soonest first (`"train"`, rows layout only).
+  A stop's `directions`, and `departures --directions`, keep only the
+  departures in those directions. `tfl` names Tube directions after the
+  platform, such as `Westbound`, and `gtfsrt` uses the trip's
+  `direction_id`. `departures --json` shows each departure's
+  `direction`. Before this, a branching line such as the Piccadilly at
+  Russell Square showed its two soonest destinations, often both in one
+  direction.
 - Catalog systems can have `optional_options`: settings, such as a key
   that raises a rate limit, read from the environment when set. `systems`
   lists them, and `systems show` and `config init` write them commented

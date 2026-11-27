@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -760,5 +761,53 @@ func TestTripHeadsign(t *testing.T) {
 		if got := s.tripHeadsign(tt.trip, tt.last); got != tt.want {
 			t.Errorf("tripHeadsign(%q, %q) = %q, want %q", tt.trip, tt.last, got, tt.want)
 		}
+	}
+}
+
+// directedEntity is tripEntity for today with the descriptor's direction_id.
+func directedEntity(trip, route string, relation int, dir uint64, stops ...[]byte) []byte {
+	desc := [][]byte{bytesField(1, []byte(trip)), bytesField(3, []byte("20260330")), varint(6, dir)}
+	if relation != 0 {
+		desc = append(desc, varint(4, uint64(relation)))
+	}
+	if route != "" {
+		desc = append(desc, bytesField(5, []byte(route)))
+	}
+	parts := append([][]byte{bytesField(1, desc...)}, stops...)
+	return bytesField(2, bytesField(1, []byte(trip)), bytesField(3, parts...))
+}
+
+func TestDirection(t *testing.T) {
+	files := maps.Clone(town)
+	files["trips.txt"] = `route_id,service_id,trip_id,trip_headsign,direction_id
+R1,WK,t1,Harbor,0
+R1,WK,t2,Harbor,1
+R1,WK,late,Harbor,
+R2,WK,nohead,,
+R1,SUN,sun1,Harbor,0
+R2,WK,freq,Market,0
+R1,WK,ends,Central,0
+R1,WK,nopick,Harbor,0
+`
+	s := newTown(t, files)
+	s.setFeed(
+		// The schedule's direction stands over the update's.
+		directedEntity("t2", "", 0, 0, stopUpdate(1, "T", 0, delayOf(300))),
+		// A trip without one in the schedule takes the update's.
+		directedEntity("nohead", "", tripCanceled, 1),
+		// So does a trip the schedule does not have.
+		directedEntity("x9", "R2", tripNew, 1, stopUpdate(0, "S1", 0, timeOf(at(2026, 3, 30, 8, 30))), stopUpdate(0, "U", 0, timeOf(at(2026, 3, 30, 8, 45)))),
+	)
+	deps, err := s.provider(t, true).Departures(t.Context(), transit.Query{StopID: "S", Now: monday8, Window: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, d := range deps {
+		got = append(got, d.Time().In(lisbon).Format("15:04")+" "+d.Direction)
+	}
+	want := []string{"08:10 0", "08:30 1", "08:45 1", "09:00 1"}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("mismatch (-want +got):\n%s", diff)
 	}
 }

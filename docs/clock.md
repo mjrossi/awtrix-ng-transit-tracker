@@ -173,8 +173,8 @@ Sta Apolónia
 
 About 13 characters of destination fit, so most names need no label. The
 board shows the first line and direction, in name order, that has
-departures, so pin it to one with the stop's `lines` and `headsigns`, and
-add a board per direction you want:
+departures, so pin it to one with the stop's `lines` and `headsigns` (or
+`directions`), and add a board per direction you want:
 
 ```toml
 [[boards]]
@@ -222,6 +222,40 @@ agencies that publish no destinations, such as Carris in Lisbon.
 layout = "grid"
 ```
 
+### Busy stops
+
+A stop with many destinations, such as a branching Tube line, fills a
+`rows` board with the two soonest destinations, often both in one
+direction. Two settings help. At Russell Square, on the Piccadilly line,
+this shows one row each way, named after the next train:
+
+```toml
+[[boards.stops]]
+provider = "tfl"
+stop = "940GZZLURSQ"
+
+[boards.clock]
+layout = "rows"
+group = "direction"
+```
+
+Or keep one platform with the stop's `directions` and list its next
+trains, like the sign on the platform:
+
+```toml
+[[boards.stops]]
+provider = "tfl"
+stop = "940GZZLURSQ"
+directions = ["Westbound"]
+
+[boards.clock]
+layout = "rows"
+group = "train"
+```
+
+What a provider calls each direction is in
+[providers.md](./providers.md).
+
 ### Reading the display
 
 - Live predictions are bright, with a one-pixel amber dot at their top
@@ -257,6 +291,7 @@ All optional, in `[boards.clock]`:
 |---|---|---|
 | `layout` | `departure` | `departure`, `rows` or `grid` |
 | `max_rows` | `2` | Rows in the `rows` layout: 1 or 2 |
+| `group` | `destination` | What a row stands for: `destination`, `direction`, or `train` (`rows` only); see [Busy stops](#busy-stops) |
 | `overflow` | `scroll` | `scroll` or `clip` for names too wide for their space |
 | `lifetime` | 3 × `poll_interval` | How long the clock keeps the app without a fresh push |
 | `duration` | the clock's setting | Time on screen per rotation, such as `"10s"` |

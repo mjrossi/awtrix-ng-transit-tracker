@@ -38,6 +38,11 @@ func dep(l transit.Line, headsign string, m int, live bool) transit.Departure {
 	return d
 }
 
+func directed(d transit.Departure, dir string) transit.Departure {
+	d.Direction = dir
+	return d
+}
+
 func board(deps ...transit.Departure) termout.Board {
 	return termout.Board{Source: "mta-subway", Title: "Times Sq-42 St", At: at, Window: 90 * time.Minute, Departures: deps}
 }
@@ -80,6 +85,10 @@ func TestText(t *testing.T) {
 		"limit":         {live, termout.Options{Limit: 1, PerRow: 2}},
 		"accents":       {board(dep(bus, "São Sebastião", 1, true), dep(bus, "Reboleira", 4, true)), termout.Options{}},
 		"empty":         {board(), termout.Options{}},
+		"directions": {board(
+			directed(dep(bus, "Circular", 2, true), "0"), directed(dep(bus, "Circular", 5, true), "1"),
+			directed(dep(two, "Wakefield-241 St", 4, true), "0"),
+		), termout.Options{}},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -93,7 +102,7 @@ func TestText(t *testing.T) {
 }
 
 func TestJSON(t *testing.T) {
-	b := board(dep(bus, "Cais do Sodré", 3, false), dep(one, "Van Cortlandt Park-242 St", 2, true))
+	b := board(dep(bus, "Cais do Sodré", 3, false), directed(dep(one, "Van Cortlandt Park-242 St", 2, true), "0"))
 	b.Partial = true
 	var out bytes.Buffer
 	if err := termout.JSON(&out, b); err != nil {

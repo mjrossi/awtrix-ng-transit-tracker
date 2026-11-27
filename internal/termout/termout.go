@@ -63,8 +63,18 @@ func Text(w io.Writer, b Board, o Options) error {
 		lineW, headW, minW     int
 		scheduleOnly, canceled bool
 	)
+	// A line and headsign served in two directions, such as a loop, would
+	// print as two identical rows without the direction.
+	type route struct{ line, headsign string }
+	ways := map[route]int{}
+	for _, r := range rows {
+		ways[route{r.Line.ID, r.Headsign}]++
+	}
 	for _, r := range rows {
 		c := cells{line: Clean(cmp.Or(r.Line.ShortName, r.Line.ID)), headsign: Clean(r.Headsign)}
+		if r.Direction != "" && ways[route{r.Line.ID, r.Headsign}] > 1 {
+			c.headsign = strings.TrimSpace(c.headsign + " (" + Clean(r.Direction) + ")")
+		}
 		for _, d := range r.Departures {
 			m := strconv.Itoa(d.MinutesUntil(b.At))
 			switch {
@@ -198,6 +208,7 @@ type jsonDeparture struct {
 	Stop      string     `json:"stop"`
 	Line      jsonLine   `json:"line"`
 	Headsign  string     `json:"headsign"`
+	Direction string     `json:"direction,omitempty"`
 	Scheduled time.Time  `json:"scheduled,omitzero"`
 	Predicted *time.Time `json:"predicted,omitzero"`
 	Status    string     `json:"status"`
@@ -346,6 +357,7 @@ func jsonFor(b Board) jsonBoard {
 			Stop:      d.StopID,
 			Line:      jsonLine{ID: d.Line.ID, Name: cmp.Or(d.Line.ShortName, d.Line.ID), Color: d.Line.Color, Mode: string(d.Line.Mode)},
 			Headsign:  d.Headsign,
+			Direction: d.Direction,
 			Scheduled: d.Scheduled,
 			Predicted: d.Predicted,
 			Status:    string(d.Status),

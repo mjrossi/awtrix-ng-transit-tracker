@@ -152,7 +152,11 @@ type Departure struct {
 	Line Line
 	// Headsign is the destination shown on the vehicle.
 	Headsign string
-	StopID   string
+	// Direction is the way the vehicle travels at this stop, such as
+	// "Westbound" or a GTFS direction_id; empty when unknown. Values are
+	// the provider's own.
+	Direction string
+	StopID    string
 	// Scheduled is the timetabled departure time.
 	Scheduled time.Time
 	// Predicted is the realtime estimate, or nil when only the schedule is

@@ -14,6 +14,10 @@ type Filter struct {
 	// Headsigns keeps only departures whose headsign contains one of these
 	// substrings (case-insensitive).
 	Headsigns []string
+	// Directions keeps only departures whose direction equals one of these
+	// (case-insensitive). Whole values, not substrings: "in" must not
+	// match "inbound".
+	Directions []string
 	// MinLead drops departures sooner than this, such as the walk to the
 	// stop.
 	MinLead time.Duration
@@ -22,10 +26,10 @@ type Filter struct {
 }
 
 // Narrows reports whether f asks for less than every departure: lines,
-// headsigns or a minimum lead. Dropping canceled departures, the default,
-// does not count.
+// headsigns, directions or a minimum lead. Dropping canceled departures,
+// the default, does not count.
 func (f Filter) Narrows() bool {
-	return len(f.Lines) > 0 || len(f.Headsigns) > 0 || f.MinLead > 0
+	return len(f.Lines) > 0 || len(f.Headsigns) > 0 || len(f.Directions) > 0 || f.MinLead > 0
 }
 
 // Apply returns the departures that pass the filter, in their input order.
@@ -56,6 +60,11 @@ func (f Filter) keep(now time.Time, d Departure) bool {
 	}) {
 		return false
 	}
+	if len(f.Directions) > 0 && !slices.ContainsFunc(f.Directions, func(dir string) bool {
+		return strings.EqualFold(dir, d.Direction)
+	}) {
+		return false
+	}
 	return true
 }
 
@@ -63,28 +72,29 @@ func (f Filter) keep(now time.Time, d Departure) bool {
 // a display shows on one row.
 type Row struct {
 	Line       Line
+	Direction  string
 	Headsign   string
 	Departures []Departure
 }
 
-// Group merges departures from any number of stops into rows keyed by line
-// and headsign. Rows are ordered by their soonest departure, each row holds
-// at most perRow departures (zero means no cap), and at most maxRows rows
-// are returned (zero means no cap).
+// Group merges departures from any number of stops into rows keyed by
+// line, direction and headsign. Rows are ordered by their soonest
+// departure, each row holds at most perRow departures (zero means no cap),
+// and at most maxRows rows are returned (zero means no cap).
 func Group(deps []Departure, maxRows, perRow int) []Row {
 	sorted := slices.Clone(deps)
 	SortByTime(sorted)
 
-	type key struct{ line, headsign string }
+	type key struct{ line, direction, headsign string }
 	index := map[key]int{}
 	var rows []Row
 	for _, d := range sorted {
-		k := key{d.Line.ID, d.Headsign}
+		k := key{d.Line.ID, d.Direction, d.Headsign}
 		i, ok := index[k]
 		if !ok {
 			i = len(rows)
 			index[k] = i
-			rows = append(rows, Row{Line: d.Line, Headsign: d.Headsign})
+			rows = append(rows, Row{Line: d.Line, Direction: d.Direction, Headsign: d.Headsign})
 		}
 		if perRow == 0 || len(rows[i].Departures) < perRow {
 			rows[i].Departures = append(rows[i].Departures, d)
