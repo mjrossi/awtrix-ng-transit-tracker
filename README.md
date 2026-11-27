@@ -90,8 +90,9 @@ lines = ["1", "2", "3"]
 The clock shows the same boards, but a terminal needs no `[clock]`.
 
 Schedules are downloaded once a day into your cache directory (`--cache-dir`;
-`off` turns it off), so later commands are quick. They stay there until
-`urbanist-timetable cache clear` deletes them. `--json` prints JSON for
+`off` turns it off), so later commands are quick. One that has ended and
+that no command has used for a week is deleted;
+`urbanist-timetable cache clear` deletes them all. `--json` prints JSON for
 scripts; its shape may change before 1.0. Times marked `*` are from the
 schedule, without a live prediction.
 

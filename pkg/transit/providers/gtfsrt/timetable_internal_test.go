@@ -124,6 +124,11 @@ type townServer struct {
 	*httptest.Server
 	schedule atomic.Pointer[[]byte]
 	etag     atomic.Pointer[string]
+	// ignoreConditional answers every request in full, as servers whose
+	// ETag changes with each response do.
+	ignoreConditional atomic.Bool
+	// scheduleDown fails every schedule request.
+	scheduleDown atomic.Bool
 	// realtime is the feed served, or nil to fail.
 	realtime atomic.Pointer[[]byte]
 }
@@ -135,9 +140,13 @@ func newTown(t *testing.T, files map[string]string) *townServer {
 	s.schedule.Store(&b)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /gtfs.zip", func(w http.ResponseWriter, r *http.Request) {
+		if s.scheduleDown.Load() {
+			http.Error(w, "down", http.StatusServiceUnavailable)
+			return
+		}
 		if e := s.etag.Load(); e != nil {
 			w.Header().Set("ETag", *e)
-			if r.Header.Get("If-None-Match") == *e {
+			if r.Header.Get("If-None-Match") == *e && !s.ignoreConditional.Load() {
 				w.WriteHeader(http.StatusNotModified)
 				return
 			}

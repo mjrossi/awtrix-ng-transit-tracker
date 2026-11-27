@@ -131,6 +131,14 @@ func removeOtherIndexes(dir, base, keep string) {
 	}
 }
 
+// removeIndexes deletes every index saved for the schedule base names.
+func removeIndexes(dir, base string) {
+	paths, _ := filepath.Glob(filepath.Join(dir, base+".*.stops"))
+	for _, p := range paths {
+		_ = os.Remove(p)
+	}
+}
+
 // close releases the schedule zip once no scan is using it. Stops already
 // read stay available.
 func (tt *timetable) close() {

@@ -26,10 +26,31 @@ version may break configuration.
   `direction`. Before this, a branching line such as the Piccadilly at
   Russell Square showed its two soonest destinations, often both in one
   direction.
+- `gtfsrt` reads the dates a schedule covers, from its calendar, or
+  `feed_info.txt` without one. Outside them, departures come with a
+  warning that the schedule has ended or not yet started, and a board
+  with only the schedule to go by and nothing planned shows an error
+  instead of "No departures". The schedule is checked with the server
+  when its last day ends, and hourly while it is out of date once the
+  server has answered a conditional request, rather than once a day.
 - Catalog systems can have `optional_options`: settings, such as a key
   that raises a rate limit, read from the environment when set. `systems`
   lists them, and `systems show` and `config init` write them commented
   out.
+
+### Changed
+
+- Cached GTFS schedules that have ended and that no run has used for a
+  week are deleted, with the stop times read from them. Before this, they
+  stayed until `cache clear`.
+
+### Fixed
+
+- After the server answered that a cached schedule had not changed, a
+  failure to update the file's time marked a valid schedule as partial.
+- A long-running `clock run` that started from a cached schedule counted
+  its daily check from when it started, so up to two days could pass
+  between checks. It now counts from the schedule's last check.
 
 ## [0.7.0] - 2026-11-26
 

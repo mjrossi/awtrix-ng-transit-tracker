@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/internal/upstream"
@@ -52,6 +53,7 @@ type cacheFile struct {
 	zipStart int64
 	size     int64
 	fetched  time.Time
+	info     os.FileInfo
 }
 
 // cacheName names the file by a hash of the URL, which can hold a key.
@@ -82,23 +84,45 @@ func readCacheHeader(f *os.File) (*cacheFile, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cached schedule header: %w", err)
 	}
-	cf := &cacheFile{f: f, zipStart: int64(len(line)), size: fi.Size(), fetched: fi.ModTime()}
+	cf := &cacheFile{f: f, zipStart: int64(len(line)), size: fi.Size(), fetched: fi.ModTime(), info: fi}
 	if err := json.Unmarshal(line, &cf.valid); err != nil {
 		return nil, fmt.Errorf("cached schedule header: %w", err)
 	}
 	return cf, nil
 }
 
+// zip is the schedule zip after the header line.
+func (cf *cacheFile) zip() *io.SectionReader {
+	return io.NewSectionReader(cf.f, cf.zipStart, cf.size-cf.zipStart)
+}
+
 // parse reads the schedule. On success the schedule holds the file, which
 // Close then leaves open.
 func (cf *cacheFile) parse() (*static, error) {
-	st, err := parseStatic(io.NewSectionReader(cf.f, cf.zipStart, cf.size-cf.zipStart), cf.size-cf.zipStart)
+	zr := cf.zip()
+	st, err := parseStatic(zr, zr.Size())
 	if err != nil {
 		return nil, err
 	}
-	st.file, st.cached = cf.f, true
+	st.file, st.cached, st.src = cf.f, true, cf.info
+	st.checked = cf.fetched
 	cf.f = nil
 	return st, nil
+}
+
+// readCached returns cf's schedule. When the current schedule was read from
+// the same file, it returns a copy of it sharing its timetable rather than
+// parsing the whole zip again, as an hourly check of a schedule out of its
+// coverage would.
+func (p *Provider) readCached(cf *cacheFile) (*static, error) {
+	if cur := p.currentStatic(); cur != nil && cur.src != nil && os.SameFile(cur.src, cf.info) {
+		c := *cur
+		if cf.fetched.After(c.checked) {
+			c.checked = cf.fetched
+		}
+		return &c, nil
+	}
+	return cf.parse()
 }
 
 // Close closes the file unless a parsed schedule holds it.
@@ -125,12 +149,53 @@ func removeAbandonedDownloads(dir string, now time.Time) int64 {
 	return freed
 }
 
+// pruneEndedSchedules deletes cached schedules other than keep whose
+// coverage ended at least a day ago and that no process has used for
+// unusedGrace, with their stop indexes. A process using a schedule renews
+// its time when it checks it with the server, normally daily, so one that a
+// configuration still names is kept unless the server has been unreachable,
+// or the time could not be renewed, for that long. Such a process keeps its
+// copy in memory and downloads the schedule again at its next check.
+func pruneEndedSchedules(dir, keep string, now time.Time) {
+	paths, _ := filepath.Glob(filepath.Join(dir, "*.gtfs"))
+	for _, path := range paths {
+		if path == keep {
+			continue
+		}
+		fi, err := os.Lstat(path)
+		if err != nil || !fi.Mode().IsRegular() || within(now, fi.ModTime(), unusedGrace) || !cachedScheduleEnded(path, now) {
+			continue
+		}
+		// A download renamed into place meanwhile is a different file.
+		if again, err := os.Lstat(path); err != nil || !os.SameFile(fi, again) || !again.ModTime().Equal(fi.ModTime()) {
+			continue
+		}
+		if os.Remove(path) == nil {
+			removeIndexes(dir, strings.TrimSuffix(filepath.Base(path), ".gtfs"))
+		}
+	}
+}
+
+// cachedScheduleEnded reports whether the schedule cached at path covers
+// nothing after the day before now. The day of margin stands in for the
+// agency's time zone, which is not read.
+func cachedScheduleEnded(path string, now time.Time) bool {
+	cf, err := openCacheFile(path)
+	if err != nil {
+		return false
+	}
+	defer cf.Close()
+	zr := cf.zip()
+	c, err := readCoverageOnly(zr, zr.Size())
+	return err == nil && c.end != 0 && c.end.next() < dateOf(now.UTC())
+}
+
 // ClearCache deletes the schedules cached in dir by WithCacheDir, the stop
 // indexes saved with them, and partial downloads no process is still
-// writing. It returns how many
-// schedules it deleted and how many bytes it freed. A process using a
-// deleted schedule keeps its copy in memory and downloads a new one at its
-// next refresh. Other files in dir are left alone.
+// writing. It returns how many schedules it deleted and how many bytes it
+// freed. A process using a deleted schedule keeps its copy in memory and
+// downloads a new one at its next refresh. Other files in dir are left
+// alone.
 func ClearCache(dir string, now time.Time) (schedules int, freed int64, err error) {
 	freed = removeAbandonedDownloads(dir, now)
 	paths, err := filepath.Glob(filepath.Join(dir, "*.gtfs"))
@@ -157,7 +222,7 @@ func ClearCache(dir string, now time.Time) (schedules int, freed int64, err erro
 
 // loadCachedStatic serves the schedule from the cache directory, falling
 // back to downloadStatic when the directory cannot be used.
-func (p *Provider) loadCachedStatic(ctx context.Context, now time.Time) (*static, error) {
+func (p *Provider) loadCachedStatic(ctx context.Context, now time.Time) (st *static, err error) {
 	if err := os.MkdirAll(p.cacheDir, 0o700); err != nil {
 		return p.downloadStatic(ctx)
 	}
@@ -169,22 +234,42 @@ func (p *Provider) loadCachedStatic(ctx context.Context, now time.Time) (*static
 	} else {
 		defer old.Close()
 	}
-	if old != nil && within(now, old.fetched, staticTTL) {
-		if st, err := old.parse(); err == nil {
-			return st, nil
+	// parsed is old's schedule, read to judge whether it is still fresh; a
+	// refresh that finds it unchanged returns it rather than reading it again.
+	// Unless returned, it is released.
+	var parsed *static
+	defer func() {
+		if parsed != nil && parsed != st {
+			parsed.release()
 		}
-		_ = os.Remove(path)
-		old = nil
+	}()
+	if old != nil && within(now, old.fetched, staticTTL) {
+		cached, err := p.readCached(old)
+		switch {
+		case err != nil:
+			_ = os.Remove(path)
+			old = nil
+		case scheduleFresh(cached, old.fetched, now):
+			return cached, nil
+		default:
+			parsed = cached
+		}
 	}
-	st, err := p.refreshCache(ctx, now, path, old)
+	// Pruning reads the calendar of each other old schedule, so it runs with
+	// the check with the server, about daily, not on every load.
+	pruneEndedSchedules(p.cacheDir, path, now)
+	st, err = p.refreshCache(ctx, now, path, old, parsed)
 	switch {
 	case err == nil:
 		return st, nil
 	case errors.Is(err, errCacheUnusable):
 		return p.downloadStatic(ctx)
 	case old != nil && ctx.Err() == nil:
-		if st, perr := old.parse(); perr == nil {
-			return st, &upstream.StaleError{Err: err}
+		if parsed != nil {
+			return parsed, &upstream.StaleError{Err: err}
+		}
+		if cached, perr := p.readCached(old); perr == nil {
+			return cached, &upstream.StaleError{Err: err}
 		}
 	}
 	return nil, err
@@ -192,9 +277,13 @@ func (p *Provider) loadCachedStatic(ctx context.Context, now time.Time) (*static
 
 var errCacheUnusable = errors.New("schedule cache unusable")
 
+// chtimes is os.Chtimes, replaced by tests.
+var chtimes = os.Chtimes
+
 // refreshCache downloads the schedule into path, or renews old's time when
-// the server answers that it has not changed.
-func (p *Provider) refreshCache(ctx context.Context, now time.Time, path string, old *cacheFile) (*static, error) {
+// the server answers that it has not changed. parsed, if not nil, is old's
+// schedule already read, which an unchanged answer returns.
+func (p *Provider) refreshCache(ctx context.Context, now time.Time, path string, old *cacheFile, parsed *static) (*static, error) {
 	cond := http.Header{}
 	if old != nil {
 		if old.valid.ETag != "" {
@@ -246,14 +335,25 @@ func (p *Provider) refreshCache(ctx context.Context, now time.Time, path string,
 	}
 	if notModified {
 		p.log.DebugContext(ctx, "GTFS schedule unchanged", slog.String("url", redact(p.cfg.StaticURL)))
-		if err := os.Chtimes(path, now, now); err != nil {
-			return nil, err
+		// The schedule is valid either way; a time left old only makes the
+		// next process revalidate it sooner.
+		if err := chtimes(path, now, now); err != nil {
+			p.log.WarnContext(ctx, "could not renew the cached schedule's time", slog.Any("err", err))
 		}
-		return old.parse()
+		st := parsed
+		if st == nil {
+			var err error
+			if st, err = p.readCached(old); err != nil {
+				return nil, err
+			}
+		}
+		st.checked, st.revalidatable = now, true
+		return st, nil
 	}
 	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
 		return nil, err
 	}
+	took := p.clock().Sub(start)
 	fresh, err = readCacheHeader(tmp)
 	if err != nil {
 		return nil, err
@@ -262,7 +362,7 @@ func (p *Provider) refreshCache(ctx context.Context, now time.Time, path string,
 	if err != nil {
 		return nil, err
 	}
-	p.logDownloaded(ctx, size, start)
+	p.logDownloaded(ctx, st, size, took)
 	if err := os.Chtimes(tmp.Name(), now, now); err != nil {
 		st.release()
 		return nil, err
@@ -271,6 +371,7 @@ func (p *Provider) refreshCache(ctx context.Context, now time.Time, path string,
 		st.release()
 		return nil, err
 	}
+	st.checked = now
 	return st, nil
 }
 

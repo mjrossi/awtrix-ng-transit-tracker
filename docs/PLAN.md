@@ -95,18 +95,6 @@ providers). Each widens who the project works for.
   drops comments, and it validates a copy before replacing the file.
   Editing or removing existing boards stays with an editor; adding a stop
   to an existing board waits until someone asks.
-- **Replace schedules by what they cover, not by age.** A cached schedule
-  is checked with the server after 24 hours and kept until `cache clear`,
-  even when no configuration names it any more. The schedule itself says
-  when it runs out: `feed_info.txt` has `feed_end_date` and
-  `feed_version`, and `calendar.txt` and `calendar_dates.txt` give the
-  last service date when `feed_info.txt` is missing, which the spec
-  allows. With those, `gtfsrt` could fetch a new schedule before the old
-  one ends, warn when the agency's published schedule has itself expired
-  (names and colors may then be wrong), and delete cached schedules past
-  their end date. To decide: whether the daily conditional request stays,
-  since it is cheap where servers send `ETag` or `Last-Modified` and
-  catches mid-period corrections.
 - **Pages for busy stops.** The `grid` layout shows four lines; a stop with
   more needs one board per group of `lines`. AWTRIX NG accepts an array of
   apps and numbers them, but an array that shrinks, withdrawing a board, the
@@ -160,8 +148,6 @@ providers). Each widens who the project works for.
 
 Small, and deferred:
 
-- After a 304 from a feed server, a failure to update the cached schedule's
-  modification time reports a valid schedule as partial.
 - `departures` aligns columns by character count, so combining accents and
   wide characters (such as CJK) misalign.
 - CI's `oldest-go` job does not build `examples/departures`.

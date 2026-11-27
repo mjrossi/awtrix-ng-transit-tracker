@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -29,6 +30,7 @@ type static struct {
 	loc      *time.Location
 	services map[string]*service
 	freqs    map[string][]frequency
+	coverage coverage
 	// zr is the schedule zip, or nil once it cannot be read again.
 	zr *zip.Reader
 	// tt is nil when the schedule's stop times cannot be read.
@@ -37,6 +39,15 @@ type static struct {
 	file io.Closer
 	// cached is true when file is in the cache directory.
 	cached bool
+	// checked is when the cached schedule was last downloaded or checked
+	// with the server, by any process sharing the cache; zero when uncached.
+	checked time.Time
+	// src is the cache file the schedule was read from, nil when uncached.
+	src os.FileInfo
+	// revalidatable is true once the server has answered that the schedule
+	// has not changed, so checking it costs little. Sending validators is
+	// not enough: some servers send a new ETag with every response.
+	revalidatable bool
 }
 
 // release closes the schedule's file, if it still holds one.
@@ -123,12 +134,7 @@ func parseStatic(r io.ReaderAt, size int64) (*static, error) {
 			break
 		}
 	}
-	err = readOptionalTable(zr, "calendar.txt", func(r row) { parseCalendarRow(s.services, in, r) })
-	if err != nil {
-		return nil, err
-	}
-	err = readOptionalTable(zr, "calendar_dates.txt", func(r row) { parseCalendarDateRow(s.services, in, r) })
-	if err != nil {
+	if err := readServices(zr, s.services, in); err != nil {
 		return nil, err
 	}
 	err = readOptionalTable(zr, "frequencies.txt", func(r row) {
@@ -144,7 +150,24 @@ func parseStatic(r io.ReaderAt, size int64) (*static, error) {
 	if err != nil {
 		return nil, err
 	}
+	if s.coverage, err = readCoverage(zr, s.services); err != nil {
+		return nil, err
+	}
 	return s, nil
+}
+
+// readCoverageOnly reads a schedule's coverage without its routes, stops and
+// trips, for judging a cached schedule nobody is using.
+func readCoverageOnly(r io.ReaderAt, size int64) (coverage, error) {
+	zr, err := zip.NewReader(r, size)
+	if err != nil {
+		return coverage{}, fmt.Errorf("open GTFS zip: %w", err)
+	}
+	services := map[string]*service{}
+	if err := readServices(zr, services, interner{}); err != nil {
+		return coverage{}, err
+	}
+	return readCoverage(zr, services)
 }
 
 // hasTimetable reports whether the schedule can give timetabled trips: it

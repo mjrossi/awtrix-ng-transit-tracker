@@ -1,6 +1,9 @@
 package gtfsrt
 
 import (
+	"archive/zip"
+	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -55,6 +58,15 @@ func (s *service) runsOn(d date) bool {
 		return true
 	}
 	return s.start != 0 && d >= s.start && d <= s.end && s.days[d.weekday()]
+}
+
+// readServices reads calendar.txt and calendar_dates.txt, either of which
+// may be missing, into services.
+func readServices(zr *zip.Reader, services map[string]*service, in interner) error {
+	if err := readOptionalTable(zr, "calendar.txt", func(r row) { parseCalendarRow(services, in, r) }); err != nil {
+		return err
+	}
+	return readOptionalTable(zr, "calendar_dates.txt", func(r row) { parseCalendarDateRow(services, in, r) })
 }
 
 // parseCalendarRow reads one calendar.txt row into services.
@@ -126,4 +138,96 @@ func parseClock(s string) (int32, bool) {
 // start until end, with the times of its stop_times shifted to each start.
 type frequency struct {
 	start, end, headway int32
+}
+
+// coverage is the period a schedule is published for. A zero date is
+// unknown.
+type coverage struct {
+	start, end date
+	version    string
+}
+
+// readCoverage takes the period from services, the calendar, since no trip
+// runs outside it, and from feed_info.txt only for dates the calendar leaves
+// unknown. Agencies do not always update feed_info.txt: BART's said its
+// schedule ended in August while its calendar ran into the next year.
+func readCoverage(zr *zip.Reader, services map[string]*service) (coverage, error) {
+	var c coverage
+	widen := func(d date) {
+		if c.start == 0 || d < c.start {
+			c.start = d
+		}
+		c.end = max(c.end, d)
+	}
+	for _, s := range services {
+		if s.start != 0 {
+			widen(s.start)
+			widen(s.end)
+		}
+		for d := range s.added {
+			widen(d)
+		}
+	}
+	read := false
+	err := readOptionalTable(zr, "feed_info.txt", func(r row) {
+		if read {
+			return
+		}
+		read = true
+		if c.start == 0 {
+			c.start, _ = parseDate(r.get("feed_start_date"))
+		}
+		if c.end == 0 {
+			c.end, _ = parseDate(r.get("feed_end_date"))
+		}
+		c.version = strings.Clone(r.get("feed_version"))
+	})
+	if err != nil {
+		return coverage{}, err
+	}
+	return c, nil
+}
+
+// startsAt is when the coverage begins in loc, or zero if unknown.
+func (c coverage) startsAt(loc *time.Location) time.Time {
+	if c.start == 0 {
+		return time.Time{}
+	}
+	return c.start.midnight(loc)
+}
+
+// endsAt is when the coverage's last day ends in loc, or zero if unknown.
+func (c coverage) endsAt(loc *time.Location) time.Time {
+	if c.end == 0 {
+		return time.Time{}
+	}
+	return c.end.next().midnight(loc)
+}
+
+// next is the day after d.
+func (d date) next() date {
+	t := time.Date(int(d)/10000, time.Month(int(d)/100%100), int(d)%100+1, 12, 0, 0, 0, time.UTC)
+	return dateOf(t)
+}
+
+// outOfRange returns errScheduleEnded or errScheduleNotStarted, with the
+// date, when now is outside the coverage.
+func (c coverage) outOfRange(now time.Time, loc *time.Location) error {
+	if end := c.endsAt(loc); !end.IsZero() && !now.Before(end) {
+		return fmt.Errorf("%w on %s; the departures and line names it gives may be out of date", errScheduleEnded, c.end.iso())
+	}
+	if start := c.startsAt(loc); !start.IsZero() && now.Before(start) {
+		return fmt.Errorf("%w on %s; until then, the departures and line names it gives may be out of date", errScheduleNotStarted, c.start.iso())
+	}
+	return nil
+}
+
+var (
+	errScheduleEnded      = errors.New("the schedule ended")
+	errScheduleNotStarted = errors.New("the schedule starts")
+)
+
+// iso writes d as YYYY-MM-DD.
+func (d date) iso() string {
+	return fmt.Sprintf("%04d-%02d-%02d", int(d)/10000, int(d)/100%100, int(d)%100)
 }
