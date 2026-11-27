@@ -88,12 +88,6 @@ func (s *static) headsign(tu tripUpdate) string {
 	return s.stopTitle(last)
 }
 
-// plannedHeadsign is a timetabled trip's headsign, or the name of its last
-// stop, as for realtime trips.
-func (s *static) plannedHeadsign(pl planned) string {
-	return s.tripHeadsign(pl.trip, pl.last)
-}
-
 // tripHeadsign is a trip's headsign, or the name of last, its last stop.
 func (s *static) tripHeadsign(trip, last string) string {
 	if h := s.trips[trip].headsign; h != "" {

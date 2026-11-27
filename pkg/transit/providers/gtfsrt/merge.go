@@ -38,7 +38,7 @@ func merge(st *static, plans []planned, feeds []feed, q transit.Query) ([]transi
 	for _, pl := range plans {
 		d := transit.Departure{
 			Line:      st.routeLine(pl.route),
-			Headsign:  st.plannedHeadsign(pl),
+			Headsign:  st.tripHeadsign(pl.trip, pl.last),
 			Direction: directionLabel(int(pl.dir)),
 			StopID:    q.StopID,
 			Scheduled: pl.at,
