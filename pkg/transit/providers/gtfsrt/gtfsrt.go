@@ -37,6 +37,12 @@ const (
 	// staticRetry spaces out schedule downloads after a failure; each one
 	// can be hundreds of megabytes.
 	staticRetry = 15 * time.Minute
+	// outOfRangeRecheck is how often a schedule outside its coverage is
+	// checked for a new one.
+	outOfRangeRecheck = time.Hour
+	// unusedGrace is how long a cached schedule that has ended is kept
+	// after a process last used it.
+	unusedGrace = 7 * 24 * time.Hour
 	// feedTTL lets boards on the same feed share one download per poll.
 	feedTTL = 15 * time.Second
 	// The schedule is far larger than a feed: about 100 MB for large
@@ -166,11 +172,12 @@ func (p *Provider) Departures(ctx context.Context, q transit.Query) ([]transit.D
 	o := outcome{
 		realtime: len(p.cfg.RealtimeURLs) > 0, schedule: st != nil, scheduleErr: staticErr,
 		feedsLoaded: len(feeds), feedProblems: problems, servedByOK: servedByOK, servedByFailed: servedByFailed,
-		hasTimes: hasTimes, timetableErr: ttErr,
+		hasTimes: hasTimes, planned: len(plans), timetableErr: ttErr,
 	}
 	if st != nil {
 		_, o.stopKnown = st.stops[q.StopID]
 		o.noTimetable = st.tt == nil
+		o.outOfRange = st.coverage.outOfRange(q.Now, st.loc)
 	}
 	if err := o.failure(q.StopID); err != nil {
 		return nil, err
@@ -207,9 +214,13 @@ type outcome struct {
 	// one that failed, is known to serve the stop.
 	servedByOK, servedByFailed bool
 	hasTimes                   bool // the timetable has stop times at the stop
+	planned                    int  // timetabled trips in the query's window
 	stopKnown                  bool // the schedule has the stop
 	timetableErr               error
 	noTimetable                bool // the schedule has no timetable
+	// outOfRange is errScheduleEnded or errScheduleNotStarted when the
+	// query falls outside the schedule's coverage.
+	outOfRange error
 }
 
 // failure returns the error to give instead of departures, or nil when
@@ -229,6 +240,8 @@ func (o outcome) failure(stop string) error {
 		return errors.Join(o.timetableErr, o.scheduleErr)
 	case o.schedule && !o.realtime && o.noTimetable:
 		return errors.Join(fmt.Errorf("%s: %w", Name, errNoTimetable), o.scheduleErr)
+	case o.schedule && !o.realtime && o.planned == 0 && o.outOfRange != nil:
+		return errors.Join(o.outOfRange, o.scheduleErr)
 	}
 	return nil
 }
@@ -236,7 +249,7 @@ func (o outcome) failure(stop string) error {
 // problems lists what went wrong without stopping departures being shown.
 func (o outcome) problems() []error {
 	out := slices.Clone(o.feedProblems)
-	for _, err := range []error{o.scheduleErr, o.timetableErr} {
+	for _, err := range []error{o.scheduleErr, o.timetableErr, o.outOfRange} {
 		if err != nil {
 			out = append(out, err)
 		}

@@ -41,6 +41,18 @@ func TestOutcomeFailure(t *testing.T) {
 		{"schedule only, timetable unreadable", outcome{schedule: true, stopKnown: true, timetableErr: errTT}, errTT},
 		{"schedule only, no timetable", outcome{schedule: true, stopKnown: true, noTimetable: true}, errNoTimetable},
 		{"schedule only, stop has times", outcome{schedule: true, stopKnown: true, hasTimes: true}, nil},
+		{"schedule only, ended, nothing planned", outcome{
+			schedule: true, stopKnown: true, hasTimes: true, outOfRange: errScheduleEnded,
+		}, errScheduleEnded},
+		{"schedule only, not started, nothing planned", outcome{
+			schedule: true, stopKnown: true, hasTimes: true, outOfRange: errScheduleNotStarted,
+		}, errScheduleNotStarted},
+		{"schedule only, ended, trips still planned", outcome{
+			schedule: true, stopKnown: true, hasTimes: true, planned: 2, outOfRange: errScheduleEnded,
+		}, nil},
+		{"ended, with realtime", outcome{
+			realtime: true, schedule: true, stopKnown: true, feedsLoaded: 1, servedByOK: true, outOfRange: errScheduleEnded,
+		}, nil},
 		{"realtime with a schedule lacking a timetable", outcome{
 			realtime: true, schedule: true, stopKnown: true, feedsLoaded: 1, servedByOK: true, noTimetable: true,
 		}, nil},
@@ -60,10 +72,10 @@ func TestOutcomeFailure(t *testing.T) {
 
 func TestOutcomeProblems(t *testing.T) {
 	errSchedule, errFeed, errTT := errors.New("schedule"), errors.New("feed"), errors.New("timetable")
-	o := outcome{scheduleErr: errSchedule, feedProblems: []error{errFeed}, timetableErr: errTT}
+	o := outcome{scheduleErr: errSchedule, feedProblems: []error{errFeed}, timetableErr: errTT, outOfRange: errScheduleEnded}
 	got := o.problems()
-	if len(got) != 3 || !errors.Is(got[0], errFeed) || !errors.Is(got[1], errSchedule) || !errors.Is(got[2], errTT) {
-		t.Errorf("problems = %v, want feed, schedule, timetable", got)
+	if len(got) != 4 || !errors.Is(got[0], errFeed) || !errors.Is(got[1], errSchedule) || !errors.Is(got[2], errTT) || !errors.Is(got[3], errScheduleEnded) {
+		t.Errorf("problems = %v, want feed, schedule, timetable, ended", got)
 	}
 	if got := (outcome{}).problems(); len(got) != 0 {
 		t.Errorf("problems of a clean outcome = %v, want none", got)

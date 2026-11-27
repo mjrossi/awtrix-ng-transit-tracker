@@ -29,6 +29,7 @@ type static struct {
 	loc      *time.Location
 	services map[string]*service
 	freqs    map[string][]frequency
+	coverage coverage
 	// zr is the schedule zip, or nil once it cannot be read again.
 	zr *zip.Reader
 	// tt is nil when the schedule's stop times cannot be read.
@@ -37,6 +38,9 @@ type static struct {
 	file io.Closer
 	// cached is true when file is in the cache directory.
 	cached bool
+	// revalidatable is true when the server can answer that the schedule
+	// has not changed, so checking it costs little.
+	revalidatable bool
 }
 
 // release closes the schedule's file, if it still holds one.
@@ -144,7 +148,28 @@ func parseStatic(r io.ReaderAt, size int64) (*static, error) {
 	if err != nil {
 		return nil, err
 	}
+	if s.coverage, err = readCoverage(zr, s.services); err != nil {
+		return nil, err
+	}
 	return s, nil
+}
+
+// readCoverageOnly reads a schedule's coverage without its routes, stops and
+// trips, for judging a cached schedule nobody is using.
+func readCoverageOnly(r io.ReaderAt, size int64) (coverage, error) {
+	zr, err := zip.NewReader(r, size)
+	if err != nil {
+		return coverage{}, fmt.Errorf("open GTFS zip: %w", err)
+	}
+	services := map[string]*service{}
+	in := interner{}
+	if err := readOptionalTable(zr, "calendar.txt", func(r row) { parseCalendarRow(services, in, r) }); err != nil {
+		return coverage{}, err
+	}
+	if err := readOptionalTable(zr, "calendar_dates.txt", func(r row) { parseCalendarDateRow(services, in, r) }); err != nil {
+		return coverage{}, err
+	}
+	return readCoverage(zr, services)
 }
 
 // hasTimetable reports whether the schedule can give timetabled trips: it

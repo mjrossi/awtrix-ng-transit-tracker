@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/mjrossi/urbanist-timetable/pkg/transit/internal/upstream"
@@ -97,6 +98,7 @@ func (cf *cacheFile) parse() (*static, error) {
 		return nil, err
 	}
 	st.file, st.cached = cf.f, true
+	st.revalidatable = cf.valid != validators{}
 	cf.f = nil
 	return st, nil
 }
@@ -123,6 +125,39 @@ func removeAbandonedDownloads(dir string, now time.Time) int64 {
 		}
 	}
 	return freed
+}
+
+// pruneEndedSchedules deletes cached schedules other than keep whose
+// coverage ended at least a day ago and that no process has used for
+// unusedGrace, with their stop indexes. A process using a schedule renews
+// its time at least daily, so one that a configuration still names is kept.
+func pruneEndedSchedules(dir, keep string, now time.Time) {
+	paths, _ := filepath.Glob(filepath.Join(dir, "*.gtfs"))
+	for _, path := range paths {
+		if path == keep {
+			continue
+		}
+		fi, err := os.Lstat(path)
+		if err != nil || !fi.Mode().IsRegular() || within(now, fi.ModTime(), unusedGrace) || !cachedScheduleEnded(path, now) {
+			continue
+		}
+		if os.Remove(path) == nil {
+			removeIndexes(dir, strings.TrimSuffix(filepath.Base(path), ".gtfs"))
+		}
+	}
+}
+
+// cachedScheduleEnded reports whether the schedule cached at path covers
+// nothing after the day before now. The day of margin stands in for the
+// agency's time zone, which is not read.
+func cachedScheduleEnded(path string, now time.Time) bool {
+	cf, err := openCacheFile(path)
+	if err != nil {
+		return false
+	}
+	defer cf.Close()
+	c, err := readCoverageOnly(io.NewSectionReader(cf.f, cf.zipStart, cf.size-cf.zipStart), cf.size-cf.zipStart)
+	return err == nil && c.end != 0 && c.end.next() < dateOf(now.UTC())
 }
 
 // ClearCache deletes the schedules cached in dir by WithCacheDir, the stop
@@ -163,6 +198,7 @@ func (p *Provider) loadCachedStatic(ctx context.Context, now time.Time) (*static
 	}
 	removeAbandonedDownloads(p.cacheDir, now)
 	path := filepath.Join(p.cacheDir, cacheName(p.cfg.StaticURL))
+	pruneEndedSchedules(p.cacheDir, path, now)
 	old, err := openCacheFile(path)
 	if err != nil {
 		old = nil
@@ -211,6 +247,9 @@ func (p *Provider) loadCachedStatic(ctx context.Context, now time.Time) (*static
 }
 
 var errCacheUnusable = errors.New("schedule cache unusable")
+
+// chtimes is os.Chtimes, replaced by tests.
+var chtimes = os.Chtimes
 
 // refreshCache downloads the schedule into path, or renews old's time when
 // the server answers that it has not changed. parsed, if not nil, is old's
@@ -267,8 +306,10 @@ func (p *Provider) refreshCache(ctx context.Context, now time.Time, path string,
 	}
 	if notModified {
 		p.log.DebugContext(ctx, "GTFS schedule unchanged", slog.String("url", redact(p.cfg.StaticURL)))
-		if err := os.Chtimes(path, now, now); err != nil {
-			return nil, err
+		// The schedule is valid either way; a time left old only makes the
+		// next process revalidate it sooner.
+		if err := chtimes(path, now, now); err != nil {
+			p.log.WarnContext(ctx, "could not renew the cached schedule's time", slog.Any("err", err))
 		}
 		if parsed != nil {
 			return parsed, nil
@@ -278,6 +319,7 @@ func (p *Provider) refreshCache(ctx context.Context, now time.Time, path string,
 	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
 		return nil, err
 	}
+	took := p.clock().Sub(start)
 	fresh, err = readCacheHeader(tmp)
 	if err != nil {
 		return nil, err
@@ -286,7 +328,7 @@ func (p *Provider) refreshCache(ctx context.Context, now time.Time, path string,
 	if err != nil {
 		return nil, err
 	}
-	p.logDownloaded(ctx, size, start)
+	p.logDownloaded(ctx, st, size, took)
 	if err := os.Chtimes(tmp.Name(), now, now); err != nil {
 		st.release()
 		return nil, err

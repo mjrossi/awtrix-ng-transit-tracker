@@ -24,9 +24,24 @@ func (p *Provider) staticFor(ctx context.Context, now time.Time) (*static, error
 }
 
 // scheduleFreshUntil is when a schedule loaded or revalidated at since is
-// next checked with the server.
-func scheduleFreshUntil(_ *static, since time.Time) time.Time {
-	return since.Add(staticTTL)
+// next checked with the server: daily, and also when its coverage ends.
+// While it is outside its coverage it is checked hourly, if the server can
+// answer that it has not changed; otherwise each check is a full download.
+func scheduleFreshUntil(st *static, since time.Time) time.Time {
+	until := since.Add(staticTTL)
+	if st == nil {
+		return until
+	}
+	if st.coverage.outOfRange(since, st.loc) != nil {
+		if st.revalidatable {
+			until = since.Add(outOfRangeRecheck)
+		}
+		return until
+	}
+	if end := st.coverage.endsAt(st.loc); !end.IsZero() && end.Before(until) {
+		until = end
+	}
+	return until
 }
 
 // scheduleFresh reports whether st, loaded or revalidated at since, can be
@@ -109,11 +124,12 @@ func (p *Provider) downloadStatic(ctx context.Context) (*static, error) {
 		if err != nil {
 			return nil, err
 		}
-		p.logDownloaded(ctx, int64(len(b)), start)
+		took := p.clock().Sub(start)
 		st, err := parseStatic(bytes.NewReader(b), int64(len(b)))
 		if err != nil {
 			return nil, err
 		}
+		p.logDownloaded(ctx, st, int64(len(b)), took)
 		if p.timetableOn() && st.hasTimetable() {
 			p.log.WarnContext(ctx, "no temporary file for the GTFS schedule, so only realtime departures are shown", slog.String("url", redact(p.cfg.StaticURL)))
 		}
@@ -127,12 +143,13 @@ func (p *Provider) downloadStatic(ctx context.Context) (*static, error) {
 		_ = tf.Close()
 		return nil, err
 	}
-	p.logDownloaded(ctx, size, start)
+	took := p.clock().Sub(start)
 	st, err := parseStatic(f, size)
 	if err != nil {
 		_ = tf.Close()
 		return nil, err
 	}
+	p.logDownloaded(ctx, st, size, took)
 	st.file = tf
 	return st, nil
 }
@@ -161,9 +178,22 @@ func (p *Provider) logDownloadStart(ctx context.Context) {
 	p.log.InfoContext(ctx, "downloading GTFS schedule", slog.String("url", redact(p.cfg.StaticURL)))
 }
 
-func (p *Provider) logDownloaded(ctx context.Context, size int64, start time.Time) {
-	p.log.InfoContext(ctx, "downloaded GTFS schedule",
+// logDownloaded reports a download, which took took, with the period the
+// schedule covers.
+func (p *Provider) logDownloaded(ctx context.Context, st *static, size int64, took time.Duration) {
+	attrs := []any{
 		slog.String("url", redact(p.cfg.StaticURL)),
 		slog.Int64("bytes", size),
-		slog.Duration("took", p.clock().Sub(start).Round(time.Millisecond)))
+		slog.Duration("took", took.Round(time.Millisecond)),
+	}
+	if st.coverage.start != 0 {
+		attrs = append(attrs, slog.String("from", st.coverage.start.iso()))
+	}
+	if st.coverage.end != 0 {
+		attrs = append(attrs, slog.String("until", st.coverage.end.iso()))
+	}
+	if st.coverage.version != "" {
+		attrs = append(attrs, slog.String("version", st.coverage.version))
+	}
+	p.log.InfoContext(ctx, "downloaded GTFS schedule", attrs...)
 }
