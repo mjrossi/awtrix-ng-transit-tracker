@@ -46,6 +46,8 @@ type Policy struct {
 type Cache[T any] struct {
 	policy Policy
 	load   func(context.Context, time.Time) (T, error)
+	// expires, when set, ends a value's freshness before TTL does.
+	expires func(val T, loadedAt time.Time) time.Time
 	// onWait, when set by tests, runs as a caller starts waiting for a load.
 	onWait func()
 
@@ -83,6 +85,14 @@ func NewCacheAt[T any](p Policy, load func(context.Context, time.Time) (T, error
 	return &Cache[T]{policy: p, load: load}
 }
 
+// ExpireWith lets the value itself end its freshness before TTL: it stays
+// fresh until expires returns, or for TTL if that is zero. Call it before
+// the first Get.
+func (c *Cache[T]) ExpireWith(expires func(val T, loadedAt time.Time) time.Time) *Cache[T] {
+	c.expires = expires
+	return c
+}
+
 // Get returns the latest successfully loaded value, the zero value if none,
 // and the error of the latest load if it failed. A failure keeps the
 // earlier value. If ctx is done while waiting for a load, Get returns
@@ -90,7 +100,7 @@ func NewCacheAt[T any](p Policy, load func(context.Context, time.Time) (T, error
 func (c *Cache[T]) Get(ctx context.Context, now time.Time) (T, error) {
 	c.mu.Lock()
 	for {
-		fresh := c.has && within(now, c.loadedAt, c.policy.TTL)
+		fresh := c.has && within(now, c.loadedAt, c.policy.TTL) && !c.expired(now)
 		backingOff := c.err != nil && (c.has || !c.policy.RetryOnlyWithData) && within(now, c.failedAt, c.policy.Retry)
 		if fresh || backingOff {
 			val, err := c.val, c.err
@@ -135,6 +145,16 @@ func (c *Cache[T]) Get(ctx context.Context, now time.Time) (T, error) {
 	c.mu.Unlock()
 	c.run(ctx, now, cl)
 	return cl.val, cl.err
+}
+
+// expired reports whether the value has ended its own freshness. Like TTL,
+// it ends a second early.
+func (c *Cache[T]) expired(now time.Time) bool {
+	if c.expires == nil {
+		return false
+	}
+	until := c.expires(c.val, c.loadedAt)
+	return !until.IsZero() && !now.Before(until.Add(-slack))
 }
 
 // Wait blocks until the load in flight, if any, has finished.

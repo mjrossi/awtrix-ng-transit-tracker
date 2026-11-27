@@ -23,6 +23,19 @@ func (p *Provider) staticFor(ctx context.Context, now time.Time) (*static, error
 	return p.schedule.Get(ctx, now)
 }
 
+// scheduleFreshUntil is when a schedule loaded or revalidated at since is
+// next checked with the server.
+func scheduleFreshUntil(_ *static, since time.Time) time.Time {
+	return since.Add(staticTTL)
+}
+
+// scheduleFresh reports whether st, loaded or revalidated at since, can be
+// used at now without checking with the server. A clock stepped back more
+// than staticTTL makes it stale, as upstream.Cache judges.
+func scheduleFresh(st *static, since, now time.Time) bool {
+	return within(now, since, staticTTL) && now.Before(scheduleFreshUntil(st, since))
+}
+
 func (p *Provider) loadStatic(ctx context.Context, now time.Time) (*static, error) {
 	var (
 		st  *static

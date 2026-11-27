@@ -169,23 +169,43 @@ func (p *Provider) loadCachedStatic(ctx context.Context, now time.Time) (*static
 	} else {
 		defer old.Close()
 	}
+	// parsed is old's schedule, read to judge whether it is still fresh; a
+	// refresh that finds it unchanged returns it rather than reading it again.
+	var parsed *static
 	if old != nil && within(now, old.fetched, staticTTL) {
-		if st, err := old.parse(); err == nil {
+		st, err := old.parse()
+		switch {
+		case err != nil:
+			_ = os.Remove(path)
+			old = nil
+		case scheduleFresh(st, old.fetched, now):
 			return st, nil
+		default:
+			parsed = st
 		}
-		_ = os.Remove(path)
-		old = nil
 	}
-	st, err := p.refreshCache(ctx, now, path, old)
+	st, err := p.refreshCache(ctx, now, path, old, parsed)
 	switch {
 	case err == nil:
+		if parsed != nil && st != parsed {
+			parsed.release()
+		}
 		return st, nil
 	case errors.Is(err, errCacheUnusable):
+		if parsed != nil {
+			parsed.release()
+		}
 		return p.downloadStatic(ctx)
 	case old != nil && ctx.Err() == nil:
+		if parsed != nil {
+			return parsed, &upstream.StaleError{Err: err}
+		}
 		if st, perr := old.parse(); perr == nil {
 			return st, &upstream.StaleError{Err: err}
 		}
+	}
+	if parsed != nil {
+		parsed.release()
 	}
 	return nil, err
 }
@@ -193,8 +213,9 @@ func (p *Provider) loadCachedStatic(ctx context.Context, now time.Time) (*static
 var errCacheUnusable = errors.New("schedule cache unusable")
 
 // refreshCache downloads the schedule into path, or renews old's time when
-// the server answers that it has not changed.
-func (p *Provider) refreshCache(ctx context.Context, now time.Time, path string, old *cacheFile) (*static, error) {
+// the server answers that it has not changed. parsed, if not nil, is old's
+// schedule already read, which an unchanged answer returns.
+func (p *Provider) refreshCache(ctx context.Context, now time.Time, path string, old *cacheFile, parsed *static) (*static, error) {
 	cond := http.Header{}
 	if old != nil {
 		if old.valid.ETag != "" {
@@ -248,6 +269,9 @@ func (p *Provider) refreshCache(ctx context.Context, now time.Time, path string,
 		p.log.DebugContext(ctx, "GTFS schedule unchanged", slog.String("url", redact(p.cfg.StaticURL)))
 		if err := os.Chtimes(path, now, now); err != nil {
 			return nil, err
+		}
+		if parsed != nil {
+			return parsed, nil
 		}
 		return old.parse()
 	}

@@ -381,3 +381,50 @@ func TestCacheKeepsAStaleValueWithItsError(t *testing.T) {
 		t.Errorf("loaded %d times within Retry, want 1", calls)
 	}
 }
+
+// A value can end its own freshness before TTL, such as a schedule whose
+// service period ends, and TTL still caps it.
+func TestCacheExpireWith(t *testing.T) {
+	tests := []struct {
+		name    string
+		expires func(string, time.Time) time.Time
+		at      time.Duration
+		reload  bool
+	}{
+		{"no expiry, within TTL", nil, 30 * time.Minute, false},
+		{"zero expiry leaves TTL", func(string, time.Time) time.Time { return time.Time{} }, 30 * time.Minute, false},
+		{"before expiry", func(_ string, at time.Time) time.Time { return at.Add(20 * time.Minute) }, 10 * time.Minute, false},
+		{"at expiry", func(_ string, at time.Time) time.Time { return at.Add(20 * time.Minute) }, 20 * time.Minute, true},
+		{"expiry past TTL", func(_ string, at time.Time) time.Time { return at.Add(2 * time.Hour) }, time.Hour, true},
+		{"expiry from the value", func(v string, at time.Time) time.Time {
+			if v == "ends soon" {
+				return at.Add(time.Minute)
+			}
+			return time.Time{}
+		}, 5 * time.Minute, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			loads := 0
+			c := NewCacheAt(Policy{TTL: time.Hour}, func(context.Context, time.Time) (string, error) {
+				loads++
+				return "ends soon", nil
+			})
+			if tt.expires != nil {
+				c.ExpireWith(tt.expires)
+			}
+			for _, at := range []time.Duration{0, tt.at} {
+				if _, err := c.Get(t.Context(), t0.Add(at)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			want := 1
+			if tt.reload {
+				want = 2
+			}
+			if loads != want {
+				t.Errorf("loaded %d times, want %d", loads, want)
+			}
+		})
+	}
+}
