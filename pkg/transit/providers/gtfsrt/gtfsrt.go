@@ -23,6 +23,7 @@ import (
 	"net/url"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -303,12 +304,14 @@ func merge(st *static, plans []planned, feeds []feed, q transit.Query) ([]transi
 		d := transit.Departure{
 			Line:      st.routeLine(pl.route),
 			Headsign:  st.plannedHeadsign(pl),
+			Direction: directionLabel(int(pl.dir)),
 			StopID:    q.StopID,
 			Scheduled: pl.at,
 			Status:    transit.StatusScheduled,
 		}
 		if tu := matchUpdate(byTrip, byStart, pl); tu != nil {
 			used[tu] = true
+			d.Direction = cmp.Or(d.Direction, directionLabel(tu.direction))
 			switch tu.relation {
 			case tripDeleted:
 				continue
@@ -508,6 +511,7 @@ func departures(st *static, f feed, q transit.Query, used map[*tripUpdate]bool) 
 			out = append(out, transit.Departure{
 				Line:      st.line(*tu),
 				Headsign:  st.headsign(*tu),
+				Direction: st.tripDirection(*tu),
 				StopID:    q.StopID,
 				Scheduled: t.Add(-time.Duration(ev.delay) * time.Second),
 				Predicted: &t,
@@ -576,6 +580,25 @@ func (s *static) routeLine(routeID string) transit.Line {
 // headsign uses the schedule's trip headsign, or the name of the last stop
 // in the update. Some agencies, like the New York subway, use realtime trip
 // IDs that do not match their schedule.
+// tripDirection is the schedule's direction_id for tu's trip, or else the
+// update's own.
+func (s *static) tripDirection(tu tripUpdate) string {
+	if s != nil {
+		if info, ok := s.trips[tu.tripID]; ok && info.direction >= 0 {
+			return directionLabel(int(info.direction))
+		}
+	}
+	return directionLabel(tu.direction)
+}
+
+// directionLabel is a direction_id as text: "0", "1", or "" when unknown.
+func directionLabel(dir int) string {
+	if dir < 0 {
+		return ""
+	}
+	return strconv.Itoa(dir)
+}
+
 func (s *static) headsign(tu tripUpdate) string {
 	if s != nil {
 		if h := s.trips[tu.tripID].headsign; h != "" {

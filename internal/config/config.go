@@ -82,8 +82,11 @@ type Board struct {
 type BoardClock struct {
 	// Layout is "departure" (one line and direction, like a platform sign),
 	// "rows" (one line and direction per row) or "grid" (up to four lines).
-	Layout  render.Layout `toml:"layout"`
-	MaxRows int           `toml:"max_rows"`
+	Layout render.Layout `toml:"layout"`
+	// Group is what a row stands for: "destination", "direction" or
+	// "train".
+	Group   render.Group `toml:"group"`
+	MaxRows int          `toml:"max_rows"`
 	// Lifetime is how long the clock keeps the app without a fresh push.
 	// Defaults to three poll intervals.
 	Lifetime Duration `toml:"lifetime"`
@@ -110,6 +113,7 @@ func (c BoardClock) Render() render.Options { return c.options().WithDefaults() 
 func (c BoardClock) options() render.Options {
 	return render.Options{
 		Layout:    c.Layout,
+		Group:     c.Group,
 		MaxRows:   c.MaxRows,
 		Labels:    c.Labels,
 		Overflow:  c.Overflow,
@@ -140,6 +144,9 @@ type Stop struct {
 	Stop      string   `toml:"stop"`
 	Lines     []string `toml:"lines"`
 	Headsigns []string `toml:"headsigns"`
+	// Directions keeps the departures in these directions, as the provider
+	// names them, such as "Westbound".
+	Directions []string `toml:"directions"`
 	// MinLead hides departures sooner than this, such as the walk to the
 	// stop.
 	MinLead Duration `toml:"min_lead"`
@@ -153,6 +160,7 @@ func (s Stop) Filter() transit.Filter {
 	return transit.Filter{
 		Lines:        s.Lines,
 		Headsigns:    s.Headsigns,
+		Directions:   s.Directions,
 		MinLead:      s.MinLead.D(),
 		KeepCanceled: s.KeepCanceled,
 	}

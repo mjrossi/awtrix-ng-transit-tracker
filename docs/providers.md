@@ -29,6 +29,15 @@ own: [transitland.md](./transitland.md).
 | [`tfl`](#tfl) | Transport for London, from its Unified API |
 | [`demo`](#demo) | Generated departures, for trying the display |
 
+Some providers also give each departure a direction, which a stop's
+`directions` filter and the clock's `group = "direction"` use:
+
+| Provider | Direction |
+|---|---|
+| `gtfsrt` | The trip's `direction_id`: `"0"` or `"1"`. Which is which differs by agency |
+| `tfl` | The Tube platform's compass word, such as `"Westbound"`; elsewhere `"inbound"` or `"outbound"` |
+| Others | None |
+
 ## gtfsrt
 
 Almost every agency publishes the same two open formats: a GTFS schedule,
@@ -187,6 +196,11 @@ search tfl 50435`. IDs starting `490G` name a group of bus stops, which
 has no arrivals of its own; `stops search tfl <group ID>` lists its
 stops. Every time is a live prediction: the API has no timetable. Trains
 ending their trip at the stop are left out.
+
+At a Tube station, `directions = ["Westbound"]` keeps one platform's
+trains, whatever their destination. Bus stops, and rail platforms named
+only by number, have `"inbound"` or `"outbound"`, which TfL assigns per
+route: two routes leaving the same bus stop may differ.
 
 Powered by TfL Open Data, under TfL's version of the
 [Open Government Licence v2.0](https://tfl.gov.uk/corporate/terms-and-conditions/transport-data-service).

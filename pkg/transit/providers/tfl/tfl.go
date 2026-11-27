@@ -148,6 +148,8 @@ type prediction struct {
 	DestinationNaptanID string    `json:"destinationNaptanId"`
 	DestinationName     string    `json:"destinationName"`
 	Towards             string    `json:"towards"`
+	PlatformName        string    `json:"platformName"`
+	Direction           string    `json:"direction"`
 	ExpectedArrival     time.Time `json:"expectedArrival"`
 }
 
@@ -184,6 +186,7 @@ func (p *Provider) Departures(ctx context.Context, q transit.Query) ([]transit.D
 		out = append(out, transit.Departure{
 			Line:      lineFor(pr),
 			Headsign:  headsign(pr),
+			Direction: direction(pr),
 			StopID:    q.StopID,
 			Scheduled: t,
 			Predicted: &t,
@@ -238,6 +241,18 @@ func headsign(pr prediction) string {
 		return ""
 	}
 	return h
+}
+
+// direction is the compass word that Tube platforms are named with
+// ("Westbound - Platform 2"), which riders know, or else the API's
+// "inbound" or "outbound". Bus stops are named by letter, and many rail
+// platforms only by number, so those fall back.
+func direction(pr prediction) string {
+	word, _, _ := strings.Cut(strings.TrimSpace(pr.PlatformName), " ")
+	if len(word) > len("bound") && strings.HasSuffix(strings.ToLower(word), "bound") {
+		return word
+	}
+	return strings.ToLower(strings.TrimSpace(pr.Direction))
 }
 
 // stopPoint is a node of GET /StopPoint/{ids}: a stop and the stops it

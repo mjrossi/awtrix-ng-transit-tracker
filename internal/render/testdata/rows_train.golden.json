@@ -1,0 +1,153 @@
+{
+  "version": 1,
+  "regions": [
+    {
+      "id": "r0-badge",
+      "box": [
+        0,
+        0,
+        2,
+        8
+      ],
+      "draw": [
+        [
+          "rectFill",
+          0,
+          1,
+          2,
+          6,
+          "#0019A8"
+        ]
+      ]
+    },
+    {
+      "id": "r0-sign",
+      "box": [
+        4,
+        0,
+        42,
+        8
+      ],
+      "text": "Heathrow T4",
+      "font": "small",
+      "color": "#EAE4D9",
+      "align": "start",
+      "scroll": {
+        "mode": "wrap"
+      },
+      "textCase": "asTyped"
+    },
+    {
+      "id": "r0-min",
+      "box": [
+        48,
+        0,
+        4,
+        8
+      ],
+      "text": [
+        {
+          "text": "2",
+          "color": "#EAE4D9"
+        }
+      ],
+      "font": "small",
+      "align": "start",
+      "scroll": {
+        "mode": "static"
+      },
+      "textCase": "asTyped"
+    },
+    {
+      "id": "r0-marks",
+      "box": [
+        47,
+        0,
+        5,
+        8
+      ],
+      "draw": [
+        [
+          "pixel",
+          4,
+          0,
+          "#D9955A"
+        ]
+      ]
+    },
+    {
+      "id": "r1-badge",
+      "box": [
+        0,
+        8,
+        2,
+        8
+      ],
+      "draw": [
+        [
+          "rectFill",
+          0,
+          1,
+          2,
+          6,
+          "#0019A8"
+        ]
+      ]
+    },
+    {
+      "id": "r1-sign",
+      "box": [
+        4,
+        8,
+        42,
+        8
+      ],
+      "text": "Uxbridge",
+      "font": "small",
+      "color": "#EAE4D9",
+      "align": "start",
+      "scroll": {
+        "mode": "wrap"
+      },
+      "textCase": "asTyped"
+    },
+    {
+      "id": "r1-min",
+      "box": [
+        48,
+        8,
+        4,
+        8
+      ],
+      "text": [
+        {
+          "text": "3",
+          "color": "#EAE4D9"
+        }
+      ],
+      "font": "small",
+      "align": "start",
+      "scroll": {
+        "mode": "static"
+      },
+      "textCase": "asTyped"
+    },
+    {
+      "id": "r1-marks",
+      "box": [
+        47,
+        8,
+        5,
+        8
+      ],
+      "draw": [
+        [
+          "pixel",
+          4,
+          0,
+          "#D9955A"
+        ]
+      ]
+    }
+  ]
+}

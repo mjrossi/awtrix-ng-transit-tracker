@@ -2,6 +2,7 @@ package tfl_test
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -101,12 +102,12 @@ func TestContract(t *testing.T) {
 	})
 }
 
-type row struct{ Time, Line, Color, Headsign string }
+type row struct{ Time, Line, Color, Headsign, Direction string }
 
 func summarize(deps []transit.Departure) []row {
 	var out []row
 	for _, d := range deps {
-		out = append(out, row{d.Time().UTC().Format("15:04:05"), d.Line.ShortName, d.Line.Color, d.Headsign})
+		out = append(out, row{d.Time().UTC().Format("15:04:05"), d.Line.ShortName, d.Line.Color, d.Headsign, d.Direction})
 	}
 	return out
 }
@@ -123,15 +124,15 @@ func TestDepartures(t *testing.T) {
 			// A Bakerloo train due at 08:48:37, before Now, is left out.
 			name: "tube", stop: oxfordCircus, window: 10 * time.Minute, mode: transit.ModeMetro,
 			want: []row{
-				{"08:50:05", "Bakerloo", "#B36305", "Queen's Park"},
-				{"08:51:00", "Victoria", "#0098D4", "Walthamstow Central"},
-				{"08:52:36", "Bakerloo", "#B36305", "Elephant & Castle"},
-				{"08:53:30", "Victoria", "#0098D4", "Brixton"},
-				{"08:55:30", "Victoria", "#0098D4", "Walthamstow Central"},
-				{"08:55:35", "Bakerloo", "#B36305", "Queen's Park"},
-				{"08:56:30", "Victoria", "#0098D4", "Walthamstow Central"},
-				{"08:56:30", "Victoria", "#0098D4", "Brixton"},
-				{"08:56:36", "Bakerloo", "#B36305", "Elephant & Castle"},
+				{"08:50:05", "Bakerloo", "#B36305", "Queen's Park", "Northbound"},
+				{"08:51:00", "Victoria", "#0098D4", "Walthamstow Central", "Northbound"},
+				{"08:52:36", "Bakerloo", "#B36305", "Elephant & Castle", "Southbound"},
+				{"08:53:30", "Victoria", "#0098D4", "Brixton", "Southbound"},
+				{"08:55:30", "Victoria", "#0098D4", "Walthamstow Central", "Northbound"},
+				{"08:55:35", "Bakerloo", "#B36305", "Queen's Park", "Northbound"},
+				{"08:56:30", "Victoria", "#0098D4", "Walthamstow Central", "Northbound"},
+				{"08:56:30", "Victoria", "#0098D4", "Brixton", "Southbound"},
+				{"08:56:36", "Bakerloo", "#B36305", "Elephant & Castle", "Southbound"},
 			},
 		},
 		{
@@ -139,23 +140,23 @@ func TestDepartures(t *testing.T) {
 			// predictions share one ID, so IDs cannot tell trains apart.
 			name: "DLR terminal", stop: bankDLR, window: 30 * time.Minute, mode: transit.ModeMetro,
 			want: []row{
-				{"08:50:54", "DLR", "#00A4A7", "Lewisham"},
-				{"08:52:55", "DLR", "#00A4A7", "Woolwich Arsenal"},
-				{"08:54:55", "DLR", "#00A4A7", "Lewisham"},
+				{"08:50:54", "DLR", "#00A4A7", "Lewisham", "outbound"},
+				{"08:52:55", "DLR", "#00A4A7", "Woolwich Arsenal", "outbound"},
+				{"08:54:55", "DLR", "#00A4A7", "Lewisham", "outbound"},
 			},
 		},
 		{
 			name: "bus", stop: busStopE, window: 8 * time.Minute, mode: transit.ModeBus,
 			want: []row{
-				{"08:53:23", "9", "", "Aldwych"},
-				{"08:54:38", "23", "", "Aldwych"},
+				{"08:53:23", "9", "", "Aldwych", "inbound"},
+				{"08:54:38", "23", "", "Aldwych", "outbound"},
 			},
 		},
 		{
 			name: "lowercase stop ID", stop: strings.ToLower(busStopE), window: 8 * time.Minute, mode: transit.ModeBus,
 			want: []row{
-				{"08:53:23", "9", "", "Aldwych"},
-				{"08:54:38", "23", "", "Aldwych"},
+				{"08:53:23", "9", "", "Aldwych", "inbound"},
+				{"08:54:38", "23", "", "Aldwych", "outbound"},
 			},
 		},
 	}
@@ -203,9 +204,9 @@ func TestRail(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []row{
-		{"09:23:00", "Mildmay", "#0077AD", "Stratford (London)"},
-		{"09:23:00", "Mildmay", "#0077AD", "Richmond (London)"},
-		{"09:28:02", "Mildmay", "#0077AD", "Clapham Junction"},
+		{"09:23:00", "Mildmay", "#0077AD", "Stratford (London)", "inbound"},
+		{"09:23:00", "Mildmay", "#0077AD", "Richmond (London)", "outbound"},
+		{"09:28:02", "Mildmay", "#0077AD", "Clapham Junction", "outbound"},
 	}
 	if diff := cmp.Diff(want, summarize(deps)); diff != "" {
 		t.Errorf("departures mismatch (-want +got):\n%s", diff)
@@ -248,6 +249,33 @@ func TestHeadsignsAndModes(t *testing.T) {
 	}
 	if diff := cmp.Diff(want, gots); diff != "" {
 		t.Errorf("mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestDirection(t *testing.T) {
+	tests := []struct {
+		platform, direction, want string
+	}{
+		{"Westbound - Platform 2", "inbound", "Westbound"},
+		{"Northbound - Platform 4", "outbound", "Northbound"},
+		// A bus stop's letter, or a platform number, says nothing of the
+		// direction.
+		{"E", "inbound", "inbound"},
+		{"Platform 7", "Outbound", "outbound"},
+		{"Platform Unknown", "", ""},
+		{"", "", ""},
+	}
+	for _, tt := range tests {
+		f := newFakeAPI(t)
+		f.respond(http.StatusOK, fmt.Sprintf(`[{"naptanId": "X", "lineId": "piccadilly", "lineName": "Piccadilly", "modeName": "tube",
+			"destinationName": "Uxbridge", "platformName": %q, "direction": %q, "expectedArrival": "2026-11-27T08:50:00Z"}]`, tt.platform, tt.direction))
+		deps, err := newProvider(t, f, "").Departures(t.Context(), transit.Query{StopID: "X", Now: recorded, Window: 10 * time.Minute})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(deps) != 1 || deps[0].Direction != tt.want {
+			t.Errorf("platform %q, direction %q: got %+v, want direction %q", tt.platform, tt.direction, deps, tt.want)
+		}
 	}
 }
 
