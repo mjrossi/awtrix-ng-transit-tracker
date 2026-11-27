@@ -91,10 +91,16 @@ func readCacheHeader(f *os.File) (*cacheFile, error) {
 	return cf, nil
 }
 
+// zip is the schedule zip after the header line.
+func (cf *cacheFile) zip() *io.SectionReader {
+	return io.NewSectionReader(cf.f, cf.zipStart, cf.size-cf.zipStart)
+}
+
 // parse reads the schedule. On success the schedule holds the file, which
 // Close then leaves open.
 func (cf *cacheFile) parse() (*static, error) {
-	st, err := parseStatic(io.NewSectionReader(cf.f, cf.zipStart, cf.size-cf.zipStart), cf.size-cf.zipStart)
+	zr := cf.zip()
+	st, err := parseStatic(zr, zr.Size())
 	if err != nil {
 		return nil, err
 	}
@@ -179,7 +185,8 @@ func cachedScheduleEnded(path string, now time.Time) bool {
 		return false
 	}
 	defer cf.Close()
-	c, err := readCoverageOnly(io.NewSectionReader(cf.f, cf.zipStart, cf.size-cf.zipStart), cf.size-cf.zipStart)
+	zr := cf.zip()
+	c, err := readCoverageOnly(zr, zr.Size())
 	return err == nil && c.end != 0 && c.end.next() < dateOf(now.UTC())
 }
 
