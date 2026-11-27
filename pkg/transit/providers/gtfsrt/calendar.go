@@ -60,6 +60,15 @@ func (s *service) runsOn(d date) bool {
 	return s.start != 0 && d >= s.start && d <= s.end && s.days[d.weekday()]
 }
 
+// readServices reads calendar.txt and calendar_dates.txt, either of which
+// may be missing, into services.
+func readServices(zr *zip.Reader, services map[string]*service, in interner) error {
+	if err := readOptionalTable(zr, "calendar.txt", func(r row) { parseCalendarRow(services, in, r) }); err != nil {
+		return err
+	}
+	return readOptionalTable(zr, "calendar_dates.txt", func(r row) { parseCalendarDateRow(services, in, r) })
+}
+
 // parseCalendarRow reads one calendar.txt row into services.
 func parseCalendarRow(services map[string]*service, in interner, r row) {
 	start, ok1 := parseDate(r.get("start_date"))

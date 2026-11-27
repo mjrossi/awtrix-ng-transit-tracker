@@ -134,12 +134,7 @@ func parseStatic(r io.ReaderAt, size int64) (*static, error) {
 			break
 		}
 	}
-	err = readOptionalTable(zr, "calendar.txt", func(r row) { parseCalendarRow(s.services, in, r) })
-	if err != nil {
-		return nil, err
-	}
-	err = readOptionalTable(zr, "calendar_dates.txt", func(r row) { parseCalendarDateRow(s.services, in, r) })
-	if err != nil {
+	if err := readServices(zr, s.services, in); err != nil {
 		return nil, err
 	}
 	err = readOptionalTable(zr, "frequencies.txt", func(r row) {
@@ -169,11 +164,7 @@ func readCoverageOnly(r io.ReaderAt, size int64) (coverage, error) {
 		return coverage{}, fmt.Errorf("open GTFS zip: %w", err)
 	}
 	services := map[string]*service{}
-	in := interner{}
-	if err := readOptionalTable(zr, "calendar.txt", func(r row) { parseCalendarRow(services, in, r) }); err != nil {
-		return coverage{}, err
-	}
-	if err := readOptionalTable(zr, "calendar_dates.txt", func(r row) { parseCalendarDateRow(services, in, r) }); err != nil {
+	if err := readServices(zr, services, interner{}); err != nil {
 		return coverage{}, err
 	}
 	return readCoverage(zr, services)
