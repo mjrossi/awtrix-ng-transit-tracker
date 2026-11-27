@@ -33,7 +33,7 @@ import (
 
 // version is the release version reported by --version. The Dockerfile's
 // VERSION build argument overrides it.
-var version = "0.7.0"
+var version = "0.8.0"
 
 func main() {
 	// os.Exit skips defers, so run's cleanup happens inside run.

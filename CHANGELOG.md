@@ -7,6 +7,8 @@ version may break configuration.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-27
+
 ### Added
 
 - London: the `tfl` system and provider read live predictions from
@@ -404,7 +406,8 @@ First release: live departures on an AWTRIX NG clock (Ulanzi TC002).
   Metropolitana, Lisbon Metro, NYC Subway and SF BART.
 - Commands: `run`, `preview`, `config validate`, `systems`, `stops search`.
 
-[Unreleased]: https://github.com/mjrossi/urbanist-timetable/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/mjrossi/urbanist-timetable/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/mjrossi/urbanist-timetable/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/mjrossi/urbanist-timetable/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/mjrossi/urbanist-timetable/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/mjrossi/urbanist-timetable/compare/v0.4.0...v0.5.0
