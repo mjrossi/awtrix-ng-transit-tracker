@@ -81,7 +81,7 @@ func reservedVar(v string) bool {
 	}
 	all, _ := catalog.All()
 	for _, s := range all {
-		for _, o := range s.RequiredOptions {
+		for _, o := range s.EnvOptions() {
 			if s.EnvName(o) == v {
 				return true
 			}

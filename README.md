@@ -173,6 +173,7 @@ IDs and any settings their feeds need:
 |---|---|---|---|
 | `metro-lisboa` | Metro de Lisboa | Lisbon | metro (needs a free API key) |
 | `carris-metropolitana` | Carris Metropolitana | Lisbon | bus |
+| `tfl` | Transport for London | London | metro, rail, tram, bus, ferry (optional API key) |
 | `mta-subway` | MTA | New York | metro |
 | `bart` | BART | San Francisco Bay Area | metro |
 | `mbta` | MBTA | Boston | metro, tram, bus, rail, ferry |
@@ -199,6 +200,7 @@ lists a verified system, search shows the verified one.
 |---|---|---|---|
 | `carrismetropolitana` | Carris Metropolitana buses, Lisbon metropolitan area | None | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), © Carris Metropolitana |
 | `metrolisboa` | Metro de Lisboa, all four lines | Free OAuth client from the [API Store](https://api.metrolisboa.pt/store/) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), © Metropolitano de Lisboa |
+| `tfl` | Tube, DLR, Overground, Elizabeth line, Tram, buses and river buses in London | Optional free app key from the [API portal](https://api-portal.tfl.gov.uk/) | Powered by TfL Open Data ([OGL v2.0, TfL version](https://tfl.gov.uk/corporate/terms-and-conditions/transport-data-service)) |
 | `gtfsrt` | Any agency with a GTFS schedule, GTFS-Realtime TripUpdates, or both, configured by URL (several per config with `type = "gtfsrt"`) | Depends on the agency | The agency's |
 | `transitland` | Thousands of agencies through [Transitland](https://www.transit.land/), schedule and realtime merged | Free API key; requests count against a monthly quota | The agency's; Transitland's terms apply |
 | `demo` | Generated departures for testing the display | None | — |
@@ -276,7 +278,8 @@ just ci          # lint, test, validate the example config
 Secrets for local runs go in `mise.local.toml` (gitignored); copy
 [`mise.local.toml.example`](./mise.local.toml.example). `just
 catalog-check` reads system keys as `<SYSTEM>_<OPTION>`, such as
-`METRO_LISBOA_CLIENT_ID`, and skips systems without them.
+`METRO_LISBOA_CLIENT_ID`, skips systems without them, and uses optional
+keys such as `TFL_APP_KEY` when set.
 
 See [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) for how the code fits
 together, [`CLAUDE.md`](./CLAUDE.md) for conventions,

@@ -26,6 +26,7 @@ own: [transitland.md](./transitland.md).
 | [`transitland`](./transitland.md) | Thousands of agencies through Transitland's API, with a monthly quota |
 | [`metrolisboa`](#metrolisboa) | Metro de Lisboa, from its own API |
 | [`carrismetropolitana`](#carrismetropolitana) | Carris Metropolitana buses, Lisbon metropolitan area |
+| [`tfl`](#tfl) | Transport for London, from its Unified API |
 | [`demo`](#demo) | Generated departures, for trying the display |
 
 ## gtfsrt
@@ -153,6 +154,43 @@ Metropolitana.
 
 Lisbon's city buses and trams (Carris) publish no predictions this tool
 can read; their schedule works through `gtfsrt` or `transitland`.
+
+## tfl
+
+Transport for London publishes predictions through its Unified API, not
+as GTFS-Realtime. The verified system `tfl` uses this provider for the
+Tube, DLR, London Overground, Elizabeth line, Tram, buses and river buses.
+
+It works without a key, at a lower rate limit. For a clock, or several
+boards, register at the [API portal](https://api-portal.tfl.gov.uk/),
+subscribe to a product, and put the primary key in the environment:
+
+```bash
+export TFL_APP_KEY=...
+```
+
+`departures tfl …` picks it up. In a configuration file:
+
+```toml
+[providers.london]
+system = "tfl"
+app_key = "${TFL_APP_KEY}"   # optional
+```
+
+Stations have IDs such as `940GZZLUOXC` (Oxford Circus Underground) or
+`910GBONDST` (Bond Street, Elizabeth line). Each bus stop serves one
+direction and has an ID such as `490013766E`; `stops search tfl
+trafalgar square` lists them with their letter and direction, as in
+"Charing Cross Stn / Trafalgar Square (Stop E, towards Aldwych)". IDs
+starting `490G` name a group of bus stops, which has no arrivals of its
+own; `stops search tfl <group ID>` lists its stops. Every time is a live prediction: the API has no timetable. Trains
+ending their trip at the stop are left out.
+
+Powered by TfL Open Data, under TfL's version of the
+[Open Government Licence v2.0](https://tfl.gov.uk/corporate/terms-and-conditions/transport-data-service).
+A display that shows the data publicly needs that attribution, and
+"Contains OS data © Crown copyright and database rights 2016 and Geomni
+UK Map data © and database rights [2019]".
 
 ## demo
 

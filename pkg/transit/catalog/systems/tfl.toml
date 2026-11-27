@@ -1,0 +1,19 @@
+agency = "Transport for London"
+city = "London"
+country = "GB"
+modes = ["metro", "rail", "tram", "bus", "ferry"]
+provider = "tfl"
+status = "maintained"
+verified = "2026-11-27"
+sample_stop = "940GZZLUOXC"
+info_url = "https://api-portal.tfl.gov.uk/"
+data_license = "Powered by TfL Open Data (TfL's version of OGL v2.0)"
+optional_options = ["app_key"]
+notes = """
+Tube, DLR, Overground, Elizabeth line, Tram, buses and river buses. Works
+without a key at a lower rate limit; a free app key from the API portal
+raises it. Stations have IDs such as "940GZZLUOXC" (Oxford Circus). Each
+bus stop serves one direction, such as "490013766E"; stops search lists
+them with letter and direction. Every time is a live prediction."""
+
+[options]

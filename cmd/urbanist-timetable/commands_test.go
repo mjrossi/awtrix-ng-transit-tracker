@@ -18,6 +18,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+
 	"github.com/mjrossi/urbanist-timetable/internal/config"
 	"github.com/mjrossi/urbanist-timetable/internal/render"
 	"github.com/mjrossi/urbanist-timetable/pkg/awtrix"
@@ -68,8 +70,9 @@ func TestSystemsCommands(t *testing.T) {
 		args []string
 		want []string
 	}{
-		"list": {[]string{"systems"}, []string{"Verified systems", "bart", "Show how to configure one"}},
-		"show": {[]string{"systems", "show", "bart"}, []string{"[providers.bart]\nsystem = \"bart\"\n", "# Example stop: "}},
+		"list":              {[]string{"systems"}, []string{"Verified systems", "bart", "optional TFL_APP_KEY", "Show how to configure one"}},
+		"show":              {[]string{"systems", "show", "bart"}, []string{"[providers.bart]\nsystem = \"bart\"\n", "# Example stop: "}},
+		"show optional key": {[]string{"systems", "show", "tfl"}, []string{"system = \"tfl\"\n# Optional, once TFL_APP_KEY is set:\n# app_key = \"${TFL_APP_KEY}\"\n"}},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -226,6 +229,21 @@ func TestOpenSource(t *testing.T) {
 	var me *catalog.MissingOptionsError
 	if _, err := openSource(t.Context(), missing, "metro-lisboa", nil); !errors.As(err, &me) || !slices.Equal(me.Options, []string{"client_secret"}) {
 		t.Errorf("err = %v, want client_secret missing", err)
+	}
+}
+
+func TestEnvSettingsOptional(t *testing.T) {
+	sys, ok := catalog.Get("tfl")
+	if !ok {
+		t.Fatal("tfl missing")
+	}
+	t.Setenv("TFL_APP_KEY", "")
+	if diff := cmp.Diff(map[string]any{"system": "tfl"}, envSettings(sys)); diff != "" {
+		t.Errorf("without the key (-want +got):\n%s", diff)
+	}
+	t.Setenv("TFL_APP_KEY", "k")
+	if diff := cmp.Diff(map[string]any{"system": "tfl", "app_key": "k"}, envSettings(sys)); diff != "" {
+		t.Errorf("with the key (-want +got):\n%s", diff)
 	}
 }
 

@@ -19,6 +19,14 @@ This repository includes recorded transit data used as test fixtures:
   https://creativecommons.org/licenses/by/4.0/
   Source: https://api.metrolisboa.pt:8243/estadoServicoML/1.0.1
 
+- pkg/transit/providers/tfl/testdata/
+  Powered by TfL Open Data, under Transport for London's version of the
+  Open Government Licence v2.0:
+  https://tfl.gov.uk/corporate/terms-and-conditions/transport-data-service
+  Contains OS data © Crown copyright and database rights 2016 and Geomni
+  UK Map data © and database rights [2019].
+  Source: https://api.tfl.gov.uk
+
 - pkg/transit/providers/gtfsrt/testdata/mta/
   Data obtained from the MTA (Metropolitan Transportation Authority) GTFS
   and GTFS-Realtime data feeds and redistributed here under the MTA data

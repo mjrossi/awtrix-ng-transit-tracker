@@ -61,6 +61,9 @@ type System struct {
 	Notes       string `toml:"notes"`
 	// RequiredOptions are settings users must add, such as API keys.
 	RequiredOptions []string `toml:"required_options"`
+	// OptionalOptions are settings the system works without, such as an
+	// API key that raises a rate limit.
+	OptionalOptions []string `toml:"optional_options"`
 	// MobilityDB and TransitlandFeeds name the same system in those
 	// directories, so a search can show this entry instead.
 	MobilityDB       []string       `toml:"mobility_db"`
@@ -169,6 +172,12 @@ func (s System) Merge(user map[string]any) map[string]any {
 	maps.Copy(out, s.Options)
 	maps.Copy(out, user)
 	return out
+}
+
+// EnvOptions lists the required and optional options, which are read from
+// the environment as EnvName.
+func (s System) EnvOptions() []string {
+	return slices.Concat(s.RequiredOptions, s.OptionalOptions)
 }
 
 // Missing lists required options absent from opts.

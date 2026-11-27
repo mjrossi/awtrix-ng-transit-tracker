@@ -62,6 +62,13 @@ lacks). New adapters are frozen unless the maintainer needs one.
 | CP (rail) | GTFS in the Mobility Database (`mdb-2057`); Transitland has it too (`f-eyc-cp`); a third-party `TripUpdates` feed exists (see Open questions) | **Schedule only**, through `gtfsrt` or `transitland` |
 | Fertagus, ferries | — | Not researched |
 
+### London
+
+| Operator | Source | Status |
+|---|---|---|
+| Transport for London (Tube, DLR, Overground, Elizabeth line, Tram, buses, river buses) | Unified API, `https://api.tfl.gov.uk/StopPoint/{id}/Arrivals`; no GTFS-RT. Works without a key at a lower rate limit. Predictions only, no timetable; `Cache-Control: max-age=30`. Bus stop groups (`490G…`) answer with no arrivals, so search lists their stops. Arrivals include trains ending their trip at the stop, and DLR predictions share one `id`. Data Powered by TfL Open Data (TfL's OGL v2.0) | **Done** (`tfl` provider) |
+| National Rail | Not in the Unified API's arrivals | Not researched |
+
 ## Where the rest lives
 
 - How the code is built: [ARCHITECTURE.md](./ARCHITECTURE.md).

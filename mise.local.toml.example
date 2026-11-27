@@ -14,6 +14,10 @@
 # METRO_LISBOA_CLIENT_ID = ""
 # METRO_LISBOA_CLIENT_SECRET = ""
 
+# TfL app key from https://api-portal.tfl.gov.uk/. Optional: without it the
+# `tfl` system works at a lower rate limit.
+# TFL_APP_KEY = ""
+
 # Transitland API key from https://www.transit.land/, as named in
 # config.example.toml.
 # TRANSITLAND_API_KEY = ""

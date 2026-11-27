@@ -65,7 +65,8 @@ func TestGetAndMerge(t *testing.T) {
 // default because tests never call live APIs; run it with `just
 // catalog-check` before updating an entry's verified date. Systems that
 // need keys read them from the environment as <ID>_<OPTION>, such as
-// METRO_LISBOA_CLIENT_ID, and are skipped without them.
+// METRO_LISBOA_CLIENT_ID, and are skipped without them; optional keys are
+// used when set.
 func TestLive(t *testing.T) {
 	if !*live {
 		t.Skip("live check; run with -live")
@@ -85,6 +86,11 @@ func TestLive(t *testing.T) {
 					t.Skipf("set %s to check this system", env)
 				}
 				user[k] = v
+			}
+			for _, k := range s.OptionalOptions {
+				if v := os.Getenv(s.EnvName(k)); v != "" {
+					user[k] = v
+				}
 			}
 			p, err := reg.Build(s.Provider, catalog.Options(s.Merge(user)))
 			if err != nil {

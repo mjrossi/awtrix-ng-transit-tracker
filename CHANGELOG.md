@@ -7,6 +7,19 @@ version may break configuration.
 
 ## [Unreleased]
 
+### Added
+
+- London: the `tfl` system and provider read live predictions from
+  Transport for London's Unified API for the Tube, DLR, London Overground,
+  Elizabeth line, Tram, buses and river buses. It works without a key at
+  a lower rate limit; with `TFL_APP_KEY` set, `departures tfl …` uses it.
+  `stops search tfl <words>` lists each bus stop with its letter and
+  direction, since only single stops have arrivals.
+- Catalog systems can have `optional_options`: settings, such as a key
+  that raises a rate limit, read from the environment when set. `systems`
+  lists them, and `systems show` and `config init` write them commented
+  out.
+
 ## [0.7.0] - 2026-11-26
 
 Upgrading: catalog systems have new IDs, such as `mta-subway` for
