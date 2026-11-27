@@ -577,9 +577,6 @@ func (s *static) routeLine(routeID string) transit.Line {
 	return transit.Line{ID: routeID, ShortName: routeID, Mode: transit.ModeOther}
 }
 
-// headsign uses the schedule's trip headsign, or the name of the last stop
-// in the update. Some agencies, like the New York subway, use realtime trip
-// IDs that do not match their schedule.
 // tripDirection is the schedule's direction_id for tu's trip, or else the
 // update's own.
 func (s *static) tripDirection(tu tripUpdate) string {
@@ -599,6 +596,9 @@ func directionLabel(dir int) string {
 	return strconv.Itoa(dir)
 }
 
+// headsign uses the schedule's trip headsign, or the name of the last stop
+// in the update. Some agencies, like the New York subway, use realtime trip
+// IDs that do not match their schedule.
 func (s *static) headsign(tu tripUpdate) string {
 	if s != nil {
 		if h := s.trips[tu.tripID].headsign; h != "" {

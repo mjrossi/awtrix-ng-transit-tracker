@@ -22,7 +22,8 @@ version may break configuration.
   A stop's `directions`, and `departures --directions`, keep only the
   departures in those directions. `tfl` names Tube directions after the
   platform, such as `Westbound`, and `gtfsrt` uses the trip's
-  `direction_id`. Before this, a branching line such as the Piccadilly at
+  `direction_id`. `departures --json` shows each departure's
+  `direction`. Before this, a branching line such as the Piccadilly at
   Russell Square showed its two soonest destinations, often both in one
   direction.
 - Catalog systems can have `optional_options`: settings, such as a key

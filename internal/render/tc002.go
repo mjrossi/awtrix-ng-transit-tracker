@@ -325,11 +325,14 @@ func visible(rows []transit.Row, opts Options) []int {
 			}
 			return -1
 		}
-		return cmp.Or(
-			cmp.Compare(ra.Line.ShortName, rb.Line.ShortName),
-			cmp.Compare(ra.Direction, rb.Direction),
-			cmp.Compare(ra.Headsign, rb.Headsign),
-		)
+		byDirection := cmp.Compare(ra.Direction, rb.Direction)
+		byHeadsign := cmp.Compare(ra.Headsign, rb.Headsign)
+		if opts.Group == GroupDirection {
+			return cmp.Or(cmp.Compare(ra.Line.ShortName, rb.Line.ShortName), byDirection, byHeadsign)
+		}
+		// Without a direction group, rows order by destination name;
+		// direction only breaks ties, such as a loop line's two ways.
+		return cmp.Or(cmp.Compare(ra.Line.ShortName, rb.Line.ShortName), byHeadsign, byDirection)
 	})
 	if opts.Layout == LayoutDeparture {
 		idx = idx[:min(len(idx), 1)]

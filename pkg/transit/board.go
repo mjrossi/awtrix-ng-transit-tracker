@@ -26,8 +26,8 @@ type Filter struct {
 }
 
 // Narrows reports whether f asks for less than every departure: lines,
-// headsigns, directions or a minimum lead. Dropping canceled departures, the default,
-// does not count.
+// headsigns, directions or a minimum lead. Dropping canceled departures,
+// the default, does not count.
 func (f Filter) Narrows() bool {
 	return len(f.Lines) > 0 || len(f.Headsigns) > 0 || len(f.Directions) > 0 || f.MinLead > 0
 }
@@ -77,10 +77,10 @@ type Row struct {
 	Departures []Departure
 }
 
-// Group merges departures from any number of stops into rows keyed by line,
-// direction and headsign. Rows are ordered by their soonest departure, each row holds
-// at most perRow departures (zero means no cap), and at most maxRows rows
-// are returned (zero means no cap).
+// Group merges departures from any number of stops into rows keyed by
+// line, direction and headsign. Rows are ordered by their soonest
+// departure, each row holds at most perRow departures (zero means no cap),
+// and at most maxRows rows are returned (zero means no cap).
 func Group(deps []Departure, maxRows, perRow int) []Row {
 	sorted := slices.Clone(deps)
 	SortByTime(sorted)

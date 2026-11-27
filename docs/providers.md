@@ -38,6 +38,10 @@ Some providers also give each departure a direction, which a stop's
 | `tfl` | The Tube platform's compass word, such as `"Westbound"`; elsewhere `"inbound"` or `"outbound"` |
 | Others | None |
 
+`departures --json` shows each departure's `direction`, and the table
+names it when a line and destination run both ways. A `directions`
+filter on a provider without directions keeps nothing.
+
 ## gtfsrt
 
 Almost every agency publishes the same two open formats: a GTFS schedule,

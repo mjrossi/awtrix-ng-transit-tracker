@@ -713,6 +713,10 @@ func TestGroups(t *testing.T) {
 			opts: render.Options{Layout: render.LayoutRows},
 			want: []shown{{"Heathrow T4", []int{2, 16}}, {"Uxbridge", []int{3, 12}}},
 		},
+		"destination orders by name, not direction": {
+			rows: []transit.Row{directed(row(azul, "Zeta", 1), "0"), directed(row(azul, "Alpha", 2), "1")},
+			want: []shown{{"Alpha", []int{2}}},
+		},
 		"direction shows each way, in a fixed order": {
 			rows: []transit.Row{westT4, westUx, eastAG, eastCf},
 			opts: render.Options{Layout: render.LayoutRows, Group: render.GroupDirection},
