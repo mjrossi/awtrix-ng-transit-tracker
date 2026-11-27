@@ -95,10 +95,11 @@ func (p *Provider) timetableOn() bool { return p.cfg.Timetable == nil || *p.cfg.
 
 // adopt makes st the current schedule: it gives st a timetable that keeps
 // the schedule's file open, or closes the file, and closes the timetable of
-// the schedule st replaces unless st shares it. With timetable = false a timetable is kept only
-// for a cached schedule, to name the lines at each stop for StopLines: that
-// file is on disk anyway, while an uncached one is a temporary copy, often
-// 100 MB, that a long-running service would hold for nothing.
+// the schedule st replaces unless st shares it. With timetable = false a
+// timetable is kept only for a cached schedule, to name the lines at each
+// stop for StopLines: that file is on disk anyway, while an uncached one is
+// a temporary copy, often 100 MB, that a long-running service would hold
+// for nothing.
 func (p *Provider) adopt(st *static) {
 	switch {
 	case st.tt != nil:

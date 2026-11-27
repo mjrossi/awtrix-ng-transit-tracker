@@ -192,10 +192,10 @@ func cachedScheduleEnded(path string, now time.Time) bool {
 
 // ClearCache deletes the schedules cached in dir by WithCacheDir, the stop
 // indexes saved with them, and partial downloads no process is still
-// writing. It returns how many
-// schedules it deleted and how many bytes it freed. A process using a
-// deleted schedule keeps its copy in memory and downloads a new one at its
-// next refresh. Other files in dir are left alone.
+// writing. It returns how many schedules it deleted and how many bytes it
+// freed. A process using a deleted schedule keeps its copy in memory and
+// downloads a new one at its next refresh. Other files in dir are left
+// alone.
 func ClearCache(dir string, now time.Time) (schedules int, freed int64, err error) {
 	freed = removeAbandonedDownloads(dir, now)
 	paths, err := filepath.Glob(filepath.Join(dir, "*.gtfs"))

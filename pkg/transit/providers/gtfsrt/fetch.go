@@ -40,8 +40,8 @@ func to(w io.Writer) func(int, http.Header) (io.Writer, error) {
 // fetchTo copies the body of a GET, sent with the extra headers, to the
 // writer that dest picks from the response's status and headers, failing
 // above limit bytes. dest sees 200 responses, and 304 ones when extra makes
-// the request conditional. Errors name the URL without its query string, which may hold
-// an API key.
+// the request conditional. Errors name the URL without its query string,
+// which may hold an API key.
 func (p *Provider) fetchTo(ctx context.Context, u string, extra http.Header, limit int64, dest func(status int, h http.Header) (io.Writer, error)) (int64, error) {
 	shown := redact(u)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
