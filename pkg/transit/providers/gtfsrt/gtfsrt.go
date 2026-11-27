@@ -155,10 +155,6 @@ func (p *Provider) Departures(ctx context.Context, q transit.Query) ([]transit.D
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if st == nil && staticErr != nil && len(p.cfg.RealtimeURLs) == 0 {
-		return nil, staticErr
-	}
-
 	feeds, problems, servedByOK, servedByFailed, err := p.readFeeds(ctx, st, q)
 	if err != nil {
 		return nil, err
@@ -167,26 +163,17 @@ func (p *Provider) Departures(ctx context.Context, q transit.Query) ([]transit.D
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-
-	if !hasTimes && len(p.cfg.RealtimeURLs) > 0 && (len(feeds) == 0 || servedByFailed && !servedByOK) {
-		return nil, errors.Join(append(problems, ttErr)...)
+	o := outcome{
+		realtime: len(p.cfg.RealtimeURLs) > 0, schedule: st != nil, scheduleErr: staticErr,
+		feedsLoaded: len(feeds), feedProblems: problems, servedByOK: servedByOK, servedByFailed: servedByFailed,
+		hasTimes: hasTimes, timetableErr: ttErr,
 	}
-	// Only a complete answer can tell a stop does not exist: the schedule
-	// and every feed loaded, the schedule lacks it and no trip stops there.
-	if st != nil && staticErr == nil && len(problems) == 0 && !servedByOK && !hasTimes {
-		if _, ok := st.stops[q.StopID]; !ok {
-			return nil, fmt.Errorf("%w %q", transit.ErrUnknownStop, q.StopID)
-		}
+	if st != nil {
+		_, o.stopKnown = st.stops[q.StopID]
+		o.noTimetable = st.tt == nil
 	}
-	// With the timetable the only source, an empty board would claim no
-	// departures when none could be read.
-	if st != nil && len(p.cfg.RealtimeURLs) == 0 {
-		switch {
-		case ttErr != nil:
-			return nil, errors.Join(ttErr, staticErr)
-		case st.tt == nil:
-			return nil, errors.Join(fmt.Errorf("%s: %w", Name, errNoTimetable), staticErr)
-		}
+	if err := o.failure(q.StopID); err != nil {
+		return nil, err
 	}
 
 	out, used := merge(st, plans, feeds, q)
@@ -203,16 +190,58 @@ func (p *Provider) Departures(ctx context.Context, q transit.Query) ([]transit.D
 	}
 	out = append(out, live...)
 	transit.SortByTime(out)
-	if staticErr != nil {
-		problems = append(problems, staticErr)
-	}
-	if ttErr != nil {
-		problems = append(problems, ttErr)
-	}
-	if len(problems) > 0 {
-		return out, &transit.PartialError{Err: errors.Join(problems...)}
+	if partial := o.problems(); len(partial) > 0 {
+		return out, &transit.PartialError{Err: errors.Join(partial...)}
 	}
 	return out, nil
+}
+
+// outcome is what Departures learned while reading a query's sources.
+type outcome struct {
+	realtime     bool // realtime_urls are configured
+	schedule     bool // a schedule, current or earlier, is loaded
+	scheduleErr  error
+	feedsLoaded  int
+	feedProblems []error
+	// servedByOK and servedByFailed report whether a feed that loaded, or
+	// one that failed, is known to serve the stop.
+	servedByOK, servedByFailed bool
+	hasTimes                   bool // the timetable has stop times at the stop
+	stopKnown                  bool // the schedule has the stop
+	timetableErr               error
+	noTimetable                bool // the schedule has no timetable
+}
+
+// failure returns the error to give instead of departures, or nil when
+// departures can be shown. Where a source that could not be read is the only
+// one for the stop, an empty board would claim there are no departures.
+func (o outcome) failure(stop string) error {
+	switch {
+	case !o.schedule && o.scheduleErr != nil && !o.realtime:
+		return o.scheduleErr
+	case !o.hasTimes && o.realtime && (o.feedsLoaded == 0 || o.servedByFailed && !o.servedByOK):
+		return errors.Join(append(slices.Clone(o.feedProblems), o.timetableErr)...)
+	// Only a complete answer can tell a stop does not exist: the schedule
+	// and every feed loaded, the schedule lacks it and no trip stops there.
+	case o.schedule && o.scheduleErr == nil && len(o.feedProblems) == 0 && !o.servedByOK && !o.hasTimes && !o.stopKnown:
+		return fmt.Errorf("%w %q", transit.ErrUnknownStop, stop)
+	case o.schedule && !o.realtime && o.timetableErr != nil:
+		return errors.Join(o.timetableErr, o.scheduleErr)
+	case o.schedule && !o.realtime && o.noTimetable:
+		return errors.Join(fmt.Errorf("%s: %w", Name, errNoTimetable), o.scheduleErr)
+	}
+	return nil
+}
+
+// problems lists what went wrong without stopping departures being shown.
+func (o outcome) problems() []error {
+	out := slices.Clone(o.feedProblems)
+	for _, err := range []error{o.scheduleErr, o.timetableErr} {
+		if err != nil {
+			out = append(out, err)
+		}
+	}
+	return out
 }
 
 // readFeeds gets every realtime feed, and reports whether one that loaded,
