@@ -30,6 +30,21 @@ const (
 	LayoutGrid Layout = "grid"
 )
 
+// Group is what one row of a layout stands for.
+type Group string
+
+// Groups.
+const (
+	// GroupDestination gives each line and destination a row.
+	GroupDestination Group = "destination"
+	// GroupDirection gives each line and direction a row, named after the
+	// next trip's destination, so a branching line takes one row each way.
+	GroupDirection Group = "direction"
+	// GroupTrain gives each trip a row, soonest first, like a platform
+	// sign.
+	GroupTrain Group = "train"
+)
+
 // Overflow is what a name wider than its box does.
 type Overflow string
 
@@ -42,6 +57,7 @@ const (
 // Options tunes the TC002 renderer. Zero values take the defaults below.
 type Options struct {
 	Layout Layout
+	Group  Group
 	// MaxRows caps rows in LayoutRows; the display fits two.
 	MaxRows int
 	// Labels replaces headsigns for display, such as
@@ -92,6 +108,17 @@ func (o Options) Validate() error {
 	default:
 		errs = append(errs, fmt.Errorf("layout %q must be %q, %q or %q", o.Layout, LayoutDeparture, LayoutRows, LayoutGrid))
 	}
+	switch o.Group {
+	case "", GroupDestination:
+	case GroupDirection, GroupTrain:
+		// The grid groups by line already. A train on the departure layout
+		// would be one time under one name.
+		if o.Layout == LayoutGrid || (o.Group == GroupTrain && o.Layout != LayoutRows) {
+			errs = append(errs, fmt.Errorf("group %q does not apply to layout %q", o.Group, cmp.Or(o.Layout, LayoutDeparture)))
+		}
+	default:
+		errs = append(errs, fmt.Errorf("group %q must be %q, %q or %q", o.Group, GroupDestination, GroupDirection, GroupTrain))
+	}
 	if o.Overflow != "" && o.Overflow != OverflowScroll && o.Overflow != OverflowClip {
 		errs = append(errs, fmt.Errorf("overflow %q must be %q or %q", o.Overflow, OverflowScroll, OverflowClip))
 	}
@@ -104,6 +131,7 @@ func (o Options) Validate() error {
 // WithDefaults fills empty fields with the renderer's defaults.
 func (o Options) WithDefaults() Options {
 	o.Layout = cmp.Or(o.Layout, LayoutDeparture)
+	o.Group = cmp.Or(o.Group, GroupDestination)
 	o.Overflow = cmp.Or(o.Overflow, OverflowScroll)
 	o.Font = cmp.Or(o.Font, DefaultFont)
 	o.EmptyText = cmp.Or(o.EmptyText, DefaultEmptyText)
@@ -178,31 +206,58 @@ func TC002(rows []transit.Row, now time.Time, opts Options) *awtrix.Layout {
 // Visible returns the rows a layout shows, in display order. rows should
 // be ordered soonest first, as transit.Group returns them.
 //
-// Rows are ordered by line and headsign rather than by time, so they do not
-// swap places between pushes while the same ones are on screen. The
-// departure layout shows the first such row, so a stop served in both
+// Rows are ordered by line, direction and headsign rather than by time, so
+// they do not swap places between pushes while the same ones are on screen.
+// The departure layout shows the first such row, so a stop served in both
 // directions keeps one destination instead of flipping to whichever
 // departs next. Rows without a headsign come last, so a trip whose
 // destination is unknown does not take that place. The grid layout, which
-// shows no destinations, has one row per line, ordered by line.
+// shows no destinations, has one row per line, ordered by line. Train rows
+// stay in time order, as on a platform sign.
 func Visible(rows []transit.Row, opts Options) []transit.Row {
 	opts = opts.WithDefaults()
 	rows = opts.arrange(rows)
 	return pick(rows, visible(rows, opts))
 }
 
-// arrange returns the rows the layout chooses from. The grid layout shows no
-// destinations, so a line's destinations would be cells that look the same.
+// arrange returns the rows the layout chooses from, still soonest first.
 func (o Options) arrange(rows []transit.Row) []transit.Row {
-	if o.Layout != LayoutGrid {
-		return rows
+	switch {
+	case o.Layout == LayoutGrid:
+		// The grid shows no destinations, so a line's destinations would be
+		// cells that look the same.
+		return merge(rows, func(r transit.Row) (string, bool) { return r.Line.ID, true })
+	case o.Group == GroupDirection:
+		out := merge(rows, func(r transit.Row) (string, bool) {
+			return r.Line.ID + "\x00" + r.Direction, r.Direction != ""
+		})
+		for i, r := range out {
+			if r.Direction != "" && len(r.Departures) > 0 {
+				out[i].Headsign = nextTrip(r.Departures)[0].Headsign
+			}
+		}
+		return out
+	case o.Group == GroupTrain:
+		return trains(rows)
 	}
+	return rows
+}
+
+// merge joins the rows that share a key into the first of them, with their
+// departures in time order. Rows without a key are kept as they are. A
+// merged row whose headsigns differ has none.
+func merge(rows []transit.Row, key func(transit.Row) (string, bool)) []transit.Row {
 	index := map[string]int{}
 	var out []transit.Row
 	for _, r := range rows {
-		i, ok := index[r.Line.ID]
+		k, ok := key(r)
 		if !ok {
-			index[r.Line.ID] = len(out)
+			out = append(out, r)
+			continue
+		}
+		i, seen := index[k]
+		if !seen {
+			index[k] = len(out)
 			r.Departures = slices.Clone(r.Departures)
 			out = append(out, r)
 			continue
@@ -214,6 +269,25 @@ func (o Options) arrange(rows []transit.Row) []transit.Row {
 			m.Headsign = ""
 		}
 	}
+	return out
+}
+
+// trains gives each departure in rows a row of its own, soonest first.
+// Canceled trips are left out: each would take a row from a trip a rider
+// can catch.
+func trains(rows []transit.Row) []transit.Row {
+	var out []transit.Row
+	for _, r := range rows {
+		for _, d := range r.Departures {
+			if d.Status == transit.StatusCanceled {
+				continue
+			}
+			out = append(out, transit.Row{Line: r.Line, Direction: d.Direction, Headsign: d.Headsign, Departures: []transit.Departure{d}})
+		}
+	}
+	slices.SortStableFunc(out, func(a, b transit.Row) int {
+		return a.Departures[0].Time().Compare(b.Departures[0].Time())
+	})
 	return out
 }
 
@@ -240,6 +314,9 @@ func visible(rows []transit.Row, opts Options) []int {
 	for i := range idx {
 		idx[i] = i
 	}
+	if opts.Group == GroupTrain {
+		return idx
+	}
 	slices.SortStableFunc(idx, func(a, b int) int {
 		ra, rb := rows[a], rows[b]
 		if opts.Layout != LayoutGrid && (ra.Headsign == "") != (rb.Headsign == "") {
@@ -248,7 +325,11 @@ func visible(rows []transit.Row, opts Options) []int {
 			}
 			return -1
 		}
-		return cmp.Or(cmp.Compare(ra.Line.ShortName, rb.Line.ShortName), cmp.Compare(ra.Headsign, rb.Headsign))
+		return cmp.Or(
+			cmp.Compare(ra.Line.ShortName, rb.Line.ShortName),
+			cmp.Compare(ra.Direction, rb.Direction),
+			cmp.Compare(ra.Headsign, rb.Headsign),
+		)
 	})
 	if opts.Layout == LayoutDeparture {
 		idx = idx[:min(len(idx), 1)]

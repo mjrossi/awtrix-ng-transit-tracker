@@ -98,6 +98,22 @@ func TestBoardClockSettingsReachRenderOptions(t *testing.T) {
 	}
 }
 
+func TestDirectionsAndGroup(t *testing.T) {
+	src := strings.Replace(withClock("layout = \"rows\"\ngroup = \"train\""), "%s", "clock.local", 1) +
+		"directions = [\"Westbound\"]\n"
+	cfg, err := config.Parse([]byte(src), noEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := cfg.Boards[0]
+	if got := b.Clock.Render().Group; got != render.GroupTrain {
+		t.Errorf("group = %q, want %q", got, render.GroupTrain)
+	}
+	if diff := cmp.Diff([]string{"Westbound"}, b.Stops[0].Filter().Directions); diff != "" {
+		t.Errorf("directions (-want +got):\n%s", diff)
+	}
+}
+
 func TestGridLayoutIsValid(t *testing.T) {
 	cfg, err := config.Parse([]byte(withClock("layout = \"grid\"")), noEnv)
 	if err != nil {
@@ -151,6 +167,8 @@ func TestInvalid(t *testing.T) {
 		"bad layout":          {withClock("layout = \"columns\""), "clock: layout"},
 		"bad overflow":        {withClock("overflow = \"wrap\""), "overflow"},
 		"negative rows":       {withClock("max_rows = -1"), "max_rows"},
+		"bad group":           {withClock("group = \"line\""), "group"},
+		"train needs rows":    {withClock("group = \"train\""), "group"},
 		"duplicate":           {minimal + "[[boards]]\nname = \"metro\"\n[[boards.stops]]\nprovider = \"demo\"\nstop = \"s\"\n", "duplicate"},
 	}
 	for name, tt := range tests {

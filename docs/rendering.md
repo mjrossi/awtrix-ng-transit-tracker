@@ -43,6 +43,26 @@ table. A board's `layout` is one of:
   744  12   783   8
   ```
 
+A board's `group` says what one row stands for, in the `departure` and
+`rows` layouts:
+
+- **`destination`** (default): a line and destination, as above.
+- **`direction`**: a line and direction, for branching lines whose
+  destinations would otherwise fill the rows from one direction only. The
+  row is named after the next trip a rider can catch, and its times are
+  every trip that way, whatever the destination, as on a London platform
+  sign. Rows are ordered by line and direction. Departures without a
+  direction keep their own rows.
+- **`train`** (`rows` only): one row per trip, soonest first, with one
+  time each. Rows move up as trips leave, unlike the other groupings.
+  Canceled trips are left out, because each would take a row from a trip a
+  rider can catch.
+
+  ```
+  ▌Heathrow T4       2
+  ▌Uxbridge          3
+  ```
+
 Names that still do not fit:
 
 - `[boards.clock.labels]` maps a headsign to a shorter display name. No

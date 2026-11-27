@@ -51,6 +51,7 @@ func departuresCommand() *cli.Command {
 		Flags: []cli.Flag{
 			&cli.StringSliceFlag{Name: "lines", Usage: "only these lines (IDs or short names)"},
 			&cli.StringSliceFlag{Name: "headsigns", Usage: "only destinations containing one of these"},
+			&cli.StringSliceFlag{Name: "directions", Usage: "only these directions, as the provider names them, such as Westbound"},
 			&cli.DurationFlag{Name: "min-lead", Usage: "leave out departures sooner than this, such as the walk to the stop"},
 			&cli.BoolFlag{Name: "canceled", Usage: "include canceled departures, marked x"},
 			&cli.DurationFlag{Name: "window", Value: config.DefaultWindow, Usage: "how far ahead to look"},
@@ -233,6 +234,9 @@ func flagFilter(c *cli.Command, f transit.Filter) transit.Filter {
 	}
 	if c.IsSet("headsigns") {
 		f.Headsigns = c.StringSlice("headsigns")
+	}
+	if c.IsSet("directions") {
+		f.Directions = c.StringSlice("directions")
 	}
 	if c.IsSet("min-lead") {
 		f.MinLead = c.Duration("min-lead")
