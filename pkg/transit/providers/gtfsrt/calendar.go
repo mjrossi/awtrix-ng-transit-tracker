@@ -205,10 +205,10 @@ func (d date) next() date {
 // date, when now is outside the coverage.
 func (c coverage) outOfRange(now time.Time, loc *time.Location) error {
 	if end := c.endsAt(loc); !end.IsZero() && !now.Before(end) {
-		return fmt.Errorf("%w on %s; departures may be missing and line names out of date", errScheduleEnded, c.end.iso())
+		return fmt.Errorf("%w on %s; the departures and line names it gives may be out of date", errScheduleEnded, c.end.iso())
 	}
 	if start := c.startsAt(loc); !start.IsZero() && now.Before(start) {
-		return fmt.Errorf("%w on %s; departures before then may be missing", errScheduleNotStarted, c.start.iso())
+		return fmt.Errorf("%w on %s; until then, the departures and line names it gives may be out of date", errScheduleNotStarted, c.start.iso())
 	}
 	return nil
 }

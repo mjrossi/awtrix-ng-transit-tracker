@@ -248,6 +248,43 @@ func TestEndedScheduleIsRechecked(t *testing.T) {
 	}
 }
 
+// A server that sends an ETag but never answers 304 is not checked hourly
+// once the schedule has ended: each check would download it in full.
+func TestEndedScheduleWithoutConditionalRequests(t *testing.T) {
+	s := newTown(t, endingOn("20260329"))
+	etag := `"v1"`
+	s.etag.Store(&etag)
+	s.ignoreConditional.Store(true)
+	p, ct := countedProvider(t, s, t.TempDir())
+	departAt(t, p, monday8)
+	departAt(t, p, monday8.Add(2*time.Hour))
+	if n := ct.requests.Load(); n != 1 {
+		t.Errorf("%d schedule requests in two hours, want 1", n)
+	}
+}
+
+// An hourly check answered 304 keeps the schedule already in memory, with
+// the stop times its timetable has read, rather than parsing it again.
+func TestUnchangedScheduleKeepsItsTimetable(t *testing.T) {
+	s := newTown(t, endingOn("20260329"))
+	etag := `"v1"`
+	s.etag.Store(&etag)
+	dir := t.TempDir()
+	departAt(t, s.provider(t, false, WithCacheDir(dir)), at(2026, 3, 29, 20, 0))
+
+	p, ct := countedProvider(t, s, dir)
+	departAt(t, p, monday8)
+	before := p.currentStatic()
+	departAt(t, p, monday8.Add(61*time.Minute))
+	after := p.currentStatic()
+	if n := ct.unchanged.Load(); n != 2 {
+		t.Fatalf("%d answers were 304, want 2", n)
+	}
+	if after == before || after.tt != before.tt {
+		t.Errorf("after a 304 the schedule is %p with timetable %p, want a copy of %p sharing timetable %p", after, after.tt, before, before.tt)
+	}
+}
+
 // A schedule is checked again once its last day is over, not a day after
 // it was loaded.
 func TestScheduleIsRecheckedWhenItEnds(t *testing.T) {

@@ -113,12 +113,12 @@ set `timetable = false`, as the `mta-subway` system does.
   copy. `cache clear` deletes it.
 - A schedule says which dates it covers: its calendar, or
   `feed_info.txt` without one, since agencies do not always update
-  `feed_info.txt`. It is also checked when its last day ends, and hourly while
-  today is outside those dates, where the server can answer that it has
-  not changed. Meanwhile departures come with a warning that the schedule
-  has ended or not yet started. With no `realtime_urls` and no trips in
-  the schedule, the board shows that warning as an error rather than "No
-  departures".
+  `feed_info.txt`. It is also checked when its last day ends, and hourly
+  while today is outside those dates, once the server has answered that
+  it has not changed. Meanwhile departures come with a warning that the
+  schedule has ended or not yet started. With no `realtime_urls` and no
+  trips planned in the board's window, the board shows that warning as an
+  error rather than "No departures".
 - A cached schedule that has ended and that no run has used for a week is
   deleted, with the stop times read from it.
 - The first query for a stop reads its times from the schedule (about 5

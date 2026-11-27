@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -41,8 +42,11 @@ type static struct {
 	// checked is when the cached schedule was last downloaded or checked
 	// with the server, by any process sharing the cache; zero when uncached.
 	checked time.Time
-	// revalidatable is true when the server can answer that the schedule
-	// has not changed, so checking it costs little.
+	// src is the cache file the schedule was read from, nil when uncached.
+	src os.FileInfo
+	// revalidatable is true once the server has answered that the schedule
+	// has not changed, so checking it costs little. Sending validators is
+	// not enough: some servers send a new ETag with every response.
 	revalidatable bool
 }
 

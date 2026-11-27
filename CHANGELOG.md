@@ -27,12 +27,12 @@ version may break configuration.
   Russell Square showed its two soonest destinations, often both in one
   direction.
 - `gtfsrt` reads the dates a schedule covers, from its calendar, or
-  `feed_info.txt` without one. Outside them, departures come with a warning that the
-  schedule has ended or not yet started, and a board with only the
-  schedule to go by and nothing planned shows an error instead of "No
-  departures". The schedule is checked with the server when its last day
-  ends, and hourly while it is out of date where the server supports
-  conditional requests, rather than once a day.
+  `feed_info.txt` without one. Outside them, departures come with a
+  warning that the schedule has ended or not yet started, and a board
+  with only the schedule to go by and nothing planned shows an error
+  instead of "No departures". The schedule is checked with the server
+  when its last day ends, and hourly while it is out of date once the
+  server has answered a conditional request, rather than once a day.
 - Catalog systems can have `optional_options`: settings, such as a key
   that raises a rate limit, read from the environment when set. `systems`
   lists them, and `systems show` and `config init` write them commented

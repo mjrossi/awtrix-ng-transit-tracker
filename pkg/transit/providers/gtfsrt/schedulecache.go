@@ -53,6 +53,7 @@ type cacheFile struct {
 	zipStart int64
 	size     int64
 	fetched  time.Time
+	info     os.FileInfo
 }
 
 // cacheName names the file by a hash of the URL, which can hold a key.
@@ -83,7 +84,7 @@ func readCacheHeader(f *os.File) (*cacheFile, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cached schedule header: %w", err)
 	}
-	cf := &cacheFile{f: f, zipStart: int64(len(line)), size: fi.Size(), fetched: fi.ModTime()}
+	cf := &cacheFile{f: f, zipStart: int64(len(line)), size: fi.Size(), fetched: fi.ModTime(), info: fi}
 	if err := json.Unmarshal(line, &cf.valid); err != nil {
 		return nil, fmt.Errorf("cached schedule header: %w", err)
 	}
@@ -97,11 +98,25 @@ func (cf *cacheFile) parse() (*static, error) {
 	if err != nil {
 		return nil, err
 	}
-	st.file, st.cached = cf.f, true
-	st.revalidatable = cf.valid != validators{}
+	st.file, st.cached, st.src = cf.f, true, cf.info
 	st.checked = cf.fetched
 	cf.f = nil
 	return st, nil
+}
+
+// readCached returns cf's schedule. When the current schedule was read from
+// the same file, it returns a copy of it sharing its timetable rather than
+// parsing the whole zip again, as an hourly check of a schedule out of its
+// coverage would.
+func (p *Provider) readCached(cf *cacheFile) (*static, error) {
+	if cur := p.currentStatic(); cur != nil && cur.src != nil && os.SameFile(cur.src, cf.info) {
+		c := *cur
+		if cf.fetched.After(c.checked) {
+			c.checked = cf.fetched
+		}
+		return &c, nil
+	}
+	return cf.parse()
 }
 
 // Close closes the file unless a parsed schedule holds it.
@@ -131,7 +146,10 @@ func removeAbandonedDownloads(dir string, now time.Time) int64 {
 // pruneEndedSchedules deletes cached schedules other than keep whose
 // coverage ended at least a day ago and that no process has used for
 // unusedGrace, with their stop indexes. A process using a schedule renews
-// its time at least daily, so one that a configuration still names is kept.
+// its time when it checks it with the server, normally daily, so one that a
+// configuration still names is kept unless the server has been unreachable,
+// or the time could not be renewed, for that long. Such a process keeps its
+// copy in memory and downloads the schedule again at its next check.
 func pruneEndedSchedules(dir, keep string, now time.Time) {
 	paths, _ := filepath.Glob(filepath.Join(dir, "*.gtfs"))
 	for _, path := range paths {
@@ -140,6 +158,10 @@ func pruneEndedSchedules(dir, keep string, now time.Time) {
 		}
 		fi, err := os.Lstat(path)
 		if err != nil || !fi.Mode().IsRegular() || within(now, fi.ModTime(), unusedGrace) || !cachedScheduleEnded(path, now) {
+			continue
+		}
+		// A download renamed into place meanwhile is a different file.
+		if again, err := os.Lstat(path); err != nil || !os.SameFile(fi, again) || !again.ModTime().Equal(fi.ModTime()) {
 			continue
 		}
 		if os.Remove(path) == nil {
@@ -210,7 +232,7 @@ func (p *Provider) loadCachedStatic(ctx context.Context, now time.Time) (*static
 	// refresh that finds it unchanged returns it rather than reading it again.
 	var parsed *static
 	if old != nil && within(now, old.fetched, staticTTL) {
-		st, err := old.parse()
+		st, err := p.readCached(old)
 		switch {
 		case err != nil:
 			_ = os.Remove(path)
@@ -237,7 +259,7 @@ func (p *Provider) loadCachedStatic(ctx context.Context, now time.Time) (*static
 		if parsed != nil {
 			return parsed, &upstream.StaleError{Err: err}
 		}
-		if st, perr := old.parse(); perr == nil {
+		if st, perr := p.readCached(old); perr == nil {
 			return st, &upstream.StaleError{Err: err}
 		}
 	}
@@ -315,11 +337,11 @@ func (p *Provider) refreshCache(ctx context.Context, now time.Time, path string,
 		st := parsed
 		if st == nil {
 			var err error
-			if st, err = old.parse(); err != nil {
+			if st, err = p.readCached(old); err != nil {
 				return nil, err
 			}
 		}
-		st.checked = now
+		st.checked, st.revalidatable = now, true
 		return st, nil
 	}
 	if _, err := tmp.Seek(0, io.SeekStart); err != nil {

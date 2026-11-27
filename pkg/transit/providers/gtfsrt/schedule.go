@@ -25,8 +25,8 @@ func (p *Provider) staticFor(ctx context.Context, now time.Time) (*static, error
 
 // scheduleFreshUntil is when a schedule loaded or revalidated at since is
 // next checked with the server: daily, and also when its coverage ends.
-// While it is outside its coverage it is checked hourly, if the server can
-// answer that it has not changed; otherwise each check is a full download.
+// While it is outside its coverage it is checked hourly once the server has
+// answered that it has not changed; otherwise each check is a full download.
 func scheduleFreshUntil(st *static, since time.Time) time.Time {
 	until := since.Add(staticTTL)
 	if st == nil {
@@ -95,18 +95,21 @@ func (p *Provider) timetableOn() bool { return p.cfg.Timetable == nil || *p.cfg.
 
 // adopt makes st the current schedule: it gives st a timetable that keeps
 // the schedule's file open, or closes the file, and closes the timetable of
-// the schedule st replaces. With timetable = false a timetable is kept only
+// the schedule st replaces unless st shares it. With timetable = false a timetable is kept only
 // for a cached schedule, to name the lines at each stop for StopLines: that
 // file is on disk anyway, while an uncached one is a temporary copy, often
 // 100 MB, that a long-running service would hold for nothing.
 func (p *Provider) adopt(st *static) {
-	if st.file != nil && st.hasTimetable() && (p.timetableOn() || st.cached) {
+	switch {
+	case st.tt != nil:
+		// A copy of the current schedule, from readCached, sharing its timetable.
+	case st.file != nil && st.hasTimetable() && (p.timetableOn() || st.cached):
 		dir := ""
 		if st.cached {
 			dir = p.cacheDir
 		}
 		st.tt = newTimetable(st, st.file, dir, p.cfg.StaticURL, p.clock, p.log)
-	} else {
+	default:
 		st.release()
 		st.zr = nil
 	}
@@ -115,7 +118,7 @@ func (p *Provider) adopt(st *static) {
 	old := p.current
 	p.current = st
 	p.mu.Unlock()
-	if old != nil && old != st && old.tt != nil {
+	if old != nil && old.tt != nil && old.tt != st.tt {
 		old.tt.close()
 	}
 }
