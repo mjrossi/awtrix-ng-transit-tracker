@@ -44,6 +44,16 @@ func scheduleFreshUntil(st *static, since time.Time) time.Time {
 	return until
 }
 
+// scheduleExpires is scheduleFreshUntil for upstream.Cache. It counts from
+// when the schedule was last checked rather than when this process loaded
+// it, so a process starting from a file 23 hours old checks it an hour later.
+func scheduleExpires(st *static, loadedAt time.Time) time.Time {
+	if st != nil && !st.checked.IsZero() {
+		return scheduleFreshUntil(st, st.checked)
+	}
+	return scheduleFreshUntil(st, loadedAt)
+}
+
 // scheduleFresh reports whether st, loaded or revalidated at since, can be
 // used at now without checking with the server. A clock stepped back more
 // than staticTTL makes it stale, as upstream.Cache judges.

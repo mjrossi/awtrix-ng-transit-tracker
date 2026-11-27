@@ -336,3 +336,24 @@ func TestUnchangedScheduleWithoutRenewedTime(t *testing.T) {
 		t.Errorf("err = %v, want none", err)
 	}
 }
+
+// A long-running process that started from a cached file counts the next
+// check from the file's last check, not from when it started.
+func TestDailyCheckCountsFromTheFile(t *testing.T) {
+	s := newTown(t, town)
+	etag := `"v1"`
+	s.etag.Store(&etag)
+	dir := t.TempDir()
+	first, _ := countedProvider(t, s, dir)
+	departAt(t, first, monday8)
+
+	p, ct := countedProvider(t, s, dir)
+	departAt(t, p, monday8.Add(23*time.Hour))
+	if n := ct.requests.Load(); n != 0 {
+		t.Fatalf("%d requests for a file checked 23 hours ago, want 0", n)
+	}
+	departAt(t, p, monday8.Add(24*time.Hour+time.Minute))
+	if n := ct.requests.Load(); n != 1 {
+		t.Errorf("%d requests a day after the file's check, want 1", n)
+	}
+}

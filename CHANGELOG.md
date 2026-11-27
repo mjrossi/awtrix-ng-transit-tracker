@@ -48,6 +48,9 @@ version may break configuration.
 
 - After the server answered that a cached schedule had not changed, a
   failure to update the file's time marked a valid schedule as partial.
+- A long-running `clock run` that started from a cached schedule counted
+  its daily check from when it started, so up to two days could pass
+  between checks. It now counts from the schedule's last check.
 
 ## [0.7.0] - 2026-11-26
 

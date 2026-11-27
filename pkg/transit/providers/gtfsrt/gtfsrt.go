@@ -132,7 +132,7 @@ func New(cfg Config, client *http.Client, opts ...Option) (*Provider, error) {
 		// board's app lifetime, so stale data is refreshed in the
 		// background.
 		p.schedule = upstream.NewCacheAt(upstream.Policy{TTL: staticTTL, Retry: staticRetry, Background: true, Timeout: staticTimeout}, p.loadStatic).
-			ExpireWith(scheduleFreshUntil)
+			ExpireWith(scheduleExpires)
 	}
 	for _, u := range cfg.RealtimeURLs {
 		p.feeds[u] = upstream.NewCache(upstream.Policy{TTL: feedTTL, Retry: feedTTL, Timeout: feedTimeout}, func(ctx context.Context) (feed, error) {

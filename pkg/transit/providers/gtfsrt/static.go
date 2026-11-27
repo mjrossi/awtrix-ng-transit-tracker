@@ -38,6 +38,9 @@ type static struct {
 	file io.Closer
 	// cached is true when file is in the cache directory.
 	cached bool
+	// checked is when the cached schedule was last downloaded or checked
+	// with the server, by any process sharing the cache; zero when uncached.
+	checked time.Time
 	// revalidatable is true when the server can answer that the schedule
 	// has not changed, so checking it costs little.
 	revalidatable bool

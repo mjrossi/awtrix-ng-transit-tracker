@@ -99,6 +99,7 @@ func (cf *cacheFile) parse() (*static, error) {
 	}
 	st.file, st.cached = cf.f, true
 	st.revalidatable = cf.valid != validators{}
+	st.checked = cf.fetched
 	cf.f = nil
 	return st, nil
 }
@@ -311,10 +312,15 @@ func (p *Provider) refreshCache(ctx context.Context, now time.Time, path string,
 		if err := chtimes(path, now, now); err != nil {
 			p.log.WarnContext(ctx, "could not renew the cached schedule's time", slog.Any("err", err))
 		}
-		if parsed != nil {
-			return parsed, nil
+		st := parsed
+		if st == nil {
+			var err error
+			if st, err = old.parse(); err != nil {
+				return nil, err
+			}
 		}
-		return old.parse()
+		st.checked = now
+		return st, nil
 	}
 	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
 		return nil, err
@@ -337,6 +343,7 @@ func (p *Provider) refreshCache(ctx context.Context, now time.Time, path string,
 		st.release()
 		return nil, err
 	}
+	st.checked = now
 	return st, nil
 }
 
