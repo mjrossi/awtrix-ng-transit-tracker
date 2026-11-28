@@ -1,10 +1,21 @@
 # Urbanist Timetable
 
+[![CI](https://github.com/mjrossi/urbanist-timetable/actions/workflows/ci.yml/badge.svg)](https://github.com/mjrossi/urbanist-timetable/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/mjrossi/urbanist-timetable)](https://github.com/mjrossi/urbanist-timetable/releases)
+[![Go Reference](https://pkg.go.dev/badge/github.com/mjrossi/urbanist-timetable.svg)](https://pkg.go.dev/github.com/mjrossi/urbanist-timetable/pkg/transit)
+[![License](https://img.shields.io/github/license/mjrossi/urbanist-timetable)](./LICENSE)
+
 > Your next departure, wherever you look.
 
 Live public transit departures in your terminal, or on an
 [AWTRIX NG](https://github.com/Blueforcer/awtrix-ng) pixel clock (Ulanzi
-TC002).
+TC002), for any agency that publishes a GTFS schedule.
+
+- **Terminal:** one binary for Linux, macOS or Windows. No account, and no
+  configuration file for most agencies. [Start here](#in-your-terminal).
+- **Clock:** a Ulanzi TC002 (52 × 16) with AWTRIX NG 1.2.2 or later, and
+  Docker on a machine that stays on. It needs no Home Assistant, MQTT or
+  open ports. [Start here](#on-a-pixel-clock).
 
 A companion to [*The Urbanist Lexicon*](https://mjrossi.com/blog) and
 [*Urbanist Atlas*](https://urbanistatlas.com).
@@ -117,7 +128,39 @@ docker run -d --name urbanist-timetable --restart unless-stopped \
 As it ships, the example shows two boards from the `demo` provider, so
 you can see the display working first. [`docs/clock.md`](./docs/clock.md)
 walks through the setup step by step, with Docker Compose, and explains
-the layouts, when boards are shown, and how the service behaves.
+the layouts, when boards are shown, and how the service behaves. If
+nothing appears, see [troubleshooting](./docs/clock.md#troubleshooting).
+
+Before 1.0, a minor version may change the configuration, so pin a tag
+such as `:0.8` rather than `:latest`. To upgrade, read the
+[changelog](./CHANGELOG.md) and then change the tag.
+
+## Questions
+
+**Does my clock work?** Only the Ulanzi TC002 (52 × 16) works for now. The
+TC001 and other 32 × 8 clocks don't.
+
+**Does it run on the clock?** No. Schedules are zip files that can run
+to tens of megabytes, and realtime feeds are protocol buffers; neither
+fits on the clock. The container fetches them and pushes each board to
+the clock over HTTP, as an app in its rotation.
+
+**Does it need Home Assistant or MQTT?** No. It talks to the clock's
+HTTP API directly, and it works next to whatever else pushes apps.
+
+**Why are some times dimmed?** Bright times with an amber dot are live
+predictions. Dimmed times come from the schedule, because the agency
+publishes no realtime feed for that trip or the feed is failing.
+
+**How do I find my agency and stop?** `agencies search` with the
+agency's name or city, then `stops search` with that system's ID and
+words from the stop's name. `config init` asks for both and writes the
+configuration.
+
+**My agency isn't found or gives no departures.** Open an
+[issue](https://github.com/mjrossi/urbanist-timetable/issues/new/choose)
+with the system and stop IDs. Many problems come from the feed itself, and
+the issue form asks for what's needed to tell which.
 
 ## Commands
 

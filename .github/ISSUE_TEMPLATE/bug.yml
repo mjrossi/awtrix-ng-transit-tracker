@@ -1,0 +1,52 @@
+name: Bug
+description: Something does not work as the README or docs say it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Remove API keys, passwords and your clock's public address from anything you paste.
+        For a stop or agency that gives no departures, use the "Agency or stop" form instead.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `urbanist-timetable --version`, or the image tag you run.
+      placeholder: 0.8.0
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where
+      options:
+        - Terminal (departures, stops search, agencies search, ...)
+        - Clock (clock run or clock preview, in Docker)
+        - Clock (clock run, outside Docker)
+        - Go packages under pkg/
+    validations:
+      required: true
+  - type: input
+    id: firmware
+    attributes:
+      label: AWTRIX NG firmware version
+      description: For clock problems; shown in the clock's web UI.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: The command you ran, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: config
+    attributes:
+      label: Configuration check
+      description: Output of `urbanist-timetable config validate`, and of `clock preview --json` for clock problems.
+      render: text
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: With `--log-level debug` (or `TIMETABLE_LOG_LEVEL=debug` in Docker), if you can.
+      render: text

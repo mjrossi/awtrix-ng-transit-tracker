@@ -10,6 +10,7 @@ clock, and the clock rotates through its apps.
 - [When boards are shown](#when-boards-are-shown)
 - [How it behaves](#how-it-behaves)
 - [The data volume](#the-data-volume)
+- [Troubleshooting](#troubleshooting)
 
 ## Setup
 
@@ -367,3 +368,41 @@ read-only root filesystem, mount a tmpfs at `/tmp`; otherwise downloads
 fall back to memory, which needs about as much RAM as the zip is large,
 and boards show no timetabled trips: only realtime ones, or an error for
 a board without `realtime_urls`.
+
+## Troubleshooting
+
+Start with `urbanist-timetable config validate`, then
+`urbanist-timetable clock preview`, which fetches every board once and
+prints its rows and payload without touching the clock. Add `--push` to
+send them to the clock once. Run the service with
+`TIMETABLE_LOG_LEVEL=debug` to log every fetch and push.
+
+**The clock can't be reached.** Set `clock.url` to the clock's IP address:
+`awtrixng-xxxxxx.local` names often don't resolve inside containers.
+Check that the machine running Docker can open the clock's web UI at
+that address, and that the clock runs AWTRIX NG 1.2.2 or later.
+
+**Nothing appears on the clock.** Look for `board hidden` in the logs; its
+`reason` says why. A board outside its `active_hours`, or any board during
+`quiet_hours`, is hidden on purpose. The image runs in UTC unless you set
+`timezone` or `TZ`, so a window like `"07:00-09:00"` may be hours off. A
+board with `no usable data; board not updated` in the logs has neither
+fresh nor recent departures: run `departures` for its stop to see the error.
+
+**Times are dimmed.** They come from the schedule: the agency publishes no
+realtime feed for those trips, or the feed is failing and the last good
+times are shown. See [Reading the display](#reading-the-display).
+
+**"The schedule ended" or "the schedule starts".** The agency's published
+schedule doesn't cover today, so its times and line names may be out of
+date. While it is out of date, the service checks for a new one daily, or
+hourly where the agency's server supports conditional requests, so there
+is nothing to fix on your side until the agency publishes it.
+
+**"Rate limit or monthly quota reached".** A `transitland` block has used
+up its key's monthly requests. `config validate` estimates them: raise
+`refresh_interval` or narrow `active_hours`, as
+[transitland.md](./transitland.md) explains.
+
+If none of this helps, open an
+[issue](https://github.com/mjrossi/urbanist-timetable/issues/new/choose).

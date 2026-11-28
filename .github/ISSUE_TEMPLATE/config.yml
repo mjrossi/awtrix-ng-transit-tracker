@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Question or setup help
+    url: https://github.com/mjrossi/urbanist-timetable/discussions
+    about: Finding your agency or stop, configuring boards, or running the clock.
+  - name: Security problem
+    url: https://github.com/mjrossi/urbanist-timetable/security/advisories/new
+    about: Report it privately through a security advisory, as SECURITY.md describes.

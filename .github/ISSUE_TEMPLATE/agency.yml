@@ -1,0 +1,43 @@
+name: Agency or stop
+description: An agency, system or stop gives no departures, wrong times or wrong names.
+labels: [agency]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Agencies are served from their published feeds, so some problems are in the feed itself.
+        These details let a maintainer reproduce what you see. Remove any API keys.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `urbanist-timetable --version`.
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: System ID
+      description: From `urbanist-timetable agencies search`, such as `bart`, `mdb-2929` or `f-eyc-cp`, or the `static_url` and `realtime_urls` you configured.
+    validations:
+      required: true
+  - type: input
+    id: stop
+    attributes:
+      label: Stop ID
+      description: From `urbanist-timetable stops search SYSTEM WORDS`.
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What you expected and what you got
+      description: For example, the departures on the agency's own app or website at the same moment.
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Output
+      description: Output of `urbanist-timetable departures SYSTEM STOP --json --log-level debug`.
+      render: text
